@@ -773,16 +773,27 @@ class beam_effects(object):
                        primary_beam_modes=self.pbm_for_cs, no_monopole=True,
                        radial_taper=self.radial_taper,image_taper=self.image_taper,
                        wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,fg_box=fg_box)
+        tf=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
+                       P_fid=P_fid,k_fid=self.ksph, 
+                       Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
+                       primary_beam_num=self.primary_fidu,primary_beam_type_num="manual",
+                       primary_beam_den=self.primary_fidu,primary_beam_type_den="manual",
+                       frac_tol=self.frac_tol_conv,seed=self.seed,    
+                       primary_beam_modes=self.pbm_for_cs, no_monopole=True,
+                       radial_taper=self.radial_taper,image_taper=self.image_taper,
+                       wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,fg_box=None)
         
         recalc_fi=False
         recalc_rt=False
         recalc_sf=False
         recalc_nn=False
+        recalc_tf=False
         if isolated==False:     # recalculate all three MC-windowed power spectra [see i, ii, iii below]
             recalc_fi=True
             recalc_rt=True
             recalc_sf=True
             recalc_nn=True
+            recalc_tf=True
         if isolated=="realthgt": # recalculate only the theory + fidu beam + syst + ?fg? power spec [i]
             recalc_rt=True
         if isolated=="fidufidu": # recalculate only the theory + fidu beam + ?fg? power spec [ii]
@@ -794,6 +805,8 @@ class beam_effects(object):
             recalc_sf=True
         if isolated=="notheorynosyst":
             recalc_nn=True
+        if isolated=="theoryfid":
+            recalc_tf=True
 
         if recalc_fi:
             fi.power_Monte_Carlo(interfix="fi")
@@ -826,6 +839,14 @@ class beam_effects(object):
                 self.kpar_for_theory=nn.kparbins
             self.Pnothnosy_cyl=nn.P_binned_converged
             print("         fidu beam +      + ?fg? MC complete")
+        if (recalc_tf):
+            tf.power_Monte_Carlo(interfix="tf")
+            if not recalc_fi:
+                self.N_per_realization=nn.N_per_realization
+                self.kperp_for_theory=nn.kperpbins
+                self.kpar_for_theory=nn.kparbins
+            self.Ptheoryfidu_cyl=tf.P_binned_converged
+            print("theory + fidu beam               MC complete")
 
         _,_,self.Ptheory_cyl=self.unbin_to_Pcyl(self.pars_set_cosmo, kperp_to_use=self.kperp_for_theory, kpar_to_use=self.kpar_for_theory)# unbin_to_Pcyl(self,pars_to_use,kperp_to_use=None,kpar_to_use=None)
         if isolated==False:
@@ -2580,11 +2601,13 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         handle_rt=False
         handle_sf=False
         handle_nn=False
+        handle_tf=False
         if isolated==False:     # recalculate all three MC-windowed power spectra [see i, ii, iii below] //terminology slightly outdated
             handle_fi=True
             handle_rt=True
             handle_sf=True
             handle_nn=True
+            handle_tf=True
         if isolated=="realthgt": # recalculate only the theory + fidu beam + syst + ?fg? power spec [i]
             handle_rt=True
         if isolated=="fidufidu": # recalculate only the theory + fidu beam + ?fg? power spec [ii]
@@ -2596,6 +2619,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             handle_sf=True
         if isolated=="notheorynosyst":
             handle_nn=True
+        if isolated=="theoryfidu":
+            handle_tf=True
 
         print("about to perform or load Monte Carlos")
         if not from_incomplete_MC:
@@ -2621,6 +2646,9 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                 if handle_nn:
                     Pnothnosy=windowed_survey.Pnothnosy_cyl
                     np.save("Pnothnosy_"+ioname+".npy",Pnothnosy)
+                if handle_tf:
+                    Ptheoryfidu=windowed_survey.Ptheoryfidu_cyl
+                    np.save("Ptheoryfidu_"+ioname+".npy",Ptheoryfidu)
                 N_per_realization=windowed_survey.N_per_realization
                 np.save("N_per_realization_"+ioname+".npy",N_per_realization)
                 kperp_internal=windowed_survey.kperpbins_internal[:-1]
@@ -2636,6 +2664,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                 Pnothnosy=np.load("Pnothnosy_"+ioname+".npy")
                 Ptheory=np.load("Ptheory_"+ioname+".npy")
                 Pfg=np.load("Pfg_"+ioname+".npy")
+                Ptheoryfidu=np.load("Ptheoryfidu_"+ioname+".npy")
                 N_per_realization=np.load("N_per_realization_"+ioname+".npy")
                 kpar_internal=np.load("kpar_internal_"+ioname+".npy")/u.Mpc # units also by construction
                 kperp_internal=np.load("kperp_internal_"+ioname+".npy")/u.Mpc
@@ -2645,7 +2674,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             Pnotheory=np.load("P_sf_unconverged.npy")
             Pnothnosy=np.load("P_nn_unconverged.npy")
             Ptheory=np.load("Ptheory_"+ioname+".npy")
-            Pfg=np.load("Pfg_"+ioname+".npy")
+            Pfg=np.load("Pfg_fg_unconverged.npy")
+            Ptheoryfidu=np.load("Ptheoryfidu_unconverged.npy")
             N_per_realization=np.load("N_per_realization_"+ioname+".npy")
             kpar_internal=np.load("kpar_internal_"+ioname+".npy")/u.Mpc # units by construction if importing from same pipeline generation
             kperp_internal=np.load("kperp_internal_"+ioname+".npy")/u.Mpc
@@ -2656,7 +2686,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
 
         power_quantities_this_complexity=np.array([Pnotheory, Pfiducial, Prealthought, 
                                                    Presidual, Pratio,    Pfg,
-                                                   Pisoratio, Ptheory]) # N_pspec_types x Nkperp x Nkpar
+                                                   Pisoratio, Ptheory,   Ptheoryfidu]) # N_pspec_types x Nkperp x Nkpar
         power_quantities_all.append(power_quantities_this_complexity) # N_complexity_cases x N_pspec_types x Nkperp x Nkpar
         t01=time.time()
         print("handled complexity case",complexity_id_i,"in",t01-t00,"s")
@@ -2681,25 +2711,25 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
 
     plot_version_names = ["fidu beam + syst + fg",                                        "theory + fidu beam + fg",                   "theory + fidu beam + syst + fg", 
                           "(theory + fidu beam + syst + fg) - (theory + fidu beam + fg)", "log10[ (fidu beam + syst + fg) / theory ]", "fg",
-                          "log10[ (fidu beam + fg) / theory ]",                           "theory"]
+                          "log10[ (fidu beam + fg) / theory ]",                           "theory",                                    "theory + fidu beam"]
     save_names= ["fidu_syst_fg",                               "theory_fidu_fg",              "theory_fidu_syst_fg", 
                  "theory_fidu_syst_fg__minus__theory_fidu_fg", "fidu_syst_fg__divby__theory", "fg",
-                 "fidu_fg__divby__theory",                     "theory"]
+                 "fidu_fg__divby__theory",                     "theory",                      "theory_fidu"]
     plot_cmaps= [abs_map, abs_map, abs_map,
                  rel_map, rel_map, abs_map,
-                 rel_map, abs_map]
+                 rel_map, abs_map, abs_map]
     norm_mids=  [None, abs_with_th, abs_with_th,
                  0.,   0.,          fgmid,
-                 0.,   abs_with_th] 
+                 0.,   abs_with_th, abs_with_th] 
     norm_exts=  [None, abs_with_th, abs_with_th,
                  None, None,        fgext,
-                 None, abs_with_th]
+                 None, abs_with_th, abs_with_th]
     plot_log=   [False, False, False, 
-                 False, True, False, 
-                 True,  False]
+                 False, True,  False, 
+                 True,  False, False]
     plot_units=[absolute_units, absolute_units, absolute_units,
                 absolute_units, relative_units, absolute_units,
-                relative_units, absolute_units]
+                relative_units, absolute_units, absolute_units]
     ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   
 
     print("\n\n")
