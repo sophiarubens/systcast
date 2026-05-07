@@ -698,17 +698,15 @@ class beam_effects(object):
         else:
             raise ValueError("unknown P_fid_for_cont_pwr")
 
-        Pflat=np.ones(self.Nkpar_surv)/self.Nkpar_surv
+        Pflat=np.ones(self.Nkpar_surv)/self.Nkpar_surv**2
         k_for_flat=self.kpar_surv # should be kpar range for box
         if self.layer_foregrounds:
             fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=Pflat,k_fid=k_for_flat,
                            Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                           frac_tol=self.frac_tol_conv,seed=self.seed, no_monopole=True,
-                           radial_taper=self.radial_taper,image_taper=self.image_taper) 
+                           frac_tol=self.frac_tol_conv,seed=self.seed, no_monopole=True) 
             fg.generate_GRF()
             fg_box=fg.T_pristine
-            print("beam_effects.calc_power_contamination: type(fg_box)=",type(fg_box))
 
             box_z_freqs= np.linspace(self.nu_hi.value,self.nu_lo.value,self.Nvox_box_z,endpoint=True)*self.Deltanu.unit
             freqs_for_synchro=box_z_freqs.to(u.MHz) # descending in frequency to match the iteration over increasing redshift
@@ -717,7 +715,6 @@ class beam_effects(object):
                 fg_box[:,:,i]*=synchro_factor
             fg_box=fg_box.to(u.mK)
             self.fg_box=fg_box
-            print("beam_effects.calc_power_contamination: type(fg_box)=",type(fg_box))
 
             fg.T_pristine=fg_box # overwrite to account for synchrotron factors
             fg.generate_P()
@@ -1467,17 +1464,12 @@ class cosmo_stats(object):
             
     def generate_P(self,send_to_P_fid:bool=False,T_use=None): # from a box of temperature field values
         print("in cosmo_stats.generate_P: T_use=",T_use)
-        if (T_use is None or T_use=="primary"):
+        if (T_use is None or T_use.lower()=="primary"):
             if self.T_primary is None:
-                if self.evaled_primary_num is not None:
-                    self.T_primary=self.T_pristine*self.evaled_primary_num
-                else: 
-                    self.T_primary=self.T_pristine
+                self.T_primary=self.T_pristine*self.evaled_primary_num
             T_use=self.T_primary
         else:
             T_use=self.T_pristine
-        print("in cosmo_stats.generate_P: type(self.T_primary),type(self.T_pristine)=",type(self.T_primary),type(self.T_pristine))
-        print("in cosmo_stats.generate_P: type(T_use)=",type(T_use))
         assert(T_use.unit==u.mK)
         
         T_tilde=fftshift(fftn((ifftshift(T_use.value*self.taper_xyz)*self.d3r)))
@@ -1561,7 +1553,7 @@ class cosmo_stats(object):
         if self.primary_beam_num is None:
             T_use="pristine"
         else: 
-            T_use="Primary"
+            T_use="primary"
         i=0
 
         t0=time.time()
@@ -2872,9 +2864,10 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     relative_units="(unitless)"
 
     ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   
-    abs_with_th_indices=np.r_[1,2,7,8]
-    abs_with_th=np.percentile(power_quantities_all[:,abs_with_th_indices,:,:],33) # 33.5 theory is all indistinguishable from 0 colour -> need narrower range
-    abs_with_th=None # don't match colour bar scales for now
+    abs_th_no_fg_indices=np.r_[7,8,9,14]
+    abs_th_no_fg=np.percentile(power_quantities_all[:,abs_th_no_fg_indices,:,:],98) 
+    abs_th_fg_indices=np.r_[1,2,10]
+    abs_th_fg=np.percentile(power_quantities_all[:,abs_th_fg_indices,:,:],98)
     fgmid=np.median(P_xx_xx_xx_fg)
     fgext=3*np.std(P_xx_xx_xx_fg)
 
@@ -2889,12 +2882,12 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     plot_cmaps= [abs_map, abs_map, abs_map, rel_map, rel_map, 
                  abs_map, rel_map, abs_map, abs_map, abs_map,
                  abs_map, abs_map, abs_map, abs_map, abs_map]
-    norm_mids=  [None,        abs_with_th, abs_with_th, 0.,          0.,          
-                 fgmid,       0.,          abs_with_th, abs_with_th, abs_with_th,
-                 abs_with_th, None,        None,        None,        abs_with_th] 
-    norm_exts=  [None,        abs_with_th, abs_with_th, None,        None,        
-                 fgext,       None,        abs_with_th, abs_with_th, abs_with_th,
-                 abs_with_th, None,        None,        None,        abs_with_th]
+    norm_mids=  [None,      abs_th_fg, abs_th_fg,    0.,           0.,          
+                 fgmid,     0.,        abs_th_no_fg, abs_th_no_fg, abs_th_no_fg,
+                 abs_th_fg, None,      None,         None,         abs_th_no_fg] 
+    norm_exts=  [None,      abs_th_fg, abs_th_fg,    None,         None,        
+                 fgext,     None,      abs_th_no_fg, abs_th_no_fg, abs_th_no_fg,
+                 abs_th_fg, None,      None,         None,         abs_th_no_fg]
     plot_log=   [False, False, False, False, True,
                  False, True,  False, False, False,
                  False, False, False, False, False]
