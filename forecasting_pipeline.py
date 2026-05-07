@@ -708,6 +708,7 @@ class beam_effects(object):
                            radial_taper=self.radial_taper,image_taper=self.image_taper) 
             fg.generate_GRF()
             fg_box=fg.T_pristine
+            print("beam_effects.calc_power_contamination: type(fg_box)=",type(fg_box))
 
             box_z_freqs= np.linspace(self.nu_hi.value,self.nu_lo.value,self.Nvox_box_z,endpoint=True)*self.Deltanu.unit
             freqs_for_synchro=box_z_freqs.to(u.MHz) # descending in frequency to match the iteration over increasing redshift
@@ -716,6 +717,7 @@ class beam_effects(object):
                 fg_box[:,:,i]*=synchro_factor
             fg_box=fg_box.to(u.mK)
             self.fg_box=fg_box
+            print("beam_effects.calc_power_contamination: type(fg_box)=",type(fg_box))
 
             fg.T_pristine=fg_box # overwrite to account for synchrotron factors
             fg.generate_P()
@@ -1211,7 +1213,7 @@ class cosmo_stats(object):
                 if (Pfiddims==2):
                     if primary_beam_num is None: # trying to do a minimalistic instantiation where I merely provide a fiducial power spectrum and interpolate it
                         self.fid_Nkperp,self.fid_Nkpar=Pfidshape
-                        if primary_beam_num is not None: 
+                        if primary_beam_den is not None: 
                             raise ValueError("conflicting info") # numerator primary beam needs to be the fiducial one; doesn't make sense to claim you have a perturbed but not fiducial pb
                     else:
                         try: # see if the power spec is a CAMB-esque (1,npts) array
@@ -1330,7 +1332,6 @@ class cosmo_stats(object):
         taper_xxx,taper_yyy,taper_zzz=np.meshgrid(taper_xy,taper_xy,taper_z,indexing="ij")
         taper_xyz=taper_xxx*taper_yyy*taper_zzz
         self.taper_xyz=taper_xyz
-        print("extrema of taper_xyz:",np.min(taper_xyz),np.max(taper_xyz))
 
         # primary beam
         self.primary_beam_num=primary_beam_num
@@ -1338,12 +1339,10 @@ class cosmo_stats(object):
         self.primary_beam_type_num=primary_beam_type_num
         self.primary_beam_modes=primary_beam_modes # _fi and _th_fi_sy_xx assumed to be sampled at the same modes, if this is the case
         if (self.primary_beam_num is not None): # non-identity FIDUCIAL primary beam
-            print("self.primary_beam_num is not None branch")
             if (self.primary_beam_type_num=="Gaussian" or self.primary_beam_type_num=="Airy"):
                 self.fwhm_x,self.fwhm_y,self.r0=self.primary_beam_aux_num
                 evaled_primary_num=  self.primary_beam_num(self.xx_grid,self.yy_grid,self.fwhm_x,  self.fwhm_y,  self.r0)     
             elif (self.primary_beam_type_num=="manual"):
-                print("self.primary_beam_type_num=='manual' branch")
                 assert np.all(self.primary_beam_num>=0.)
                 try:    # to access this branch, the manual/ numerically sampled primary beam needs to be close enough to a numpy array that it has a shape and not, e.g. a callable
                     primary_beam_num.shape
@@ -1385,13 +1384,13 @@ class cosmo_stats(object):
             
             else:
                 raise ValueError("not yet implemented")
+            evaled_primary_use_for_eff_vol=evaled_primary_num # gets overwritten (as it should) if there's a separate _den beam
         
         self.primary_beam_den=primary_beam_den
         self.primary_beam_aux_den=primary_beam_aux_den
         self.primary_beam_type_den=primary_beam_type_den
         self.primary_beam_modes=primary_beam_modes # _fi and _th_fi_sy_xx assumed to be sampled at the same modes, if this is the case
         if (self.primary_beam_den is not None): # non-identity PERTURBED primary beam
-            print("self.primary_beam_den is not None branch")
             if (self.primary_beam_type_den=="Gaussian" or self.primary_beam_type_den=="Airy"):
                 self.fwhm_x,self.fwhm_y,r0=self.primary_beam_aux_den
                 self.r0=r0*u.Mpc
@@ -1407,32 +1406,20 @@ class cosmo_stats(object):
 
                 evaled_primary_den=RGI(primary_beam_modes,self.primary_beam_den,
                                        bounds_error=False,fill_value=None)(np.array([self.xx_grid.value,self.yy_grid.value,self.zz_grid.value]).T).T
-                self.evaled_primary_den=evaled_primary_den
+                evaled_primary_use_for_eff_vol=evaled_primary_den
 
             else:
                 evaled_primary_den=None    
 
         else:                               # identity primary beam
-            evaled_primary_num=None
-            evaled_primary_den=None
-        self.evaled_primary_den=evaled_primary_den
-
-        if evaled_primary_den is not None:
-            evaled_primary_use_for_eff_vol=evaled_primary_den
-        elif evaled_primary_num is not None:
-            evaled_primary_use_for_eff_vol=evaled_primary_num
-        else:
+            evaled_primary_num=1.
+            evaled_primary_den=1.
             evaled_primary_use_for_eff_vol=np.ones((self.Nvox,self.Nvox,self.Nvoxz))
+        self.evaled_primary_den=evaled_primary_den
+        self.evaled_primary_num=evaled_primary_num
 
         self.effective_volume=np.sum((evaled_primary_use_for_eff_vol*self.taper_xyz)**2*self.d3r)
         assert self.effective_volume>0
-        # self.effective_volume=np.sum((evaled_primary_use_for_eff_vol*taper_xyz)**2*self.d3r)/(twopi**3)
-        print("different versions of the volume calculation:")
-        print("physical:                               ",self.physical_volume)
-        print("beam effective:                         ",self.effective_volume)
-        print("beam + apodization effective no (2pi)^3:",np.sum((evaled_primary_use_for_eff_vol*self.taper_xyz)**2*self.d3r))
-        print("apodization effective:                  ",np.sum(self.taper_xyz**2*self.d3r))
-        # assert(1==0), "debug = effective volume check"
         
         if (self.T_pristine is not None):
             self.T_primary=self.T_pristine*self.evaled_primary_num
@@ -1479,12 +1466,18 @@ class cosmo_stats(object):
         self.P_fid_box=P_fid_box
             
     def generate_P(self,send_to_P_fid:bool=False,T_use=None): # from a box of temperature field values
+        print("in cosmo_stats.generate_P: T_use=",T_use)
         if (T_use is None or T_use=="primary"):
+            if self.T_primary is None:
+                if self.evaled_primary_num is not None:
+                    self.T_primary=self.T_pristine*self.evaled_primary_num
+                else: 
+                    self.T_primary=self.T_pristine
             T_use=self.T_primary
         else:
             T_use=self.T_pristine
-        if (self.T_primary is None):    # power spec has to come from a box
-            self.generate_GRF() # populates/overwrites self.T_pristine and self.T_primary
+        print("in cosmo_stats.generate_P: type(self.T_primary),type(self.T_pristine)=",type(self.T_primary),type(self.T_pristine))
+        print("in cosmo_stats.generate_P: type(T_use)=",type(T_use))
         assert(T_use.unit==u.mK)
         
         T_tilde=fftshift(fftn((ifftshift(T_use.value*self.taper_xyz)*self.d3r)))
