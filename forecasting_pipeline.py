@@ -570,7 +570,7 @@ class beam_effects(object):
                 PA_ified_xy_vec=np.load("xy_vec_PA_ified_"+ioname+".npy")*u.Mpc # by construction = not brittle
                 PA_ified_z_vec=np.load("z_vec_PA_ified_"+ioname+".npy")*u.Mpc
                 print("loaded PA-ification")
-            print("finished importing/constructing per-antenna–ifying CST beams")
+            print("finished importing/constructing per-antenna–ified CST beams")
             
             PA_ified_pbm=(PA_ified_xy_vec.value,PA_ified_xy_vec.value,PA_ified_z_vec.value) # might need to re-unit-ify this more robustly later, but for now the main use is interpolation and I don't want to jam up scipy by putting units where they have no business being
 
@@ -702,21 +702,39 @@ class beam_effects(object):
         Pflat=np.ones(self.Nkpar_surv)/self.Nkpar_surv**2
         k_for_flat=self.kpar_surv # should be kpar range for box
         if self.layer_foregrounds:
+            # initialize a cosmo_stats object with a placeholder flat spectrum
             fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            P_fid=Pflat,k_fid=k_for_flat,
                            Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            frac_tol=self.frac_tol_conv,seed=self.seed, no_monopole=True) 
+            
+            ## # actually, this seems unnecessary lol
+            # # generate a box as a starting point for enforcing 1 mK normalization
+            # fg.P_fid_interp_1d_to_3d()
+            # P_fid_box_for_fg=fg.P_fid_box
+            ##
+
+            # apply the Delta2 conversion in reverse to enforce 1 mK power amplitude
+            k_mag_grid_masked=fftshift(fg.kmag_grid_corner)
+            k_mag_grid_masked[k_mag_grid_masked==0.]=np.infty
+            fg.P_fid_box=np.ones((self.Nvox_box_xy,self.Nvox_box_xy,self.Nvox_box_z))*u.mK**2 * 2*pi**2/k_mag_grid_masked**3
+
+            # generate a box from the flat temp spec
             fg.generate_GRF()
             fg_box=fg.T_pristine
 
+            # apply further renormalization to LoS slices to give the box a synchrotron spectrum in that direction
             box_z_freqs= np.linspace(self.nu_hi.value,self.nu_lo.value,self.Nvox_box_z,endpoint=True)*self.Deltanu.unit
             freqs_for_synchro=box_z_freqs.to(u.MHz) # descending in frequency to match the iteration over increasing redshift
             synchrotron_factors=300e3/(freqs_for_synchro.value/150)**2.5 # doi:10.1088/0004-6256/145/3/65; units accounted for in the box part, so I've hard-coded the K (paper units) to mK (my units) conversation so everything is compatible.... this is just to modulate it
             for i,synchro_factor in enumerate(synchrotron_factors):
                 fg_box[:,:,i]*=synchro_factor
+
+            # bookkeeping
             fg_box=fg_box.to(u.mK)
             self.fg_box=fg_box
 
+            # bonus step: compute power spec to facilitate comparisons to power spectra with all the other cosmo + fidu beam + syst + fg ingredient permutations
             fg.T_pristine=fg_box # overwrite to account for synchrotron factors
             fg.generate_P()
             fg.P_fid_box=fg.P_unbinned # cosmo_stats needs to know about a 3D grid of fiducial power values
@@ -2354,12 +2372,15 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                      # index
         j=k%N_LHS_cols
         spec=ensemble_of_spectra[k,:,:] # remaining indices: N complexity cases, N k-perp, N k-par
         specshape=spec.shape
-        if qty_to_plot=="Delta2":
-            spec_to_plot=spec[:-1,:-1]*k_mag_grid.value**3/(2*pi**2)
-        elif qty_to_plot=="P":
-            spec_to_plot=np.copy(spec)
-        else:
-            raise ValueError("P and Delta2 are the only pre-established plotting options for now")
+        ### old block from when I wasn't pre-computing Delta2
+        # if qty_to_plot=="Delta2":
+        #     spec_to_plot=spec[:-1,:-1]*k_mag_grid.value**3/(2*pi**2)
+        # elif qty_to_plot=="P":
+        #     spec_to_plot=np.copy(spec)
+        # else:
+        #     raise ValueError("P and Delta2 are the only pre-established plotting options for now")
+        ###
+        spec_to_plot=np.copy(spec)
         if isinstance(spec_to_plot, Quantity):
             spec_to_plot_de_dimensionalized=spec_to_plot.value
             ensemble_of_spectra_de_dimensionalized=ensemble_of_spectra.value
@@ -2377,7 +2398,6 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                      # index
             vmaxlog=np.percentile(spec_to_plot_de_dimensionalized,100-off)
             if vmaxlog<0:
                 vmaxlog=0.01
-            print("vminlog,vmaxlog=",vminlog,vmaxlog)
             norm=TwoSlopeNorm(0.,vmin=vminlog,
                                  vmax=vmaxlog)
         else:
@@ -2386,7 +2406,6 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                      # index
                 norm_mid=half_middle 
             if norm_ext is None:
                 norm_ext=half_middle # branch for absolute quantities: 
-            print("norm_mid,norm_ext=",norm_mid,norm_ext)
             norm=CenteredNorm(vcenter=norm_mid,halfrange=norm_ext)
         im=axs[i][j].imshow(spec_to_plot.T, cmap=colourmap, origin="lower", extent=cyl_extent, norm=norm)
         axs[i][j].set_xlabel("k$_\perp$")
@@ -2550,6 +2569,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     complexity_ids=[str(case) for case in complexity_cases]
 
     power_quantities_all=[]
+    Delta2_quantities_all=[]
     for i,complexity_type in enumerate(complexity_cases):
         print("\n\n\nabout to handle complexity case",complexity_type)
         t00=time.time()
@@ -2733,11 +2753,12 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             recalc_xx_fi_sy_xx=True
 
         print("about to perform or load Monte Carlos")
+        # P_unit=windowed_survey.fg_box.unit**2 *windowed_survey.Deltabox_xy.unit**3 # general, but not safe for plot-only mode
+        P_unit=u.mK**2 *windowed_survey.Deltabox_xy.unit**3
         if not from_incomplete_MC:
             if redo_window_calc:
                 t0=time.time()
                 windowed_survey.calc_power_contamination(isolated=isolated) # loops over complexity
-                P_unit=windowed_survey.fg_box.unit**2 *windowed_survey.Deltabox_xy.unit**3
                 P_th_xx_xx_xx=windowed_survey.P_th_xx_xx_xx
                 np.save("P_th_xx_xx_xx_"+ioname+".npy",P_th_xx_xx_xx.value)
                 P_xx_xx_xx_fg=windowed_survey.P_xx_xx_xx_fg
@@ -2825,18 +2846,22 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         Presidual= P_th_fi_sy_fg-P_th_fi_xx_fg
         Pratio=    P_xx_fi_sy_fg/P_th_xx_xx_xx
         Pisoratio= P_xx_fi_xx_fg/P_th_xx_xx_xx
-        print("type(Pratio),type(Pisoratio)=",type(Pratio),type(Pisoratio))
-        print("Pratio[0,0],Pisoratio[0,0]=",Pratio[0,0],Pisoratio[0,0])
 
-        print("dimensions of P at the end of power_comparison_plots:",P_xx_fi_sy_fg.unit)
+        k_perp_grid,k_par_grid=np.meshgrid(kperp_internal,kpar_internal,indexing="ij")
+        k_mag_grid=np.sqrt(k_perp_grid**2+k_par_grid**2)
+
         power_quantities_this_complexity=np.array([P_xx_fi_sy_fg.value, P_th_fi_xx_fg.value, P_th_fi_sy_fg.value, Presidual.value,     Pratio,        
                                                    P_xx_xx_xx_fg.value, Pisoratio,           P_th_xx_xx_xx.value, P_th_fi_xx_xx.value, P_th_fi_sy_xx.value, 
                                                    P_th_xx_xx_fg.value, P_xx_fi_xx_xx.value, P_xx_fi_sy_xx.value, P_xx_fi_xx_fg.value, P_TH_XX_XX_XX.value]) # N_pspec_types x Nkperp x Nkpar
         power_quantities_all.append(power_quantities_this_complexity) # N_complexity_cases x N_pspec_types x Nkperp x Nkpar
+        
+        Delta2_quantities_this_complexity=[P_qty[:-1,:-1]*k_mag_grid**3/(2*pi**2) for P_qty in power_quantities_this_complexity]
+        Delta2_quantities_all.append(Delta2_quantities_this_complexity)
         t01=time.time()
         print("handled complexity case",complexity_id_i,"in",t01-t00,"s")
 
     power_quantities_all=np.asarray(power_quantities_all)
+    Delta2_quantities_all=np.asarray(Delta2_quantities_all)
     N_plots=power_quantities_this_complexity.shape[0]
     abs_map=cmasher.voltage # also consider rainforest, fall, ...others
     rel_map=cmasher.prinsenvlag
@@ -2849,13 +2874,18 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
 
     ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   
     abs_th_no_fg_indices=np.r_[7,8,9,14]
-    abs_th_no_fg=np.percentile(power_quantities_all[:,abs_th_no_fg_indices,:,:],98) 
     abs_th_fg_indices=np.r_[1,2,10]
-    abs_th_fg=np.percentile(power_quantities_all[:,abs_th_fg_indices,:,:],98)
-    fgmid=np.median(P_xx_xx_xx_fg).value
-    fgext=3*np.std(P_xx_xx_xx_fg).value
-    print("abs_th_no_fg,abs_th_fg,fgmid,fgext=",abs_th_no_fg,abs_th_fg,fgmid,fgext)
-    # assert(1==0), "checking norm units"
+    if which_power=="P":
+        abs_th_no_fg=np.percentile(power_quantities_all[:,abs_th_no_fg_indices,:,:],98) 
+        abs_th_fg=np.percentile(power_quantities_all[:,abs_th_fg_indices,:,:],98)
+        fgmid=np.median(P_xx_xx_xx_fg).value
+        fgext=3*np.std(P_xx_xx_xx_fg).value
+    elif which_power=="Delta2":
+        abs_th_no_fg=np.percentile(Delta2_quantities_all[:,abs_th_no_fg_indices,:,:],98)
+        abs_th_fg=np.percentile(Delta2_quantities_all[:,abs_th_fg_indices,:,:],98)
+        D2_xx_xx_xx_fg=P_xx_xx_xx_fg[:-1,:-1]*k_mag_grid**3/(2*pi**2)
+        fgmid=np.median(D2_xx_xx_xx_fg).value
+        fgext=0.5*(np.percentile(D2_xx_xx_xx_fg,70).value-np.percentile(D2_xx_xx_xx_fg,30).value)
 
     th_fi_sy_fg_str="theory + fidu beam + syst + fg"
     th_fi_xx_fg_str="theory + fidu beam + fg"
