@@ -220,7 +220,7 @@ class beam_effects(object):
                  layer_foregrounds:bool=True,                  # add synchrotron foregrounds on top of cosmo + beam data?
 
                  # NUMERICAL 
-                 n_sph_modes:int=256,                          # how many points in the theory power spectrum?
+                 n_sph_modes:int=4096,                          # how many points in the theory power spectrum?
                  dpar=None,                                    # initial guess for numerical partial derivative step size
                  init_and_box_tol:float=0.05,                  # how much wider to make the config space extent of the brightness temp boxes compared to the survey box (numerical insurance factor...)
                  CAMB_tol:float=0.05,                          # same thing but for the CAMB call (if you make a sensible choice here, you will never have to extrapolate the theory spectrum to get info about a part of k-space you're interested in)
@@ -606,7 +606,7 @@ class beam_effects(object):
         kmax_box_and_init=(1+init_and_box_tol)*self.kmax_surv
         kmin_CAMB=(1-CAMB_tol)*kmin_box_and_init
         kmax_CAMB=(1+CAMB_tol)*kmax_box_and_init*np.sqrt(3) # factor of sqrt(3) from pythag theorem for box to make extrapolation less likely to be necessary
-        ksph,self.Ptruesph=self.get_21cm_power_spec(self.pars_set_cosmo,kmin_CAMB,kmax_CAMB)
+        ksph,self.Ptruesph=self.get_21cm_power_spec(self.pars_set_cosmo,0.1*kmin_CAMB,10*kmax_CAMB)
         self.ksph=ksph/u.Mpc # by construction
         self.Deltabox_xy=self.Lsurv_box_xy/self.Nvox_box_xy
         self.Deltabox_z= self.Lsurv_box_z/ self.Nvox_box_z
@@ -662,10 +662,16 @@ class beam_effects(object):
         Hz= results.hubble_parameter(z[z_ctr_idx])*u.km/u.s/u.Mpc
         Hz=Hz.to(H0.unit)
         h=h.to(u.km/u.s/u.Mpc)
+        print("\neven more painfully literal check on the units of T_bar ingredients")
+        print("z_ctr_idx, z[z_ctr_idx]=",z_ctr_idx, z[z_ctr_idx])
+        print("ombh2.value [ref. 0.02]=",ombh2.value)
+        print("h.value [ref. 0.7]=",h.value)
+        print("H0.value, Hz.value=",H0.value,Hz.value)
         T_bar = 4.0*u.mK *(1+z[z_ctr_idx])**2 *ombh2.value/0.02 *0.7/h.value *H0.value/Hz.value # https://arxiv.org/pdf/astro-ph/0406676
         b_HI =calc_b_HI(z[z_ctr_idx])
-        print("T_bar,b_HI=",T_bar,b_HI)
-        P_21=P_density_only*(T_bar*b_HI)**2 # CAMB handles the \eta_{\rm HI}
+        matter_to_21_cm=T_bar*b_HI
+        print("T_bar,b_HI,matter_to_21_cm=",T_bar,b_HI,matter_to_21_cm)
+        P_21=P_density_only*matter_to_21_cm**2 # CAMB handles the \eta_{\rm HI}
         print("mean and extrema of computed 21 cm power spec:",np.mean(P_21),np.min(P_21),np.max(P_21))
 
         return k_CAMB,P_21
@@ -675,7 +681,7 @@ class beam_effects(object):
             kperp_to_use=self.kperp_surv
         if kpar_to_use is None:
             kpar_to_use=self.kpar_surv
-        k,Psph_use=self.get_21cm_power_spec(pars_to_use,minkh=self.kmin_surv,maxkh=self.kmax_surv)
+        k,Psph_use=self.get_21cm_power_spec(pars_to_use,minkh=0.1*self.kmin_surv,maxkh=10*self.kmax_surv)
         k=k/u.Mpc
         CAMBlength=len(Psph_use)
         k=k.reshape((CAMBlength,))
@@ -719,18 +725,20 @@ class beam_effects(object):
         fg_box/=renorm
         print("mean, abs-mean, and extrema of fg box after applying 1 mK renorm:",np.mean(fg_box),np.mean(np.abs(fg_box)),np.min(fg_box),np.max(fg_box))
 
-        # apply further renormalization to LoS slices to give the box a synchrotron spectrum in that direction
-        
-        # sy: 300e3 mK, 150 MHz, 2.55
-        synchrotron_factors=Tref/(self.freqs_for_fg.value/nuref)**alpha # idea from doi:10.1088/0004-6256/145/3/65 -> changed numbers to what Lidz & Chang quote in the 2026 LIM review; units accounted for in the box part, so I've hard-coded the K (paper units) to mK (my units) conversation so everything is compatible.... this is just to modulate it
-        print("synchrotron_factors[0], synchrotron_factors[-1]=",synchrotron_factors[0],synchrotron_factors[-1])
-        for i,synchro_factor in enumerate(synchrotron_factors):
-            fg_box[:,:,i]*=synchro_factor
+        # apply further renormalization to LoS slices to give the box a synchrotron/ ff/ pt source spectrum in that direction   
+        freqs_in_ref_unit=self.freqs_for_fg.to(nuref.unit)     
+        LoS_factors=Tref/(freqs_in_ref_unit/nuref)**alpha # idea from doi:10.1088/0004-6256/145/3/65 -> changed numbers to what Lidz & Chang quote in the 2026 LIM review; units accounted for in the box part, so I've hard-coded the K (paper units) to mK (my units) conversation so everything is compatible.... this is just to modulate it
+        print("LoS_factors[0], synchrotron_factors[-1], fg_box[0,0,0]=",LoS_factors[0],LoS_factors[-1],fg_box[0,0,0])
+        LoS_factors_in_fg_box_units=LoS_factors.to(fg_box.unit).value # convert and then use dimensionless (I've verified in another script that it converts first)
+        for i,LoS_factors in enumerate(LoS_factors_in_fg_box_units):
+            fg_box[:,:,i]*=LoS_factors
+        print("fg_box.unit=",fg_box.unit)
 
         # bookkeeping
         fg_box=fg_box.to(u.mK)
-        self.fg_box=fg_box
-        print("mean, abs-mean, and extrema of fg box after applying synchro factors:",np.mean(fg_box),np.mean(np.abs(fg_box)),np.min(fg_box),np.max(fg_box))
+        self.fg_box=fg_box # unstable if you're still in the middle of accumulating FG types
+        print("mean, abs-mean, and extrema of fg box after applying power law factors:",np.mean(fg_box),np.mean(np.abs(fg_box)),np.min(fg_box),np.max(fg_box))
+        return fg_box
 
     def calc_power_contamination(self, isolated:bool=False): # Monte Carlo numerical windowing of beam-aware brightness temp boxes to yield several cylindrically power spectra of interest for forecasting and diagnostics. various states of beam knowledge and fiducial spectrum as appropriate (see Memos I-II)
         if self.P_fid_for_cont_pwr is None:
@@ -754,10 +762,12 @@ class beam_effects(object):
             box_z_freqs= np.linspace(self.nu_hi.value,self.nu_lo.value,self.Nvox_box_z,endpoint=True)*self.Deltanu.unit
             self.freqs_for_fg=box_z_freqs.to(u.MHz) # descending in frequency to match the iteration over increasing redshift
 
-            fg_box=np.zeros((self.Nvox_box_xy,self.Nvox_box_xy,self.Nvox_box_z))
-            fg_info_cases=[[300*u.K, 150*u.MHz, 2.55],
-                           [30 *u.K, 150*u.MHz, 2.10], 
-                           [60 *u.K, 150*u.MHz, 2.70]] # LIM review 2026 Chang & Lidz section 8.1.1.1
+            fg_box=np.zeros((self.Nvox_box_xy,self.Nvox_box_xy,self.Nvox_box_z))*u.mK
+            # three main FG types; power law params from LIM review 2026 Chang & Lidz section 8.1.1.1
+            # fg_info_cases=[[300*u.K, 150*u.MHz, 2.55], # synchrotron
+            #                [30 *u.K, 150*u.MHz, 2.10], # free-free
+            #                [60 *u.K, 150*u.MHz, 2.70]] # point sources
+            fg_info_cases=[[300*u.K, 150*u.MHz, 2.55]] # debug with just synchrotron for now
             for fg_info in fg_info_cases:
                 Tref,nuref,alpha=fg_info
                 fg_box_ingredient=self.get_fg_ingredient(Tref,nuref,alpha)
@@ -1324,6 +1334,7 @@ class cosmo_stats(object):
             self.kperp_slice_centre= np.sqrt(fftshift(self.kx_grid_corner)**2+fftshift(self.ky_grid_corner)**2)[:,:,0] # magnitudes of kperp for a representative slice transverse to the line of sight (x- and y-like)
         
             kperpgrid3,kpargrid3=np.meshgrid(self.kperp_slice_centre,self.kpar_column_centre,indexing="ij")
+            print("k extrema:",np.sort(self.kmag_grid_corner)[1,0,0],np.sort(self.kmag_grid_corner)[0,0,1],np.max(self.kmag_grid_corner))
             self.kperpgrid3_flat=np.reshape(kperpgrid3,(self.Nvox**2*self.Nvoxz,))
             self.kpargrid3_flat=np.reshape(kpargrid3,(self.Nvox**2*self.Nvoxz,))
 
@@ -2874,6 +2885,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                                    P_th_xx_xx_fg.value, P_xx_fi_xx_xx.value, P_xx_fi_sy_xx.value, P_xx_fi_xx_fg.value, P_TH_XX_XX_XX.value]) # N_pspec_types x Nkperp x Nkpar
         power_quantities_all.append(power_quantities_this_complexity) # N_complexity_cases x N_pspec_types x Nkperp x Nkpar
         
+        print("in power_comparison_plots: extrema of k_mag_grid:",np.min(k_mag_grid),np.max(k_mag_grid))
         Delta2_quantities_this_complexity=[P_qty[:-1,:-1]*k_mag_grid**3/(2*pi**2) for P_qty in power_quantities_this_complexity]
         Delta2_quantities_all.append(Delta2_quantities_this_complexity)
         t01=time.time()
@@ -2901,7 +2913,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         fgext=3*np.std(P_xx_xx_xx_fg).value
     elif which_power=="Delta2":
         print("Delta2_quantities_all.shape=",Delta2_quantities_all.shape)
-        abs_th_no_fg=100*np.max(Delta2_quantities_all[:,abs_th_no_fg_indices,:,:])
+        # abs_th_no_fg=100*np.max(Delta2_quantities_all[:,abs_th_no_fg_indices,:,:])
+        abs_th_no_fg=None
         abs_th_fg=0.15*np.max(Delta2_quantities_all[:,abs_th_fg_indices,:,:])
         # D2_xx_xx_xx_fg=P_xx_xx_xx_fg[:-1,:-1]*k_mag_grid**3/(2*pi**2)
         # fgext=12*np.std(D2_xx_xx_xx_fg).value
@@ -2935,8 +2948,12 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   
 
     print("\n\n")
+    if which_power=="P":
+        power_quantities_all_correct_type=power_quantities_all
+    elif which_power=="Delta2":
+        power_quantities_all_correct_type=Delta2_quantities_all
     for i in range(N_plots): # iterate over plot cases
-        power_quantity_this_plot_case=power_quantities_all[:,i,:,:] # [:,i,:,:] = all complexity cases, ith power spectrum quantity, all kperps, all kpars
+        power_quantity_this_plot_case=power_quantities_all_correct_type[:,i,:,:] # [:,i,:,:] = all complexity cases, ith power spectrum quantity, all kperps, all kpars
         memo_ii_plotter(power_quantity_this_plot_case, complexity_ids, plot_cmaps[i], plot_log[i],
                         kperp_internal, kpar_internal, 
                         plot_version_names[i], plot_units[i], save_names[i], norm_mids[i], norm_exts[i],
