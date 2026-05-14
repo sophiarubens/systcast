@@ -962,23 +962,6 @@ class beam_effects(object):
 
         _,_,self.P_co_xx_xx_xx=self.unbin_to_Pcyl(self.pars_set_cosmo, kperp_to_use=self.kperp_for_cosmo, kpar_to_use=self.kpar_for_cosmo)# unbin_to_Pcyl(self,pars_to_use,kperp_to_use=None,kpar_to_use=None)
         
-        # #### end-to-end cosmo power comparison  #### #### #### #### #### ####
-        # flat=(COSMOTEST.Nvox**2*COSMOTEST.Nvoxz,)                                ####
-        # E2E_k_flat=COSMOTEST.kperpgrid3_flat                                     ####
-        # E2E_P_flat=np.reshape(COSMOTEST.P_unbinned_MC_complete,flat,order="C")   ####
-        # plt.figure()                                                             ####
-        # plt.plot(   self.ksph,  P_cosmo,    label="CAMB x BA04 x VN18", c="C0")  ####
-        # plt.scatter(E2E_k_flat, E2E_P_flat, label="end-to-end",         c="C1")  ####
-        # plt.xscale("log")                                                        ####
-        # plt.yscale("log")                                                        ####
-        # plt.xlabel("k (1/Mpc)")                                                  ####
-        # plt.ylabel("P (mK^2 Mpc^3)")                                             ####
-        # plt.title("21 cm power end-to-end comparison")                           ####
-        # plt.legend()                                                             ####
-        # plt.savefig("P_21_end_to_end.png")                                       ####
-        # plt.close()                                                              ####
-        # #### #### #### #### #### #### #### #### #### #### #### #### #### ####  
-        
         if isolated==False:
             self.Pcont_cyl=self.P_co_fi_sy_fg-self.P_co_fi_xx_fg
 
@@ -1311,9 +1294,11 @@ class cosmo_stats(object):
         self.kmax_box_z=  pi/self.Deltaz
         self.kmin_box_xy= twopi/self.Lxy
         self.kmin_box_z=  twopi/self.Lz
-        safety=1e-4
-        safety=0
-        self.kperpbins,self.limiting_spacing_0=self.calc_bins(self.Nkperp,self.Nvox,(1+safety)*self.kmin_box_xy,(1-safety)*self.kmax_box_xy)
+        kmin_box=np.sqrt(self.kmin_box_xy**2+self.kmin_box_z**2)
+        kmax_box=np.max([self.kmax_box_xy.value,self.kmax_box_z.value])*self.kmax_box_xy.unit # ignore the voxels outside the sphere that is contained by the box's larger axis but probably exceeds its smaller axis
+
+        # these bins will only be used for sph binning. cyl has its own considerations
+        self.kperpbins,self.limiting_spacing_0=self.calc_bins(self.Nkperp,self.Nvox,4*kmin_box,kmax_box)
         if self.limiting_spacing_0<self.Deltakxy: # trying to bin more finely than the box can tell you about (guaranteed to have >=1 empty bin)
             raise ValueError("resolution error")
         print("box has info about about k-perp within [",self.kmin_box_xy,",",self.kmax_box_xy,"]; k-perp bin ceilings-but-last-floor span [",np.min(self.kperpbins),",",np.max(self.kperpbins),"]")
@@ -1324,19 +1309,17 @@ class cosmo_stats(object):
 
         # voxel grids for cyl binning
         if (self.Nkpar is not None and self.Nkpar!=0):
+            safety=1e-4
+            self.kperpbins,self.limiting_spacing_0=self.calc_bins(self.Nkperp,self.Nvox,(1+safety)*self.kmin_box_xy,(1-safety)*self.kmax_box_xy)
+            if self.limiting_spacing_0<self.Deltakxy: # trying to bin more finely than the box can tell you about (guaranteed to have >=1 empty bin)
+                raise ValueError("resolution error")
+            print("box has info about about k-perp within [",self.kmin_box_xy,",",self.kmax_box_xy,"]; k-perp bin ceilings-but-last-floor span [",np.min(self.kperpbins),",",np.max(self.kperpbins),"]")
 
             self.kparbins,self.limiting_spacing_1=self.calc_bins(self.Nkpar,self.Nvoxz,(1+safety)*self.kmin_box_z,(1-safety)*self.kmax_box_z)
             if (self.limiting_spacing_1<self.Deltakz): # idem ^
                 raise ValueError("resolution error")
             self.kperpbins_grid,self.kparbins_grid=np.meshgrid(self.kperpbins,self.kparbins,indexing="ij")
-
-            self.kpar_column_centre= np.abs(fftshift(self.kz_vec_for_box_corner))                                      # magnitudes of kpar for a representative column along the line of sight (z-like)
-            self.kperp_slice_centre= np.sqrt(fftshift(self.kx_grid_corner)**2+fftshift(self.ky_grid_corner)**2)[:,:,0] # magnitudes of kperp for a representative slice transverse to the line of sight (x- and y-like)
         
-            kperpgrid3,kpargrid3=np.meshgrid(self.kperp_slice_centre,self.kpar_column_centre,indexing="ij")
-            self.kperpgrid3_abs_flat=np.abs(np.reshape(kperpgrid3,(self.Nvox**2*self.Nvoxz,),order="C"))
-            self.kpargrid3_abs_flat=np.abs(np.reshape(kpargrid3,(self.Nvox**2*self.Nvoxz,),order="C"))
-
             self.kpar_column_centre= np.abs(fftshift(self.kz_vec_for_box_corner))                                      # magnitudes of kpar for a representative column along the line of sight (z-like)
             self.kperp_slice_centre= np.sqrt(fftshift(self.kx_grid_corner)**2+fftshift(self.ky_grid_corner)**2)[:,:,0] # magnitudes of kperp for a representative slice transverse to the line of sight (x- and y-like)
             perpbin_indices_slice_centre=    np.digitize(self.kperp_slice_centre,self.kperpbins,right=True)          # cyl kperp bin that each voxel falls into
@@ -1626,13 +1609,13 @@ class cosmo_stats(object):
             N_unbinned_power=   np.zeros((self.Nkperp+1,self.Nkpar)) # for the ensemble avg: number of unbinned_power values in each bin
             for i in range(self.Nvoxz): # iterate over the kpar axis of the box to capture all LoS slices
                 if (i==0): # stats for the representative "bull's eye" slice transverse to the LoS
-                    slice_bin_counts=np.bincount(self.perpbin_indices_slice_1d_centre, minlength=self.Nkperp)
+                    slice_bin_counts=np.bincount(self.perpbin_indices_slice_1d_centre, minlength=self.Nkperp+1)
                 unbinned_power_slice= power_to_bin[:,:,i]                    # take the slice of interest of the preprocessed box values !!kpar is z-like
                 unbinned_power_slice_1d= np.reshape(unbinned_power_slice, 
                                                    (self.Nvox**2,))          # 1d for bincount compatibility
                 slice_bin_sums= np.bincount(self.perpbin_indices_slice_1d_centre,
                                              weights=unbinned_power_slice_1d, 
-                                             minlength=self.Nkperp)             # this slice's update to the numerator of the ensemble average
+                                             minlength=self.Nkperp+1)             # this slice's update to the numerator of the ensemble average
                 current_par_bin=self.parbin_indices_column_centre[i]
 
                 sum_unbinned_power[:,current_par_bin]+= slice_bin_sums  # update the numerator   of the ensemble avg
