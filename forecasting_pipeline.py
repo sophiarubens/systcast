@@ -1266,7 +1266,7 @@ class cosmo_stats(object):
         self.kz_vec_for_box_corner= twopi*fftfreq(self.Nvoxz,d=self.Deltaz)
         self.kx_grid_corner,self.ky_grid_corner,self.kz_grid_corner=np.meshgrid(self.kxy_vec_for_box_corner, #-0.5*self.Deltakxy,
                                                                                 self.kxy_vec_for_box_corner, #-0.5*self.Deltakxy,
-                                                                                self.kz_vec_for_box_corner, #-0.5*self.Deltakz,
+                                                                                self.kz_vec_for_box_corner,  #-0.5*self.Deltakz,
                                                                                 indexing="ij")               # box-shaped Cartesian coords
         self.kmag_grid_corner= np.sqrt(self.kx_grid_corner**2+self.ky_grid_corner**2+self.kz_grid_corner**2) # k magnitudes for each voxel (need for the box generation direction)
         self.kmag_grid_centre=fftshift(self.kmag_grid_corner)
@@ -1548,26 +1548,42 @@ class cosmo_stats(object):
             T_use=self.T_pristine
         assert(T_use.unit==u.mK)
         
-        T_tilde=fftshift(fftn((ifftshift(T_use.value)*self.taper_xyz_corner*self.d3r)))
+        T_tilde=fftshift( fftn( ifftshift(T_use.value)*self.taper_xyz_corner*self.d3r ) )
         if self.independent_modes is None:
-            im=np.ones((self.Nvox,self.Nvox,self.Nvoxz))
+            grid_shape=(self.Nvox,self.Nvox,self.Nvoxz)
+            N_flat=self.Nvox**2*self.Nvoxz
+            flat_shape=(N_flat,)
+            weights=np.ones(flat_shape)
+            kx_grid_centre_flat=np.reshape(fftshift(self.kx_grid_corner),flat_shape)
+            x_sort=np.argsort(kx_grid_centre_flat)
+            ky_grid_centre_flat=np.reshape(fftshift(self.ky_grid_corner),flat_shape)
+            y_sort=np.argsort(ky_grid_centre_flat)
+            kz_grid_centre_flat=np.reshape(fftshift(self.kz_grid_corner),flat_shape)
+            z_sort=np.argsort(kz_grid_centre_flat)
 
             # set up to assess which voxels are their own Hermitian conjugates
-            kxy_vec_centre=fftshift(self.kxy_vec_for_box_corner)
-            kz_vec_centre=fftshift(self.kz_vec_for_box_corner)
-            flipped_xy= np.searchsorted(kxy_vec_centre, -kxy_vec_centre, side="right")
-            flipped_z = np.searchsorted(kz_vec_centre,  -kz_vec_centre,  side="right")
-            flipped_xy[flipped_xy==self.Nvox]=0 # =0 # make safe for Hermetian
-            flipped_z[flipped_z==self.Nvoxz]=0 # =0 # make safe for Hermetian
+            flipped_x=np.searchsorted(kx_grid_centre_flat, -kx_grid_centre_flat, side="left")
+            flipped_y=np.searchsorted(ky_grid_centre_flat, -ky_grid_centre_flat, side="left")
+            flipped_z=np.searchsorted(kz_grid_centre_flat, -kz_grid_centre_flat, side="left")
+            # flipped_x=np.searchsorted(kx_grid_centre_flat[x_sort], -kx_grid_centre_flat[x_sort], side="left")
+            # flipped_y=np.searchsorted(ky_grid_centre_flat[y_sort], -ky_grid_centre_flat[y_sort], side="left")
+            # flipped_z=np.searchsorted(kz_grid_centre_flat[z_sort], -kz_grid_centre_flat[z_sort], side="left")
+            flipped_x[flipped_x==N_flat]=0 #  make safe for Hermetian
+            flipped_y[flipped_y==N_flat]=0
+            flipped_z[flipped_z==N_flat]=0 
 
             # do the comparison and adjust the statistics for voxels in this category
-            # T_tilde_flipped = T_tilde[np.ix_(flipped_xy,flipped_xy,flipped_z)]
-            im[ (kxy_vec_centre==kxy_vec_centre[np.ix_(flipped_xy)])&(
-                 kz_vec_centre ==kz_vec_centre[ np.ix_(flipped_z )])    ]=0.5 # not 2
+            mask=(kx_grid_centre_flat==kx_grid_centre_flat[np.ix_(flipped_x)])&(
+                  ky_grid_centre_flat==ky_grid_centre_flat[np.ix_(flipped_y)])&(
+                  kz_grid_centre_flat==kz_grid_centre_flat[np.ix_(flipped_z)])
+            weights[np.ix_(mask)]=0.5 # not 2
+            weights=np.reshape(weights,grid_shape,order="C")
+            weights[:,:,int(self.Nvoxz//2)]=0.5
             
             # make sure it's highlighting the right things
             fracs=[0,1/3,1/2,1]
-            for frac in fracs:
+            fig,axs=plt.subplots(4,3,layout="constrained",figsize=(12,8))
+            for i,frac in enumerate(fracs):
                 xy_idx=int(frac*self.Nvox)
                 z_idx=int(frac*self.Nvoxz)
                 if frac==1:
@@ -1575,26 +1591,41 @@ class cosmo_stats(object):
                     z_idx-=1
                 str_frac=str(frac)
 
-                _,axs=plt.subplots(1,3,layout="constrained")
-                sl0=im[xy_idx,:,:]
-                img=axs[0].imshow(sl0.T,origin="lower")
-                plt.colorbar(img,ax=axs[0])
-                axs[0].set_title("x cut, mean=\n"+str(np.round(np.mean(sl0),2)))
-                sl1=im[:,xy_idx,:]
-                img=axs[1].imshow(sl1.T,origin="lower")
-                plt.colorbar(img,ax=axs[1])
-                axs[1].set_title("y cut, mean=\n"+str(np.round(np.mean(sl1),2)))
-                sl2=im[:,:,z_idx]
-                img=axs[2].imshow(sl2.T,origin="lower")
-                plt.colorbar(img,ax=axs[2])
-                axs[2].set_title("z cut, mean=\n"+str(np.round(np.mean(sl2),2)))
-                plt.suptitle(str_frac)
-                plt.savefig("im_weights_"+str_frac+".png", dpi=500)
-                plt.close()
+                axs[i,0].set_title(str_frac)
+                sl0=weights[xy_idx,:,:]
+                img=axs[i,0].imshow(sl0.T,origin="lower",norm=CenteredNorm(vcenter=1,halfrange=0.01))
+                plt.colorbar(img,ax=axs[i,0])
+                axs[i,0].set_xlabel("y")
+                axs[i,0].set_ylabel("z")
 
-            # im[T_tilde==T_tilde_flipped]=0.5
-            print("np.sum(im!=1):",np.sum(im!=1))
-            self.independent_modes=im # additional factor in denom of power spec estimator: abs_T_tilde_2 / effective_volume / independent_modes
+                sl1=weights[:,xy_idx,:]
+                img=axs[i,1].imshow(sl1.T,origin="lower",norm=CenteredNorm(vcenter=1,halfrange=0.01))
+                plt.colorbar(img,ax=axs[i,1])
+                axs[i,1].set_xlabel("x")
+                axs[i,1].set_ylabel("z")
+
+                sl2=weights[:,:,z_idx]
+                img=axs[i,2].imshow(sl2.T,origin="lower",norm=CenteredNorm(vcenter=1,halfrange=0.01))
+                plt.colorbar(img,ax=axs[i,2])
+                axs[i,2].set_xlabel("x")
+                axs[i,2].set_ylabel("y")
+            plt.savefig("weights_mini_box.png", dpi=500)
+            plt.close()
+
+            print("np.sum(weights!=1):",np.sum(weights!=1))
+            self.independent_modes=weights # additional factor in denom of power spec estimator: abs_T_tilde_2 / effective_volume / independent_modes
+
+            # Nxy2=int(self.Nvox//2)
+            # Nz2=int(self.Nvoxz//2)
+            # # T_tilde_at_coord_origin=T_tilde[Nxy2-1:Nxy2+2,
+            # #                                 Nxy2-1:Nxy2+2,
+            # #                                 Nz2- 1:Nz2+ 2]
+            # T_tilde_at_coord_origin=T_tilde[Nxy2,Nxy2,Nz2]
+            # print("T_tilde around k-coordinate origin:",T_tilde_at_coord_origin)
+            # mask=np.ones((self.Nvox,self.Nvox,self.Nvoxz),dtype="bool")
+            # mask[Nxy2,Nxy2,Nz2]=False
+            # T_tilde_except_for_origin=T_tilde[mask]
+            # T_tilde[Nxy2,Nxy2,Nz2]=np.mean(T_tilde_except_for_origin)
 
         modsq_T_tilde=np.abs(T_tilde)**2 *T_use.unit**2*self.d3r.unit**2
         P_unbinned=modsq_T_tilde/self.effective_volume/self.independent_modes # box-shaped, but calculated according to the power spectrum estimator equation
@@ -1710,6 +1741,8 @@ class cosmo_stats(object):
         print("self.N_modes_per_bin.shape,self.N_cumul.shape=",self.N_modes_per_bin.shape,self.N_cumul.shape)
         self.N_cumul+=self.N_modes_per_bin
 
+        print("self.effective_volume/self.physical_volume, self.taper_xyz_corner=",self.effective_volume/self.physical_volume, self.taper_xyz_corner)
+
         avg_power=sum_power_truncated/N_power_truncated # actual estimator quotient
         P_binned=np.array(avg_power)
         P_binned.reshape(final_shape)
@@ -1744,7 +1777,8 @@ class cosmo_stats(object):
 
         T*=u.mK
         if self.no_monopole:
-            T-=np.mean(T) # subtract monopole moment
+            pass
+            # T-=np.mean(T) # subtract monopole moment
         if self.fg_box is not None: # layer foregrounds
             T+=self.fg_box
         
