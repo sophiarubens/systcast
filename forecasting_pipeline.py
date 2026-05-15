@@ -1561,9 +1561,11 @@ class cosmo_stats(object):
             flipped_z[flipped_z==self.Nvoxz]=0 # make safe for Hermetian
 
             # do the comparison and adjust the statistics for voxels in this category
-            T_tilde_flipped = T_tilde[np.ix_(flipped_xy,flipped_xy,flipped_z)]
+            # T_tilde_flipped = T_tilde[np.ix_(flipped_xy,flipped_xy,flipped_z)]
+            im[ (kxy_vec_centre==kxy_vec_centre[np.ix_(flipped_xy)])&(
+                 kz_vec_centre ==kz_vec_centre[ np.ix_(flipped_z )])    ]=0.5
 
-            im[T_tilde==T_tilde_flipped]=0.5
+            # im[T_tilde==T_tilde_flipped]=0.5
             print("np.sum(im!=1):",np.sum(im!=1))
             self.independent_modes=im # additional factor in denom of power spec estimator: abs_T_tilde_2 / effective_volume / independent_modes
 
