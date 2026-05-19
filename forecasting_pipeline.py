@@ -702,27 +702,8 @@ class beam_effects(object):
 
         # generate a slice from the flat temp spec
         fg.generate_GRF()
-        print("fg.T_pristine.shape=",fg.T_pristine.shape)
-        white_noise_slice=fg.T_pristine
+        white_noise_slice=fg.T_pristine[:,:,0] # it is Nxy x Nxy x 1, but a truly 2D array is easier to handle during the remaining FG ingredient steps
         
-        plt.figure()
-        plt.imshow(white_noise_slice.value,origin="lower",norm=CenteredNorm(vcenter=0))
-        plt.colorbar()
-        plt.title("white noise slice to use in foreground calc")
-        plt.savefig("white_noise_slice.png")
-        plt.close()
-
-        print("self.Lsurv_box_xy,self.Deltabox_z=",self.Lsurv_box_xy,self.Deltabox_z)
-        T_tilde=fftshift(fftn(ifftshift(white_noise_slice.value*fg.Deltaxy.value**2)))
-        wn_slice_power=np.abs(T_tilde)**2/fg.physical_volume.value
-        plt.figure()
-        plt.imshow(wn_slice_power,origin="lower",norm=CenteredNorm(vcenter=1,halfrange=1))
-        plt.colorbar()
-        plt.title("white noise slice power; mean="+str(np.mean(wn_slice_power)))
-        plt.savefig("modsq_white_noise_slice.png")
-        plt.close()
-        assert 1==0, "interrogating foregrounds again"
-
         # apply further renormalization to LoS slices to give the box a synchrotron/ ff/ etc. spectrum in that direction   
         freqs_in_ref_unit=self.freqs_for_fg.to(nuref.unit)   
         fg_box_this_ingredient=np.zeros((self.Nvox_box_xy,self.Nvox_box_xy,self.Nvox_box_z))
@@ -730,7 +711,8 @@ class beam_effects(object):
         freq_ratios=freqs_in_ref_unit/nuref
         for i,freq_ratio_i in enumerate(freq_ratios):
             slice_of_alphas=rng.normal(loc=alpha, scale=sigma_alpha, size=(self.Nvox_box_xy,self.Nvox_box_xy))
-            fg_box_this_ingredient[:,:,i]=white_noise_slice*Tref.value*freq_ratio_i**slice_of_alphas
+            fg_slice=white_noise_slice*Tref.value*freq_ratio_i**slice_of_alphas
+            fg_box_this_ingredient[:,:,i]=fg_slice
         fg_box_this_ingredient*=Tref.unit
         fg_box_this_ingredient=fg_box_this_ingredient.to(u.mK)
 
@@ -836,7 +818,6 @@ class beam_effects(object):
                        P_fid=P_cosmo,k_fid=self.ksph, 
                        Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                        frac_tol=self.frac_tol_conv,seed=self.seed,    
-                       no_monopole=True,
                        radial_taper=self.radial_taper,image_taper=self.image_taper,
                        wedge_cut=self.wedge_cut,nu_ctr_for_wedge=self.nu_ctr,fg_box=fg_box)
         xx_fi_xx_xx=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -1321,12 +1302,10 @@ class cosmo_stats(object):
             self.kperpbins,self.limiting_spacing_0=self.calc_bins(self.Nkperp,self.Nvox,2*self.kmin_box_xy,self.kmax_box_xy)
             if self.limiting_spacing_0<self.Deltakxy: # trying to bin more finely than the box can tell you about (guaranteed to have >=1 empty bin)
                 raise ValueError("resolution error")
-            print("box has info about about k-perp within [",self.kmin_box_xy,",",self.kmax_box_xy,"]; k-perp bin ceilings-but-last-floor span [",np.min(self.kperpbins),",",np.max(self.kperpbins),"]")
 
             self.kparbins,self.limiting_spacing_1=self.calc_bins(self.Nkpar,self.Nvoxz,2*self.kmin_box_z,self.kmax_box_z-0.5*self.kmin_box_z)
             if (self.limiting_spacing_1<self.Deltakz): # idem ^
                 raise ValueError("resolution error")
-            print("box has info about about k-par within [",self.kmin_box_z,",",self.kmax_box_z,"]; k-par bin ceilings-but-last-floor span [",np.min(self.kparbins),",",np.max(self.kparbins),"]")
             self.kperpbins_grid,self.kparbins_grid=np.meshgrid(self.kperpbins,self.kparbins,indexing="ij")
         
             self.kpar_column_centre= np.abs(fftshift(self.kz_vec_for_box_corner))                                      # magnitudes of kpar for a representative column along the line of sight (z-like)
@@ -1336,14 +1315,12 @@ class cosmo_stats(object):
             self.perpbin_indices_slice_1d_centre= np.reshape(self.perpbin_indices_slice_centre,(self.Nvox**2,))        # 1d version of ^ (compatible with np.bincount)
             parbin_indices_column_centre=    np.digitize(self.kpar_column_centre,self.kparbins,right=True)          # cyl kpar bin that each voxel falls into
             self.parbin_indices_column_centre=parbin_indices_column_centre
-            print("box has info about about k-par within [",self.kmin_box_z,",",self.kmax_box_z,"]; k-par bin ceilings-but-last-floor span [",np.min(self.kparbins),",",np.max(self.kparbins),"]")
 
         else:
             # these bins will only be used for sph binning. cyl has its own considerations
             self.kperpbins,self.limiting_spacing_0=self.calc_bins(self.Nkperp,self.Nvox,kmin_box,kmax_box)
             if self.limiting_spacing_0<self.Deltakxy: # trying to bin more finely than the box can tell you about (guaranteed to have >=1 empty bin)
                 raise ValueError("resolution error")
-            print("box has info about about k-perp within [",self.kmin_box_xy,",",self.kmax_box_xy,"]; k-perp bin ceilings-but-last-floor span [",np.min(self.kperpbins),",",np.max(self.kperpbins),"]")
 
             # voxel grids for sph binning        
             self.sph_bin_indices_centre=      np.digitize(self.kmag_grid_centre,self.kperpbins,right=True)
@@ -1500,42 +1477,7 @@ class cosmo_stats(object):
         P_fid_box=np.reshape(P_fid_flattened_box,(self.Nvox,self.Nvox,self.Nvoxz),order="C")
         P_fid_box[P_fid_box<0]=0.
         P_fid_box[np.isnan(P_fid_box)]=0.
-        print("extrema of P_fid_box:",np.min(P_fid_box),np.max(P_fid_box))
         self.P_fid_box=P_fid_box
-
-        plt.figure()
-        plt.semilogy(self.k_fid,interpolator(self.k_fid))
-        plt.title("P_fid interpolation end-to-end")
-        plt.savefig("P_fid_interpolation_end_to_end"+"_"+str(np.round(self.P_fid_box[0,0,0],2))+".png")
-        plt.close()
-
-        fracs=[0,1/3,1/2,1]
-        for frac in fracs:
-            xy_idx=int(frac*self.Nvox)
-            z_idx=int(frac*self.Nvoxz)
-            if frac==1:
-                xy_idx-=1
-                z_idx-=1
-            str_frac=str(frac)
-
-            boxmedian=np.median(P_fid_box)
-            boxnorm=CenteredNorm(vcenter=boxmedian,halfrange=boxmedian)
-            _,axs=plt.subplots(1,3)
-            sl0=P_fid_box[xy_idx,:,:]
-            im=axs[0].imshow(sl0,norm=boxnorm)
-            plt.colorbar(im,ax=axs[0])
-            axs[0].set_title("x cut, mean=\n"+str(np.round(np.mean(sl0),2)))
-            sl1=P_fid_box[:,xy_idx,:]
-            im=axs[1].imshow(sl1)
-            plt.colorbar(im,ax=axs[1],norm=boxnorm)
-            axs[1].set_title("y cut, mean=\n"+str(np.round(np.mean(sl1),2)))
-            sl2=P_fid_box[:,:,z_idx]
-            im=axs[2].imshow(sl2,norm=boxnorm)
-            plt.colorbar(im,ax=axs[2])
-            axs[2].set_title("z cut, mean=\n"+str(np.round(np.mean(sl2),2)))
-            plt.suptitle(str_frac)
-            plt.savefig("P_fid_box_"+str_frac+"_"+str(np.round(self.P_fid_box[0,0,0],2))+".png", dpi=500)
-            plt.close()
             
     def generate_P(self,send_to_P_fid:bool=False,T_use=None): # from a box of temperature field values
         if (T_use is None or T_use.lower()=="primary"):
@@ -1549,129 +1491,13 @@ class cosmo_stats(object):
         
         T_tilde=fftshift( fftn( ifftshift(T_use.value)*self.taper_xyz_corner*self.d3r ) )
         if self.independent_modes is None:
-            grid_shape=(self.Nvox,self.Nvox,self.Nvoxz)
-            # N_flat=self.Nvox**2*self.Nvoxz
-            # flat_shape=(N_flat,)
-            weights=np.ones(grid_shape)
-            # weights=np.ones(flat_shape)
-            # kx_grid_centre_flat=np.reshape(fftshift(self.kx_grid_corner),flat_shape)
-            # x_sort=np.argsort(kx_grid_centre_flat)
-            # ky_grid_centre_flat=np.reshape(fftshift(self.ky_grid_corner),flat_shape)
-            # y_sort=np.argsort(ky_grid_centre_flat)
-            # kz_grid_centre_flat=np.reshape(fftshift(self.kz_grid_corner),flat_shape)
-            # z_sort=np.argsort(kz_grid_centre_flat)
-
-            # # set up to assess which voxels are their own Hermitian conjugates
-            # flipped_x=np.searchsorted(kx_grid_centre_flat, -kx_grid_centre_flat, side="left")
-            # flipped_y=np.searchsorted(ky_grid_centre_flat, -ky_grid_centre_flat, side="left")
-            # flipped_z=np.searchsorted(kz_grid_centre_flat, -kz_grid_centre_flat, side="left")
-            # # flipped_x=np.searchsorted(kx_grid_centre_flat[x_sort], -kx_grid_centre_flat[x_sort], side="left")
-            # # flipped_y=np.searchsorted(ky_grid_centre_flat[y_sort], -ky_grid_centre_flat[y_sort], side="left")
-            # # flipped_z=np.searchsorted(kz_grid_centre_flat[z_sort], -kz_grid_centre_flat[z_sort], side="left")
-            # flipped_x[flipped_x==N_flat]=0 #  make safe for Hermetian
-            # flipped_y[flipped_y==N_flat]=0
-            # flipped_z[flipped_z==N_flat]=0 
-
-            # # do the comparison and adjust the statistics for voxels in this category
-            # mask=(kx_grid_centre_flat==kx_grid_centre_flat[np.ix_(flipped_x)])&(
-            #       ky_grid_centre_flat==ky_grid_centre_flat[np.ix_(flipped_y)])&(
-            #       kz_grid_centre_flat==kz_grid_centre_flat[np.ix_(flipped_z)])
-            # weights[np.ix_(mask)]=0.5 # not 2
-            # weights=np.reshape(weights,grid_shape,order="C")
+            weights=np.ones((self.Nvox,self.Nvox,self.Nvoxz))
             weights[:,:,int(self.Nvoxz//2)]=0.5
-            
-            # make sure it's highlighting the right things
-            fracs=[0,1/3,1/2,1]
-            fig,axs=plt.subplots(4,3,layout="constrained",figsize=(12,8))
-            for i,frac in enumerate(fracs):
-                xy_idx=int(frac*self.Nvox)
-                z_idx=int(frac*self.Nvoxz)
-                if frac==1:
-                    xy_idx-=1
-                    z_idx-=1
-                str_frac=str(frac)
-
-                axs[i,0].set_title(str_frac)
-                sl0=weights[xy_idx,:,:]
-                img=axs[i,0].imshow(sl0.T,origin="lower",norm=CenteredNorm(vcenter=1,halfrange=0.01))
-                plt.colorbar(img,ax=axs[i,0])
-                axs[i,0].set_xlabel("y")
-                axs[i,0].set_ylabel("z")
-
-                sl1=weights[:,xy_idx,:]
-                img=axs[i,1].imshow(sl1.T,origin="lower",norm=CenteredNorm(vcenter=1,halfrange=0.01))
-                plt.colorbar(img,ax=axs[i,1])
-                axs[i,1].set_xlabel("x")
-                axs[i,1].set_ylabel("z")
-
-                sl2=weights[:,:,z_idx]
-                img=axs[i,2].imshow(sl2.T,origin="lower",norm=CenteredNorm(vcenter=1,halfrange=0.01))
-                plt.colorbar(img,ax=axs[i,2])
-                axs[i,2].set_xlabel("x")
-                axs[i,2].set_ylabel("y")
-            plt.savefig("weights_mini_box.png", dpi=500)
-            plt.close()
-
-            print("np.sum(weights!=1):",np.sum(weights!=1))
             self.independent_modes=weights # additional factor in denom of power spec estimator: abs_T_tilde_2 / effective_volume / independent_modes
-
-            # Nxy2=int(self.Nvox//2)
-            # Nz2=int(self.Nvoxz//2)
-            # # T_tilde_at_coord_origin=T_tilde[Nxy2-1:Nxy2+2,
-            # #                                 Nxy2-1:Nxy2+2,
-            # #                                 Nz2- 1:Nz2+ 2]
-            # T_tilde_at_coord_origin=T_tilde[Nxy2,Nxy2,Nz2]
-            # print("T_tilde around k-coordinate origin:",T_tilde_at_coord_origin)
-            # mask=np.ones((self.Nvox,self.Nvox,self.Nvoxz),dtype="bool")
-            # mask[Nxy2,Nxy2,Nz2]=False
-            # T_tilde_except_for_origin=T_tilde[mask]
-            # T_tilde[Nxy2,Nxy2,Nz2]=np.mean(T_tilde_except_for_origin)
 
         modsq_T_tilde=np.abs(T_tilde)**2 *T_use.unit**2*self.d3r.unit**2
         P_unbinned=modsq_T_tilde/self.effective_volume/self.independent_modes # box-shaped, but calculated according to the power spectrum estimator equation
         self.P_unbinned=P_unbinned
-        # fracs=[0,1/3,1/2,1]
-        # for frac in fracs:
-        #     xy_idx=int(frac*self.Nvox)
-        #     z_idx=int(frac*self.Nvoxz)
-        #     if frac==1:
-        #         xy_idx-=1
-        #         z_idx-=1
-        #     str_frac=str(frac)
-
-        #     _,axs=plt.subplots(1,3)
-        #     sl0=T_use[xy_idx,:,:].value
-        #     im=axs[0].imshow(sl0)
-        #     plt.colorbar(im,ax=axs[0])
-        #     axs[0].set_title("x cut, mean=\n"+str(np.round(np.mean(sl0),2)))
-        #     sl1=T_use[:,xy_idx,:].value
-        #     im=axs[1].imshow(sl1)
-        #     plt.colorbar(im,ax=axs[1])
-        #     axs[1].set_title("y cut, mean=\n"+str(np.round(np.mean(sl1),2)))
-        #     sl2=T_use[:,:,z_idx].value
-        #     im=axs[2].imshow(sl2)
-        #     plt.colorbar(im,ax=axs[2])
-        #     axs[2].set_title("z cut, mean=\n"+str(np.round(np.mean(sl2),2)))
-        #     plt.suptitle(str_frac)
-        #     plt.savefig("T_use_"+str_frac+"_"+str(np.round(self.P_fid_box[0,0,0],2))+".png", dpi=500)
-        #     plt.close()
-
-        #     _,axs=plt.subplots(1,3)
-        #     sl0=P_unbinned[xy_idx,:,:].value
-        #     im=axs[0].imshow(sl0,norm=CenteredNorm(vcenter=1,halfrange=1))
-        #     plt.colorbar(im,ax=axs[0])
-        #     axs[0].set_title("x cut, mean=\n"+str(np.round(np.mean(sl0),2)))
-        #     sl1=P_unbinned[:,xy_idx,:].value
-        #     im=axs[1].imshow(sl1,norm=CenteredNorm(vcenter=1,halfrange=1))
-        #     plt.colorbar(im,ax=axs[1])
-        #     axs[1].set_title("y cut, mean=\n"+str(np.round(np.mean(sl1),2)))
-        #     sl2=P_unbinned[:,:,z_idx].value
-        #     im=axs[2].imshow(sl2,norm=CenteredNorm(vcenter=1,halfrange=1))
-        #     plt.colorbar(im,ax=axs[2])
-        #     axs[2].set_title("z cut, mean=\n"+str(np.round(np.mean(sl2),2)))
-        #     plt.suptitle(str_frac)
-        #     plt.savefig("P_unbinned_"+str_frac+"_"+str(np.round(self.P_fid_box[0,0,0],2))+".png", dpi=500)
-        #     plt.close()
         
         if self.bin_each_realization:
             self.bin_power()
@@ -1689,9 +1515,7 @@ class cosmo_stats(object):
         if power_to_bin is None:
             power_to_bin=self.P_unbinned
 
-        print("self.Nkpar=",self.Nkpar)
         if (self.Nkpar==0 or self.Nkpar is None):   # bin to sph
-            print("entering sph bin branch")
             unbinned_power_1d= np.reshape(power_to_bin,    (self.Nvox**2*self.Nvoxz,))
 
             sum_power= np.bincount(self.sph_bin_indices_1d_centre, 
@@ -1703,10 +1527,8 @@ class cosmo_stats(object):
             N_power_truncated=  N_power[:-1]         # idem ^
             final_shape=(self.Nkperp,)
         else: # bin to cyl
-            print("entering cyl bin branch")
             sum_power= np.zeros((self.Nkperp+1,self.Nkpar+1))*u.mK**2*u.Mpc**3 # for the ensemble avg: sum    of unbinned_power values in each bin  ...upon each access, update the kparBIN row of interest, but all Nkperp columns
             N_power=   np.zeros((self.Nkperp+1,self.Nkpar+1)) # for the ensemble avg: number of unbinned_power values in each bin
-            print("sum_power.shape=",sum_power.shape)
             for i in range(self.Nvoxz): # iterate over the kpar axis of the box to capture all LoS slices
                 if (i==0): # stats for the representative "bull's eye" slice transverse to the LoS
                     slice_bin_counts=np.bincount(self.perpbin_indices_slice_1d_centre, minlength=self.Nkperp+1)
@@ -1724,24 +1546,10 @@ class cosmo_stats(object):
             sum_power_truncated= sum_power[:-1,:-1] # all other bins are specified by their ceilings, but excise the catchall half-open bin at the upper end of the k-range (weird statistics out there / not like the other bins)
             N_power_truncated=   N_power[  :-1,:-1] # idem ^
             final_shape=(self.Nkperp,self.Nkpar)
-            print("sum_power_truncated.shape=",sum_power_truncated.shape)
-
-            plt.figure()
-            print("self.kparbins.shape,N_power_truncated[0,:].shape=",self.kparbins.shape,N_power_truncated[0,:].shape)
-            for i in range(self.Nkperp):
-                plt.scatter(self.kparbins, N_power_truncated[i,:], label=str(i))
-            plt.legend()
-            plt.xlabel("k-par bin index")
-            plt.ylabel("N voxels")
-            plt.savefig("bin_populations_cyl"+str(sum_power[0,0])+".png")
-            plt.close()
 
         N_power_truncated[N_power_truncated==0]=maxint # avoid division-by-zero errors during the division the estimator demands
         self.N_modes_per_bin=N_power_truncated
-        print("self.N_modes_per_bin.shape,self.N_cumul.shape=",self.N_modes_per_bin.shape,self.N_cumul.shape)
         self.N_cumul+=self.N_modes_per_bin
-
-        print("self.effective_volume/self.physical_volume, self.taper_xyz_corner=",self.effective_volume/self.physical_volume, self.taper_xyz_corner)
 
         avg_power=sum_power_truncated/N_power_truncated # actual estimator quotient
         P_binned=np.array(avg_power)
