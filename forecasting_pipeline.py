@@ -152,7 +152,6 @@ def wedge_kpar(nu_ctr,kperp,H0=H0,nu_rest=nu_HI_z0): # for some kperps of intere
     E=1/comoving_dist_arg(z)
     Dc=comoving_distance(z)
     prefac=(H0*Dc*E).decompose()/(c*(1+z))
-    print("prefac=",prefac)
     return prefac*kperp
 def PA_Gaussian(u,v,ctr,fwhm):
     u0,v0=ctr
@@ -1426,15 +1425,17 @@ class cosmo_stats(object):
         else:
             taper_xy=1.
         taper_xxx,taper_yyy,taper_zzz=np.meshgrid(taper_xy,taper_xy,taper_z, indexing=mg_indexing)
-        taper_xyz_corner=taper_xxx*taper_yyy*taper_zzz
-        self.taper_xyz_corner=taper_xyz_corner
-        self.taper_xyz_centre=fftshift(taper_xyz_corner)
+        taper_xyz_product=taper_xxx*taper_yyy*taper_zzz
+        self.taper_xyz_centre=taper_xyz_product # after 15:43 20/05/26
+        self.taper_xyz_corner=ifftshift(taper_xyz_product)
+        # self.taper_xyz_corner=taper_xyz_product # before 15:43 20/05/26
+        # self.taper_xyz_centre=fftshift(taper_xyz_product)
 
         # primary beam
         self.primary_beam_num=primary_beam_num
         self.primary_beam_aux_num=primary_beam_aux_num
         self.primary_beam_type_num=primary_beam_type_num
-        self.primary_beam_modes=primary_beam_modes # _fi and _co_fi_sy_xx assumed to be sampled at the same modes, if this is the case
+        self.primary_beam_modes=primary_beam_modes # fi and sy beams assumed to be sampled at the same modes, if these are passed
         if (self.primary_beam_num is not None): # non-identity FIDUCIAL primary beam
             if (self.primary_beam_type_num=="Gaussian" or self.primary_beam_type_num=="Airy"):
                 self.fwhm_x,self.fwhm_y,self.r0=self.primary_beam_aux_num
