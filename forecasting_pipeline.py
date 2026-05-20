@@ -71,9 +71,10 @@ maxint=   np.iinfo(np.int64  ).max
 BasicAiryHWHM=1.616339948310703178119139753683896309743121097215461023581 # intentionally preposterous number of sig figs from Mathematica
 eps=1e-15
 per_antenna_beta=14
-cosmo_stats_beta_perp=30 # 50/10*6=30
-cosmo_stats_beta_par=48 # 80/10*6=48
+cosmo_stats_beta_perp=1 # 50/10*6=30
+cosmo_stats_beta_par=5 # 80/10*6=48
 dpi_to_use=250
+mg_indexing="ij"
 
 # CHORD
 N_NS_full=24
@@ -94,9 +95,9 @@ N_fid_beam_types=1
 integration_s=10*u.s # seconds
 hrs_per_night=8*u.hr # borrowed from Debanjan / 21cmSense
 # N_nights=100 # also borrowed from Debanjan / 21cmSense
-N_nights=1 # maybe this will make the uv coverage array no longer require 2.61 TiB lol
+N_nights=1
 # def_N_timesteps=int(N_nights*hrs_per_night//integration_s)
-def_N_timesteps=1
+def_N_timesteps=1 # for local tests
 print("def_N_timesteps=",def_N_timesteps)
 
 # side calculations
@@ -678,7 +679,7 @@ class beam_effects(object):
         k = k_unique
 
         self.Psph=Psph_use
-        kperp_grid,kpar_grid=np.meshgrid(kperp_to_use,kpar_to_use,indexing="ij")
+        kperp_grid,kpar_grid=np.meshgrid(kperp_to_use,kpar_to_use, indexing=mg_indexing)
         kmag_grid=np.sqrt(kpar_grid**2+kperp_grid**2)
         Nkperp_use=len(kperp_to_use)
         Nkpar_use=len(kpar_to_use)
@@ -763,9 +764,35 @@ class beam_effects(object):
                 fg_box+=fg_box_ingredient
             self.fg_box=fg_box
 
+            fg_column=fg_box[3,7,:]
+            np.save("fg_column.npy",fg_column.value)
+
+            d3r_ph=1
+            effective_volume_ph=1
+            P_unbinned=np.abs( fftshift( np.fft.fft( ifftshift(
+                    fg_column)*d3r_ph ) ) )**2/effective_volume_ph # centre
+
+            fig,axs=plt.subplots(1,3,layout="constrained")
+            axs[0].plot(fg_column)
+            axs[0].set_title("FG LoS column")
+            axs[1].plot(P_unbinned)
+            axs[1].set_title("abs(fftshift(fft(\nifftshift(FG LoS \ncolumn))))**2")
+            axs[2].plot(P_unbinned) 
+            axs[2].set_title("inset of \nunnormalized \npower spec")
+            axs[2].set_ylim(-1e2,1e8) # ok for actual fg
+            axs[2].set_xlim(98,106)
+            # axs[2].set_ylim(-1e2,1e3) # ok for ones test
+            # axs[2].set_xlim(100,104)
+            for i in range(3):
+                axs[i].set_xlabel("LoS voxel index")
+                axs[i].set_ylabel("power (arbitrary units)")
+            plt.savefig("fg_column_inspect_in_pipeline.png")
+            plt.close()
+
             # bonus step: compute power spec to facilitate comparisons to power spectra with all the other cosmo + fidu beam + syst + fg ingredient permutations
             fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            T_pristine=fg_box,
+                           radial_taper=kaiser,
                            Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            frac_tol=self.frac_tol_conv,seed=self.seed)
             fg.power_Monte_Carlo()
@@ -1019,8 +1046,12 @@ class beam_effects(object):
 
             print("COSMO                         MC COMPLETE")
 
-        _,_,self.P_co_xx_xx_xx=self.unbin_to_Pcyl(self.pars_set_cosmo, kperp_to_use=self.kperp_for_cosmo, kpar_to_use=self.kpar_for_cosmo)# unbin_to_Pcyl(self,pars_to_use,kperp_to_use=None,kpar_to_use=None)
-        
+        _,_,P_co_xx_xx_xx=self.unbin_to_Pcyl(self.pars_set_cosmo, kperp_to_use=self.kperp_for_cosmo[:-1], kpar_to_use=self.kpar_for_cosmo[:-1])# unbin_to_Pcyl(self,pars_to_use,kperp_to_use=None,kpar_to_use=None)
+        print("P_co_xx_xx_xx.shape=",P_co_xx_xx_xx.shape)
+        self.P_co_xx_xx_xx=P_co_xx_xx_xx
+        # self.P_co_xx_xx_xx=P_co_xx_xx_xx[:-1,:-1]
+        print("self.P_co_xx_xx_xx.shape=",self.P_co_xx_xx_xx.shape)
+
         if isolated==False:
             self.Pcont_cyl=self.P_co_fi_sy_fg-self.P_co_fi_xx_fg
 
@@ -1084,8 +1115,7 @@ class beam_effects(object):
         kperp_from_21cmSense=sen.sense2d_kperp
         kpar_from_21cmSense=sen.sense2d_kpar
         thnoise_21cmSense=sen.sense2d_P
-        kperp_surv_grid,kpar_surv_grid=np.meshgrid(self.kperp_surv,self.kpar_surv,
-                                                   indexing="ij")
+        kperp_surv_grid,kpar_surv_grid=np.meshgrid(self.kperp_surv,self.kpar_surv, indexing=mg_indexing)
         thnoise_surv=RGI((kperp_from_21cmSense.value,kpar_from_21cmSense.value),thnoise_21cmSense,
                           bounds_error=False,fill_value=None)(np.array([kperp_surv_grid.value,kpar_surv_grid.value]).T).T
         self.thermal_noise=thnoise_surv
@@ -1171,7 +1201,7 @@ def repoint_beam(domain,beam,rot_angles=[0.,0.,0.,]):
     Ny=len(yvec)
     Nz=len(zvec)
     N=Nx*Ny*Nz
-    x_grid,y_grid,z_grid=np.meshgrid(xvec,yvec,zvec,indexing="ij")
+    x_grid,y_grid,z_grid=np.meshgrid(xvec,yvec,zvec, indexing=mg_indexing)
     x_flat=np.reshape(x_grid,(N,),order="C")
     y_flat=np.reshape(y_grid,(N,),order="C")
     z_flat=np.reshape(z_grid,(N,),order="C")
@@ -1292,8 +1322,7 @@ class cosmo_stats(object):
 
         self.xx_grid,self.yy_grid,self.zz_grid=np.meshgrid(self.xy_vec_for_box,
                                                            self.xy_vec_for_box,
-                                                           self.z_vec_for_box,
-                                                           indexing="ij")      # box-shaped Cartesian coords
+                                                           self.z_vec_for_box, indexing=mg_indexing)      # box-shaped Cartesian coords
         self.r_grid=np.sqrt(self.xx_grid**2+self.yy_grid**2+self.zz_grid**2)   # r magnitudes at each voxel
 
         # Fourier space
@@ -1302,25 +1331,17 @@ class cosmo_stats(object):
         self.d3k=self.Deltakxy**2*self.Deltakz                              # volume element / voxel volume
         self.kxy_vec_for_box_corner=twopi*fftfreq(self.Nvox,d=self.Deltaxy) # one Cartesian coordinate axis - non-fftshifted/ corner origin
         self.kz_vec_for_box_corner= twopi*fftfreq(self.Nvoxz,d=self.Deltaz)
-        # self.kx_grid_corner,self.ky_grid_corner,self.kz_grid_corner=np.meshgrid(self.kxy_vec_for_box_corner -0.5*self.Deltakxy,
-        #                                                                         self.kxy_vec_for_box_corner -0.5*self.Deltakxy,
-        #                                                                         self.kz_vec_for_box_corner  -0.5*self.Deltakz,
-        #                                                                         indexing="ij")               # box-shaped Cartesian coords
         self.kx_grid_corner,self.ky_grid_corner,self.kz_grid_corner=np.meshgrid(self.kxy_vec_for_box_corner,
                                                                                 self.kxy_vec_for_box_corner,
-                                                                                self.kz_vec_for_box_corner,
-                                                                                indexing="ij")               # box-shaped Cartesian coords
+                                                                                self.kz_vec_for_box_corner, indexing=mg_indexing)               # box-shaped Cartesian coords
         self.kmag_grid_corner= np.sqrt(self.kx_grid_corner**2+self.ky_grid_corner**2+self.kz_grid_corner**2) # k magnitudes for each voxel (need for the box generation direction)
         self.kmag_grid_centre=fftshift(self.kmag_grid_corner)
         self.kmag_grid_centre_flat=np.reshape(self.kmag_grid_centre,(self.Nvox**2*self.Nvoxz),order="C")
         self.kmag_grid_corner_flat=np.reshape(self.kmag_grid_corner,(self.Nvox**2*self.Nvoxz,),order="C")
                 
-        # ONLY FOR SCIPY!!!! need self.kmag_grid_centre_flat, self.kperpgrid3_flat, self.kpargrid3_flat
-        self.kmag_grid_centre_flat=np.reshape(self.kmag_grid_centre,(self.Nvox**2*self.Nvoxz,),order="C")
-        kperp_grid2_corner=np.sqrt(self.kx_grid_corner**2+self.ky_grid_corner**2)
         self.kpar_column_centre= np.abs(fftshift(self.kz_vec_for_box_corner))                                      # magnitudes of kpar for a representative column along the line of sight (z-like)
         self.kperp_slice_centre= np.sqrt(fftshift(self.kx_grid_corner)**2+fftshift(self.ky_grid_corner)**2)[:,:,0] # magnitudes of kperp for a representative slice transverse to the line of sight (x- and y-like)
-        kperpgrid3,kpargrid3=np.meshgrid(self.kperp_slice_centre,self.kpar_column_centre,indexing="ij")
+        kperpgrid3,kpargrid3=np.meshgrid(self.kperp_slice_centre,self.kpar_column_centre, indexing=mg_indexing)
         self.kperpgrid3_flat=np.reshape(kperpgrid3,(self.Nvox**2*self.Nvoxz,),order="C")
         self.kpargrid3_flat= np.reshape(kpargrid3, (self.Nvox**2*self.Nvoxz,),order="C")
 
@@ -1365,48 +1386,34 @@ class cosmo_stats(object):
         self.kmax_box_z=  pi/self.Deltaz
         self.kmin_box_xy= twopi/self.Lxy
         self.kmin_box_z=  twopi/self.Lz
-        kmin_box=2*np.max([self.kmin_box_xy.value,self.kmin_box_z.value])*self.kmax_box_xy.unit
-        kmax_box=np.max([self.kmax_box_xy.value,self.kmax_box_z.value])*self.kmax_box_xy.unit # ignore the voxels outside the sphere that is contained by the box's larger axis but probably exceeds its smaller axis
-
+        
         # voxel grids for cyl binning
         if (self.Nkpar is not None and self.Nkpar!=0):
-            kperpbins=np.linspace(2*self.kmin_box_xy,self.kmax_box_xy-self.Deltakxy, self.Nkperp+1)
+            kperpbins=np.linspace(0,self.kmax_box_xy, self.Nkperp+1)
             bw=kperpbins[1]-kperpbins[0]
-            self.kperpbins=kperpbins+0.5*bw
+            self.kperpbins=kperpbins +0.5*bw
             
-            kparbins=np.linspace(2*self.kmin_box_z,self.kmax_box_z-self.Deltakz, self.Nkpar+1)
+            kparbins=np.linspace(0,self.kmax_box_z-self.kmin_box_z, self.Nkpar+1)
             bw=kparbins[1]-kparbins[0]
-            self.kparbins=kparbins+0.5*bw
+            self.kparbins=kparbins +0.5*bw
             
-            self.kperpbins_grid,self.kparbins_grid=np.meshgrid(self.kperpbins,self.kparbins,indexing="ij")
-
-            # perpbin_indices_slice_centre=    np.digitize(self.kperp_slice_centre,self.kperpbins,right=True)          # cyl kperp bin that each voxel falls into
-            # self.perpbin_indices_slice_centre=perpbin_indices_slice_centre
-            # self.perpbin_indices_slice_1d_centre= np.reshape(self.perpbin_indices_slice_centre,(self.Nvox**2,))        # 1d version of ^ (compatible with np.bincount)
-            # parbin_indices_column_centre=    np.digitize(self.kpar_column_centre,self.kparbins,right=True)          # cyl kpar bin that each voxel falls into
-            # self.parbin_indices_column_centre=parbin_indices_column_centre
+            self.kperpbins_grid,self.kparbins_grid=np.meshgrid(self.kperpbins,self.kparbins, indexing=mg_indexing)
         
             self.bins_to_use=[self.kperpbins.value,self.kparbins.value]
             self.coords_to_use=[self.kperpgrid3_flat.value,self.kpargrid3_flat.value]
 
-        else: # call them perp bins for class reasons but they are just sph
-            # kperpbins=np.linspace(0,kmax_box, self.Nkperp+1, endpoint=True)
-            # kperpbins=np.linspace(2*kmin_box,kmax_box, self.Nkperp+1, endpoint=True)
-            kperpbins=np.linspace(2*kmin_box,kmax_box, self.Nkperp+1)
-            kperpbins=np.linspace(2*kmin_box,kmax_box-kmin_box, self.Nkperp+1)
+        else: # calling them perp bins for class reasons but they are just sph
+            kmax_box=np.max([self.kmax_box_xy.value,self.kmax_box_z.value])*self.kmax_box_xy.unit # ignore the voxels outside the sphere that is contained by the box's larger axis but probably exceeds its smaller axis
+            
+            kperpbins=np.linspace(0,kmax_box, self.Nkperp+1)
             bw=kperpbins[1]-kperpbins[0]
-            self.kperpbins=kperpbins+0.5*bw
-
-            # voxel grids for sph binning        
-            # self.sph_bin_indices_centre=      np.digitize(self.kmag_grid_centre,self.kperpbins,right=True)
-            # self.sph_bin_indices_1d_centre=   np.reshape(self.sph_bin_indices_centre, (self.Nvox**2*self.Nvoxz,))
+            self.kperpbins=kperpbins +0.5*bw
 
             self.kparbins=None
             self.Nkpar=0
 
             self.bins_to_use=[self.kperpbins.value]
             self.coords_to_use=self.kmag_grid_centre_flat.value
-        # print("self.bins_to_use.shape,self.coords_to_use.shape=",self.bins_to_use.shape,self.coords_to_use.shape)
             
         # tapering/apodization
         taper_xyz_corner=1.
@@ -1418,7 +1425,7 @@ class cosmo_stats(object):
             taper_xy=image_taper(self.Nvox,cosmo_stats_beta_perp)
         else:
             taper_xy=1.
-        taper_xxx,taper_yyy,taper_zzz=np.meshgrid(taper_xy,taper_xy,taper_z,indexing="ij")
+        taper_xxx,taper_yyy,taper_zzz=np.meshgrid(taper_xy,taper_xy,taper_z, indexing=mg_indexing)
         taper_xyz_corner=taper_xxx*taper_yyy*taper_zzz
         self.taper_xyz_corner=taper_xyz_corner
         self.taper_xyz_centre=fftshift(taper_xyz_corner)
@@ -1580,12 +1587,10 @@ class cosmo_stats(object):
         power_to_bin_flat=np.reshape(power_to_bin,(self.Nvox**2*self.Nvoxz,))
 
         P_binned=binned_statistic_dd(sample=self.coords_to_use, values=power_to_bin_flat,
-                                        bins=self.bins_to_use,
-                                        statistic="mean").statistic
+                                     bins=self.bins_to_use, statistic="mean").statistic
         
         N_cumul= binned_statistic_dd(sample=self.coords_to_use, values=power_to_bin_flat,
-                                        bins=self.bins_to_use,
-                                        statistic="count").statistic
+                                     bins=self.bins_to_use, statistic="count").statistic
 
         P_binned[np.isnan(P_binned)]=0.
         self.P_binned=P_binned
@@ -1606,6 +1611,7 @@ class cosmo_stats(object):
         
         assert(self.P_fid_box is not None)
         sigmas=np.sqrt(self.physical_volume*self.P_fid_box/2.) # from inverting the estimator equation and turning variances into std devs
+        sigmas[self.kmag_grid_corner==0.]=0. # enforce zero-mean. This point is self-conjugate anyway!!
         T_tilde_Re,T_tilde_Im=self.rng.normal(loc=0.*sigmas,scale=sigmas,size=np.insert(sigmas.shape,0,2))
         
         T_tilde=T_tilde_Re+1j*T_tilde_Im # have not yet applied the symmetry that ensures T is real-valued 
@@ -1614,8 +1620,8 @@ class cosmo_stats(object):
 
         if self.Nvoxz>1:
             T=fftshift(irfftn(T_tilde*self.d3k.value,
-                            s=(self.Nvox,self.Nvox,self.Nvoxz),
-                            axes=(0,1,2),norm="forward"))/(twopi)**3 # handle in one line: fftshiftedness, ensuring T is real-valued and box-shaped, enforcing the cosmology Fourier convention
+                              s=(self.Nvox,self.Nvox,self.Nvoxz),
+                              axes=(0,1,2),norm="forward"))/(twopi)**3 # handle in one line: fftshiftedness, ensuring T is real-valued and box-shaped, enforcing the cosmology Fourier convention
         else:
             T=fftshift(irfftn(T_tilde*self.Deltakxy**2,
                               s=((self.Nvox,self.Nvox)),
@@ -2033,7 +2039,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         uvbins=np.linspace(-uvmagmax,uvmagmax,Npix)
         d2u=uvbins[1]-uvbins[0]
         self.d2u=d2u
-        uubins,vvbins=np.meshgrid(uvbins,uvbins,indexing="ij")
+        uubins,vvbins=np.meshgrid(uvbins,uvbins, indexing=mg_indexing)
         uvplane=np.zeros((Npix,Npix),dtype="complex128") # 0.*uubins
         uvbins_use=np.append(uvbins,uvbins[-1]+uvbins[1]-uvbins[0])
         pad_lo,pad_hi=get_padding(Npix)
@@ -2104,7 +2110,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
             raise ValueError("survey out of bounds")
         N_grid_pix=self.N_grid_pix
         kaiser_1d=kaiser(N_grid_pix,per_antenna_beta)
-        kaiser_x,kaiser_y=np.meshgrid(kaiser_1d,kaiser_1d,indexing="ij")
+        kaiser_x,kaiser_y=np.meshgrid(kaiser_1d,kaiser_1d, indexing=mg_indexing)
         self.kaiser_grid=np.sqrt(kaiser_x**2+kaiser_y**2)
 
         box_uvz=np.zeros((N_grid_pix,N_grid_pix,self.N_chan),dtype="complex128")
@@ -2213,8 +2219,7 @@ class reconfigure_CST_beam(object):
         self.xy_for_box=xy_for_box
         np.save("xy_vec_for_box"+box_outname,xy_for_box.value)
         self.Nxy=Nxy
-        self.xx_grid,self.yy_grid=np.meshgrid(self.xy_for_unwrapping,self.xy_for_unwrapping,
-                                              indexing="ij") # config space points of interest for the slice (guided by the transverse extent of the eventual config-space box)
+        self.xx_grid,self.yy_grid=np.meshgrid(self.xy_for_unwrapping,self.xy_for_unwrapping, indexing=mg_indexing) # config space points of interest for the slice (guided by the transverse extent of the eventual config-space box)
         freq_names=np.zeros(Nfreqs,dtype="U6") # store the GHz CST frequencies as strings of the format that Aditya's sims use
         for i,freq in enumerate(self.freqs):
             freq_name=f"{freq:.4f}" # round to four decimal places and convert to string
@@ -2391,7 +2396,7 @@ class CHORD_sense(object): # modified from a notebook helpfully shared by Debanj
             y = y*ys 
         
             z = np.zeros(n_total)
-            xv, yv = np.meshgrid(x,y)
+            xv, yv = np.meshgrid(x,y, indexing=mg_indexing)
             xy = np.hstack((xv.reshape(-1,1),yv.reshape(-1,1)))
 
         if len(xy) != n_total:
@@ -2451,7 +2456,7 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
     k_perp=k_perp.to(1/u.Mpc)
     k_par=k_par.to(1/u.Mpc)
     cyl_extent=[k_perp[0].value,k_perp[-1].value,k_par[0].value,k_par[-1].value]
-    k_perp_grid,k_par_grid=np.meshgrid(k_perp,k_par,indexing="ij")*k_par.unit
+    k_perp_grid,k_par_grid=np.meshgrid(k_perp,k_par, indexing=mg_indexing)*k_par.unit
     k_mag_grid=np.sqrt(k_perp_grid**2+k_par_grid**2)
     values_of_k=np.zeros((N_spectra,2))
 
@@ -2492,7 +2497,6 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
             if norm_ext is None:
                 norm_ext=half_middle # branch for absolute quantities: 
             # norm=CenteredNorm(vcenter=norm_mid,halfrange=norm_ext)
-            print("0.5th, 99.5th pctls:",np.percentile(ensemble_of_spectra_de_dimensionalized,0.5),pct995)
             pct005safe=np.percentile(ensemble_of_spectra_de_dimensionalized,0.5)
             if pct005safe<0:
                 pct005safe=1e-6
@@ -2945,7 +2949,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         Pratio=    P_xx_fi_sy_fg/P_co_xx_xx_xx
         Pisoratio= P_xx_fi_xx_fg/P_co_xx_xx_xx
 
-        k_perp_grid,k_par_grid=np.meshgrid(kperp_internal,kpar_internal,indexing="ij")
+        k_perp_grid,k_par_grid=np.meshgrid(kperp_internal,kpar_internal, indexing=mg_indexing)
         k_mag_grid=np.sqrt(k_perp_grid**2+k_par_grid**2)
 
         power_quantities_this_complexity=np.array([P_xx_fi_sy_fg.value, P_co_fi_xx_fg.value, P_co_fi_sy_fg.value, Presidual.value,     Pratio,        
@@ -2953,7 +2957,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                                    P_co_xx_xx_fg.value, P_xx_fi_xx_xx.value, P_xx_fi_sy_xx.value, P_xx_fi_xx_fg.value, P_CO_XX_XX_XX.value]) # N_pspec_types x Nkperp x Nkpar
         power_quantities_all.append(power_quantities_this_complexity) # N_complexity_cases x N_pspec_types x Nkperp x Nkpar
         
-        Delta2_quantities_this_complexity=[P_qty[:-1,:-1]*k_mag_grid**3/(2*pi**2) for P_qty in power_quantities_this_complexity]
+        # Delta2_quantities_this_complexity=[P_qty[:-1,:-1]*k_mag_grid**3/(2*pi**2) for P_qty in power_quantities_this_complexity]
+        Delta2_quantities_this_complexity=[P_qty*k_mag_grid**3/(2*pi**2) for P_qty in power_quantities_this_complexity]
         Delta2_quantities_all.append(Delta2_quantities_this_complexity)
         t01=time.time()
         print("handled complexity case",complexity_id_i,"in",t01-t00,"s")
