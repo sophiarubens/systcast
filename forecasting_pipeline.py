@@ -713,7 +713,7 @@ class beam_effects(object):
 
         # generate a slice from the flat temp spec
         fg.generate_GRF()
-        white_noise_slice=fg.T_pristine[:,:,0] # it is Nxy x Nxy x 1, but a truly 2D array is easier to handle during the remaining FG ingredient steps
+        white_noise_slice=fg.T_pristine 
         
         # apply LoS power law renormalization to each slice  
         freqs_in_ref_unit=self.freqs_for_fg.to(nuref.unit)   
@@ -1342,10 +1342,7 @@ class cosmo_stats(object):
         self.kmag_grid_centre=fftshift(self.kmag_grid_corner)
         self.kmag_grid_centre_flat=np.reshape(self.kmag_grid_centre,(self.Nvox**2*self.Nvoxz),order="C")
         self.kmag_grid_corner_flat=np.reshape(self.kmag_grid_corner,(self.Nvox**2*self.Nvoxz,),order="C")
-
-        # self.kx_grid_corner_negated=np.nonzero()
-        # self.ky_grid_corner_negated=
-        # self.kz_grid_corner_negated=
+        self.kmag_grid_for_comparison= self.kmag_grid_corner if self.Nvoxz>1 else self.kmag_grid_corner[:,:,0]
               
         self.kpar_column_centre= np.abs(fftshift(self.kz_vec_for_box_corner))                                      # magnitudes of kpar for a representative column along the line of sight (z-like)
         self.kperp_slice_centre= np.sqrt(fftshift(self.kx_grid_corner)**2+fftshift(self.ky_grid_corner)**2)[:,:,0] # magnitudes of kperp for a representative slice transverse to the line of sight (x- and y-like)
@@ -1601,8 +1598,6 @@ class cosmo_stats(object):
         self.P_binned=P_binned
         N_cumul[np.isnan(N_cumul)]=0.
         self.N_cumul=N_cumul
-
-        self.P_binned=P_binned
     
     def generate_GRF(self): # Gaussian random field realization consistent with a power spectrum of choice
         assert self.Nkperp<self.Nvox, "Nvox should be >= Nkperp"
@@ -1615,9 +1610,10 @@ class cosmo_stats(object):
         
         assert(self.P_fid_box is not None)
         sigmas=np.sqrt(self.physical_volume*self.P_fid_box/2.) # from inverting the estimator equation and turning variances into std devs
-        sigmas[:,:,0]*=np.sqrt(2) # scipy irfftn puts all the variance into the real component of the half-axis slice of the last axis it transforms in the box. I need to anticipate this by giving those voxels' real components all the variance! (Nothing will be overcounted because the imag part is thrown away)
+        zero_on_the_last_axis=tuple(slice(0,l) for l in self.box_shape[:-1]) + (slice(0,1),)
+        sigmas[zero_on_the_last_axis]*=np.sqrt(2) # scipy irfftn puts all the variance into the real component of the half-axis slice of the last axis it transforms in the box. I need to anticipate this by giving those voxels' real components all the variance! (Nothing will be overcounted because the imag part is thrown away)
         
-        sigmas[self.kmag_grid_corner==0.]=0. # enforce zero-mean. This point is self-conjugate anyway!!
+        sigmas[self.kmag_grid_for_comparison==0.]=0. # enforce zero-mean. This point is self-conjugate anyway!!
         T_tilde_Re,T_tilde_Im=self.rng.normal(loc=0.*sigmas,scale=sigmas,size=np.insert(sigmas.shape,0,2))
         T_tilde=T_tilde_Re+1j*T_tilde_Im # have not yet applied the symmetry that ensures T is real-valued 
         if self.wedge_cut:
