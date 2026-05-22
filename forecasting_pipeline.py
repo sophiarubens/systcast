@@ -4,7 +4,7 @@ from matplotlib import pyplot as plt
 from matplotlib import gridspec
 from matplotlib.colors import CenteredNorm,TwoSlopeNorm,LogNorm
 
-from scipy.fft import fftshift,ifftshift,fftfreq, fftn, irfftn, set_workers
+from scipy.fft import fftshift,ifftshift,fftfreq, fftn, irfftn, set_workers, ifftn, ihfftn, rfftn
 from scipy.integrate import quad
 from scipy.interpolate import RectBivariateSpline as RBS
 from scipy.interpolate import RegularGridInterpolator as RGI
@@ -21,6 +21,7 @@ from astropy import constants as const
 from astropy.units import Quantity
 from astropy import units as u
 from py21cmsense import GaussianBeam, Observatory, Observation, PowerSpectrum
+from uvtools.dspec import gen_window
 
 import cmasher
 import inspect
@@ -160,6 +161,27 @@ def PA_Gaussian(u,v,ctr,fwhm):
     return evaled
 def calc_b_HI(z):
     return 1.489 +0.460*(z-1) -0.118*(z-1)**2 +0.0678*(z-1)**3 -0.0128*(z-1)**4 +0.0009*(z-1)**5 # https://arxiv.org/abs/1804.09180 # Villaescusa-Navarro 2018. Widely accepted, but CHIME disagrees. CHIME is just one data point, but CHORD will probably be doing early science at similarly nonlinear scales
+def Blackman_Harris_safe_for_FFT(N):
+    a0,a1,a2,a3=0.35875,0.48829,0.14128,0.01168 # from the MATLAB (!) docs https://www.mathworks.com/help/signal/ref/blackmanharris.html
+    # n=np.arange(N)
+    n=N*fftfreq(N)
+    # odd=N%2
+    # if odd:
+    #     w= a0 \
+    #       -a1*np.cos(twopi*n/(N-1)) \
+    #       +a2*np.cos(4.*pi*n/(N-1)) \
+    #       -a3*np.cos(6.*pi*n/(N-1))
+    # else:
+    #     w= a0 \
+    #       -a1*np.cos(twopi*n/N) \
+    #       +a2*np.cos(4.*pi*n/N) \
+    #       -a3*np.cos(6.*pi*n/N)
+    w= a0 \
+        -a1*np.cos(twopi*n/N) \
+        +a2*np.cos(4.*pi*n/N) \
+        -a3*np.cos(6.*pi*n/N)
+    # w=np.flip(w) # is there an off-by-one-voxel periodicity error for the even case?
+    return w
 
 # main computations
 """
@@ -767,9 +789,9 @@ class beam_effects(object):
             np.save("fg_column.npy",fg_column.value)
 
             d3r_ph=1
-            effective_volume_ph=1
+            eff_vol_ph=1
             P_unbinned=np.abs( fftshift( np.fft.fft( ifftshift(
-                    fg_column)*d3r_ph ) ) )**2/effective_volume_ph # centre
+                    fg_column)*d3r_ph ) ) )**2/eff_vol_ph # centre
 
             fig,axs=plt.subplots(1,3,layout="constrained")
             axs[0].plot(fg_column)
@@ -841,7 +863,6 @@ class beam_effects(object):
             # self.P_xx_xx_xx_fg=fg.P_binned*u.Mpc**3*u.mK**2 # usually single-realization power is not the quantity of interest, so I haven't astropy-ified it, because I'd just have to take .value for the ensemble average anyway, so, for consistency, I have to layer units here manually.
             print("                           fg MC complete")
 
-        print("\n>>>>>>>>>>>>>>>>>>self.Nvox_box_xy,self.Nvox_box_z=",self.Nvox_box_xy,self.Nvox_box_z,"\n")
         co_fi_xx_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                        P_fid=P_cosmo,k_fid=self.ksph, 
                        Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
@@ -1046,10 +1067,7 @@ class beam_effects(object):
             print("COSMO                         MC COMPLETE")
 
         _,_,P_co_xx_xx_xx=self.unbin_to_Pcyl(self.pars_set_cosmo, kperp_to_use=self.kperp_for_cosmo[:-1], kpar_to_use=self.kpar_for_cosmo[:-1])# unbin_to_Pcyl(self,pars_to_use,kperp_to_use=None,kpar_to_use=None)
-        print("P_co_xx_xx_xx.shape=",P_co_xx_xx_xx.shape)
         self.P_co_xx_xx_xx=P_co_xx_xx_xx
-        # self.P_co_xx_xx_xx=P_co_xx_xx_xx[:-1,:-1]
-        print("self.P_co_xx_xx_xx.shape=",self.P_co_xx_xx_xx.shape)
 
         if isolated==False:
             self.Pcont_cyl=self.P_co_fi_sy_fg-self.P_co_fi_xx_fg
@@ -1313,6 +1331,7 @@ class cosmo_stats(object):
                     raise ValueError("unsupported binning mode")
         
         # config space
+        self.box_shape=(self.Nvox,self.Nvox,self.Nvoxz) if self.Nvoxz>1 else (self.Nvox,self.Nvox)
         self.Deltaxy=self.Lxy/self.Nvox                           # sky plane: voxel side length
         self.xy_vec_for_box=self.Lxy*fftshift(fftfreq(self.Nvox)) # sky plane Cartesian config space coordinate axis
         self.Deltaz= self.Lz/self.Nvoxz                           # line of sight voxel side length
@@ -1321,8 +1340,7 @@ class cosmo_stats(object):
 
         self.xx_grid,self.yy_grid,self.zz_grid=np.meshgrid(self.xy_vec_for_box,
                                                            self.xy_vec_for_box,
-                                                           self.z_vec_for_box, indexing=mg_indexing)      # box-shaped Cartesian coords
-        self.r_grid=np.sqrt(self.xx_grid**2+self.yy_grid**2+self.zz_grid**2)   # r magnitudes at each voxel
+                                                           self.z_vec_for_box, indexing=mg_indexing)      # box-shaped Cartesian coords CENTRE-ORIGIN
 
         # Fourier space
         self.Deltakxy=twopi/self.Lxy                                        # voxel side length
@@ -1337,7 +1355,11 @@ class cosmo_stats(object):
         self.kmag_grid_centre=fftshift(self.kmag_grid_corner)
         self.kmag_grid_centre_flat=np.reshape(self.kmag_grid_centre,(self.Nvox**2*self.Nvoxz),order="C")
         self.kmag_grid_corner_flat=np.reshape(self.kmag_grid_corner,(self.Nvox**2*self.Nvoxz,),order="C")
-                
+
+        # self.kx_grid_corner_negated=np.nonzero()
+        # self.ky_grid_corner_negated=
+        # self.kz_grid_corner_negated=
+              
         self.kpar_column_centre= np.abs(fftshift(self.kz_vec_for_box_corner))                                      # magnitudes of kpar for a representative column along the line of sight (z-like)
         self.kperp_slice_centre= np.sqrt(fftshift(self.kx_grid_corner)**2+fftshift(self.ky_grid_corner)**2)[:,:,0] # magnitudes of kperp for a representative slice transverse to the line of sight (x- and y-like)
         kperpgrid3,kpargrid3=np.meshgrid(self.kperp_slice_centre,self.kpar_column_centre, indexing=mg_indexing)
@@ -1415,21 +1437,63 @@ class cosmo_stats(object):
             self.coords_to_use=self.kmag_grid_centre_flat.value
             
         # tapering/apodization
-        taper_xyz_corner=1.
+        taper_xy=np.ones(self.Nvox)
+        taper_z=np.ones(self.Nvoxz)
+
+        ##### V4 #####
+        ##############
         if radial_taper is not None:
-            taper_z=radial_taper(self.Nvoxz,cosmo_stats_beta_par)
-        else:
-            taper_z=1.
+            taper_z= Blackman_Harris_safe_for_FFT(Nvoxz) # confirmed to be centre-, not corner-origin
         if image_taper is not None:
-            taper_xy=image_taper(self.Nvox,cosmo_stats_beta_perp)
-        else:
-            taper_xy=1.
-        taper_xxx,taper_yyy,taper_zzz=np.meshgrid(taper_xy,taper_xy,taper_z, indexing=mg_indexing)
+            taper_xy=Blackman_Harris_safe_for_FFT(Nvox)
+        ##############
+
+        # ##### V3 #####
+        # ##############
+        # if radial_taper is not None:
+        #     taper_z=radial_taper(Nvoxz,cosmo_stats_beta_par,sym=False)
+        #     # taper_z=np.insert(taper_z,-1,0)
+        #     # taper_z=np.insert(taper_z, 0,0)
+        # if image_taper is not None:
+        #     taper_xy=image_taper(Nvox,cosmo_stats_beta_perp,sym=False)
+        #     # taper_xy=np.insert(taper_xy,-1,0)
+        #     # taper_xy=np.insert(taper_xy, 0,0)
+        # ##############
+
+        # ##### NEW #####
+        # ###############
+        # if radial_taper is not None:
+        #     taper_z=gen_window("blackmanharris",Nvoxz,edgecut_low=1, edgecut_hi=1)
+        # if image_taper is not None:
+        #     taper_xy=gen_window("blackmanharris",Nvox,edgecut_low=1, edgecut_hi=1)
+        # ###############
+
+        # ##### OLD #####
+        # ###############
+        # truncz=self.Nvoxz
+        # truncxy=self.Nvox
+        # Nxy_apodization=self.Nvox
+        # Nz_apodization=self.Nvoxz
+        # if radial_taper is not None:
+        #     if self.Nvoxz%2==0:
+        #         Nz_apodization=self.Nvoxz+1
+        #         truncz=-1
+        #     taper_z=radial_taper(Nz_apodization,cosmo_stats_beta_par)[:truncz]
+        #     print("taper_z[self.Nvoxz//2-1:self.Nvoxz//2+2]=",taper_z[self.Nvoxz//2-1:self.Nvoxz//2+2])
+        #     print("taper_z[0],taper_z[-1]=",taper_z[0],taper_z[-1])
+        #     # taper_z=radial_taper(Nz_apodization,cosmo_stats_beta_par)[-truncz:]
+        # if image_taper is not None:
+        #     if self.Nvox%2==0:
+        #         Nxy_apodization=self.Nvox+1
+        #         truncxy=-1
+        #     taper_xy=image_taper(Nxy_apodization,cosmo_stats_beta_perp)[:truncxy]
+        # ###############
+        
+        taper_xxx,taper_yyy,taper_zzz=np.meshgrid(taper_xy,taper_xy,taper_z, indexing="ij")
         taper_xyz_product=taper_xxx*taper_yyy*taper_zzz
-        self.taper_xyz_centre=taper_xyz_product # after 15:43 20/05/26
+        # taper_xyz_product[Nvox//2,Nvox//2,Nvoxz//2]=0. # shouldn't be necessary. just a silly experiment.
+        self.taper_xyz_centre=taper_xyz_product
         self.taper_xyz_corner=ifftshift(taper_xyz_product)
-        # self.taper_xyz_corner=taper_xyz_product # before 15:43 20/05/26
-        # self.taper_xyz_centre=fftshift(taper_xyz_product)
 
         # primary beam
         self.primary_beam_num=primary_beam_num
@@ -1512,13 +1576,12 @@ class cosmo_stats(object):
         else:                               # identity primary beam
             evaled_primary_num=1.
             evaled_primary_den=1.
-            evaled_primary_use_for_eff_vol=np.ones((self.Nvox,self.Nvox,self.Nvoxz))
+            evaled_primary_use_for_eff_vol=np.ones(self.box_shape)
         self.evaled_primary_den=evaled_primary_den
         self.evaled_primary_num=evaled_primary_num
 
         self.effective_volume=np.sum((evaled_primary_use_for_eff_vol*self.taper_xyz_centre)**2*self.d3r)
         assert self.effective_volume>0
-        self.independent_modes=None
         
         if (self.T_pristine is not None):
             self.T_primary=self.T_pristine*self.evaled_primary_num
@@ -1532,7 +1595,7 @@ class cosmo_stats(object):
         self.kparbins_interp=kparbins_interp
 
         # realization, averaging, and interpolation placeholders if no prior info
-        self.P_unbinned_running_sum=np.zeros((self.Nvox,self.Nvox,self.Nvoxz))*u.mK**2*u.Mpc**3
+        self.P_unbinned_running_sum=np.zeros(self.box_shape)*u.mK**2*u.Mpc**3
         self.P_MC_complete=P_MC_complete
         self.P_interp=None
         self.MC_not_complete=None
@@ -1549,7 +1612,7 @@ class cosmo_stats(object):
         interpolator=RGI((self.k_fid.value,),self.P_fid.value,method="cubic",
                           bounds_error=False,fill_value=None)
         P_fid_flattened_box[sort_array]=interpolator(kmag_grid_corner_flat_sorted.value[:,None])
-        P_fid_box=np.reshape(P_fid_flattened_box,(self.Nvox,self.Nvox,self.Nvoxz),order="C")
+        P_fid_box=np.reshape(P_fid_flattened_box,self.box_shape,order="C")
         P_fid_box[P_fid_box<0]=0.
         P_fid_box[np.isnan(P_fid_box)]=0.
         self.P_fid_box=P_fid_box
@@ -1564,10 +1627,16 @@ class cosmo_stats(object):
             T_use=self.T_pristine
         assert(T_use.unit==u.mK)
         
-        T_tilde=fftshift( fftn( ifftshift(T_use.value)*self.taper_xyz_corner*self.d3r ) )
-        
+        T_tilde=fftshift( fftn( ifftshift(T_use.value*self.taper_xyz_centre)*self.d3r,
+                                s=self.box_shape, axes=(0,1,2), norm="backward"        ) ) # s=self.box_shape, 
         modsq_T_tilde=np.abs(T_tilde)**2 *T_use.unit**2*self.d3r.unit**2
         P_unbinned=modsq_T_tilde/self.effective_volume # box-shaped, but calculated according to the power spectrum estimator equation
+
+        
+        # P_unbinned[:,:,int(self.Nvoxz//2)]*=2
+        # if self.Nvoxz%2==0:
+        #     P_unbinned[:,:,0]*=2
+
         self.P_unbinned=P_unbinned
         
         if self.bin_each_realization:
@@ -1601,7 +1670,6 @@ class cosmo_stats(object):
         self.P_binned=P_binned
     
     def generate_GRF(self): # Gaussian random field realization consistent with a power spectrum of choice
-
         assert self.Nkperp<self.Nvox, "Nvox should be >= Nkperp"
         assert self.Nkpar<self.Nvoxz, "Nvoxz should be >= Nkpar"
         if (self.P_fid is None):
@@ -1612,20 +1680,22 @@ class cosmo_stats(object):
         
         assert(self.P_fid_box is not None)
         sigmas=np.sqrt(self.physical_volume*self.P_fid_box/2.) # from inverting the estimator equation and turning variances into std devs
+        sigmas[:,:,0]*=np.sqrt(2) # scipy irfftn puts all the variance into the real component of the half-axis slice of the last axis it transforms in the box. I need to anticipate this by giving those voxels' real components all the variance! (Nothing will be overcounted because the imag part is thrown away)
         sigmas[self.kmag_grid_corner==0.]=0. # enforce zero-mean. This point is self-conjugate anyway!!
         T_tilde_Re,T_tilde_Im=self.rng.normal(loc=0.*sigmas,scale=sigmas,size=np.insert(sigmas.shape,0,2))
-        
         T_tilde=T_tilde_Re+1j*T_tilde_Im # have not yet applied the symmetry that ensures T is real-valued 
         if self.wedge_cut:
             T_tilde[self.voxels_in_wedge_corner]=0.
 
         if self.Nvoxz>1:
+            # imprints halfway-along-final-transformed-axis 0.5x artifact
             T=fftshift(irfftn(T_tilde*self.d3k.value,
-                              s=(self.Nvox,self.Nvox,self.Nvoxz),
+                              s=self.box_shape,
                               axes=(0,1,2),norm="forward"))/(twopi)**3 # handle in one line: fftshiftedness, ensuring T is real-valued and box-shaped, enforcing the cosmology Fourier convention
+        
         else:
             T=fftshift(irfftn(T_tilde*self.Deltakxy**2,
-                              s=((self.Nvox,self.Nvox)),
+                              s=self.box_shape,
                               axes=(0,1),norm="forward"))/(twopi)**2
 
         T*=u.mK
@@ -1659,11 +1729,46 @@ class cosmo_stats(object):
         self.P_unbinned_MC_complete=P_unbinned_MC_complete
         self.bin_power(power_to_bin=P_unbinned_MC_complete)
         P_binned_MC_complete=self.P_binned
+        self.P_binned_MC_complete=P_binned_MC_complete*self.P_unbinned_running_sum.unit
 
-        if (self.Nkpar>0):
-            self.P_binned_MC_complete=np.reshape(P_binned_MC_complete,(self.Nkperp,self.Nkpar),order="C")*self.P_unbinned_running_sum.unit
-        else:
-            self.P_binned_MC_complete=np.reshape(P_binned_MC_complete,(self.Nkperp,),order="C")*self.P_unbinned_running_sum.unit
+        fracs=[0,1e-5,1/3,1/2,1]
+        Pnorm=CenteredNorm(vcenter=1.)
+        fig,axs=plt.subplots(len(fracs),3,layout="constrained",figsize=(8,15))
+        axs[0,0].set_title("x index 0/"+str(self.Nvox-1))
+        axs[0,1].set_title("y index 0/"+str(self.Nvox-1))
+        axs[0,2].set_title("z index 0/"+str(self.Nvoxz -1)+"\nslice std="+str(np.round(np.std(P_unbinned_MC_complete.value[:,:,0]),3)))
+        for i,frac in enumerate(fracs):
+            xy_idx=int(frac*self.Nvox)
+            z_idx=int(frac*self.Nvoxz)
+            if frac==1:
+                xy_idx-=1
+                z_idx-=1
+            elif frac==1e-5:
+                xy_idx=1
+                z_idx=1
+            if i>0:
+                axs[i,0].set_title(str(xy_idx)+"/"+str(self.Nvox-1))
+                axs[i,1].set_title(str(xy_idx)+"/"+str(self.Nvox-1))
+                axs[i,2].set_title(str(z_idx )+"/"+str(self.Nvoxz -1)+"\nslice std="+str(np.round(np.std(P_unbinned_MC_complete[:,:,z_idx]),3)))
+
+            sl0=P_unbinned_MC_complete[xy_idx,:,:].value
+            img=axs[i,0].imshow(sl0.T,origin="lower",norm=Pnorm)
+            plt.colorbar(img,ax=axs[i,0])
+            axs[i,0].set_xlabel("ky")
+            axs[i,0].set_ylabel("kz")
+
+            sl1=P_unbinned_MC_complete[:,xy_idx,:].value
+            img=axs[i,1].imshow(sl1.T,origin="lower",norm=Pnorm)
+            plt.colorbar(img,ax=axs[i,1])
+            axs[i,1].set_xlabel("kx")
+            axs[i,1].set_ylabel("kz")
+
+            sl2=P_unbinned_MC_complete[:,:,z_idx].value
+            img=axs[i,2].imshow(sl2.T,origin="lower",norm=Pnorm)
+            plt.colorbar(img,ax=axs[i,2])
+            axs[i,2].set_xlabel("kx")
+            axs[i,2].set_ylabel("ky")
+        plt.savefig("P_unbinned.png", dpi=500)
 
         self.N_per_realization=self.N_cumul/self.N_realizations
 
