@@ -123,7 +123,7 @@ def comoving_distance(z=0.5,H0=H0,Omegam=Omegam,OmegaLambda=OmegaLambda):
 
 # typical trivial conversions
 def freq2z(nu_rest,nu_obs):
-    assert(nu_rest.unit==nu_obs.unit)
+    nu_obs=nu_obs.to(nu_rest.unit)
     return nu_rest.value/nu_obs.value-1.
 def z2freq(nu_rest=600.*u.MHz,z=nu_HI_z0/(600*u.MHz)-1.):
     return nu_rest/(z+1)
@@ -384,7 +384,7 @@ class beam_effects(object):
             self.primary_beam_modes=primary_beam_modes
             self.primary_fidu=fidu_box
 
-            assert(type(pointing_errors[0]==float)), "multiple pointing errors not yet supported in Gaussian beam mode"
+            assert(type(pointing_errors[0]==float)), "multiple pointing errors not supported in Gaussian beam mode. Use PA or PA-CST mode instead!"
             if pointing_errors!=[0.,0.,0.]: # mathematically nothing wrong with applying a 0º-in-every-direction rotation, but it's a waste of compute. definitely still wasting compute here constructing the same rotation matrix twice, but I'll sort that out later. 
                 syst_box=repoint_beam(primary_beam_modes,syst_box,pointing_errors)
 
@@ -728,16 +728,8 @@ class beam_effects(object):
             fg_slice=white_noise_slice*power_law_factor
             fg_box_this_ingredient[:,:,i]=fg_slice
 
-        plt.figure()
-        plt.plot(power_law_factor_means)
-        plt.xlabel("z voxel index")
-        plt.ylabel("mean power law factor")
-        plt.title("fg construction inspection")
-        plt.savefig("pwr_law_factor_means.png")
-        plt.close()
         fg_box_this_ingredient*=Tref.unit
         fg_box_this_ingredient=fg_box_this_ingredient.to(u.mK)
-        # assert 1==0, "foregrounds still broken"
 
         return fg_box_this_ingredient
 
@@ -772,31 +764,6 @@ class beam_effects(object):
                 fg_box+=fg_box_ingredient
             self.fg_box=fg_box
 
-            fg_column=fg_box[3,7,:]
-            np.save("fg_column.npy",fg_column.value)
-
-            d3r_ph=1
-            eff_vol_ph=1
-            P_unbinned=np.abs( fftshift( np.fft.fft( ifftshift(
-                    fg_column)*d3r_ph ) ) )**2/eff_vol_ph # centre
-
-            fig,axs=plt.subplots(1,3,layout="constrained")
-            axs[0].plot(fg_column)
-            axs[0].set_title("FG LoS column")
-            axs[1].plot(P_unbinned)
-            axs[1].set_title("abs(fftshift(fft(\nifftshift(FG LoS \ncolumn))))**2")
-            axs[2].plot(P_unbinned) 
-            axs[2].set_title("inset of \nunnormalized \npower spec")
-            axs[2].set_ylim(-1e2,1e8) # ok for actual fg
-            axs[2].set_xlim(98,106)
-            # axs[2].set_ylim(-1e2,1e3) # ok for ones test
-            # axs[2].set_xlim(100,104)
-            for i in range(3):
-                axs[i].set_xlabel("LoS voxel index")
-                axs[i].set_ylabel("power (arbitrary units)")
-            plt.savefig("fg_column_inspect_in_pipeline.png")
-            plt.close()
-
             # bonus step: compute power spec to facilitate comparisons to power spectra with all the other cosmo + fidu beam + syst + fg ingredient permutations
             fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            T_pristine=fg_box,
@@ -805,47 +772,6 @@ class beam_effects(object):
                            frac_tol=self.frac_tol_conv,seed=self.seed)
             fg.power_Monte_Carlo()
 
-            # do the slices of the FG map even make sense? 
-            fracs=[0,1e-5,1/3,1/2,1]
-            fgnorm=CenteredNorm(vcenter=0.,halfrange=3*np.std(fg_box.value))
-            fig,axs=plt.subplots(len(fracs),3,layout="constrained",figsize=(8,15))
-            axs[0,0].set_title("x index 0/"+str(self.Nvox_box_xy-1))
-            axs[0,1].set_title("y index 0/"+str(self.Nvox_box_xy-1))
-            axs[0,2].set_title("z index 0/"+str(self.Nvox_box_z -1)+"\nslice std="+str(np.round(np.std(fg_box.value[:,:,0]),3)))
-            for i,frac in enumerate(fracs):
-                xy_idx=int(frac*self.Nvox_box_xy)
-                z_idx=int(frac*self.Nvox_box_z)
-                if frac==1:
-                    xy_idx-=1
-                    z_idx-=1
-                elif frac==1e-5:
-                    xy_idx=1
-                    z_idx=1
-                str_frac=str(frac)
-                if i>0:
-                    axs[i,0].set_title(str(xy_idx)+"/"+str(self.Nvox_box_xy-1))
-                    axs[i,1].set_title(str(xy_idx)+"/"+str(self.Nvox_box_xy-1))
-                    axs[i,2].set_title(str(z_idx )+"/"+str(self.Nvox_box_z -1)+"\nslice std="+str(np.round(np.std(fg_box.value[:,:,z_idx]),3)))
-
-                sl0=fg_box.value[xy_idx,:,:]
-                img=axs[i,0].imshow(sl0.T,origin="lower",norm=fgnorm)
-                plt.colorbar(img,ax=axs[i,0])
-                axs[i,0].set_xlabel("y")
-                axs[i,0].set_ylabel("z")
-
-                sl1=fg_box.value[:,xy_idx,:]
-                img=axs[i,1].imshow(sl1.T,origin="lower",norm=fgnorm)
-                plt.colorbar(img,ax=axs[i,1])
-                axs[i,1].set_xlabel("x")
-                axs[i,1].set_ylabel("z")
-
-                sl2=fg_box.value[:,:,z_idx]
-                img=axs[i,2].imshow(sl2.T,origin="lower",norm=fgnorm)
-                plt.colorbar(img,ax=axs[i,2])
-                axs[i,2].set_xlabel("x")
-                axs[i,2].set_ylabel("y")
-            plt.savefig("fg_map.png", dpi=500)
-            plt.close()
             self.P_xx_xx_xx_fg=fg.P_binned_MC_complete
             # self.P_xx_xx_xx_fg=fg.P_binned*u.Mpc**3*u.mK**2 # usually single-realization power is not the quantity of interest, so I haven't astropy-ified it, because I'd just have to take .value for the ensemble average anyway, so, for consistency, I have to layer units here manually.
             print("                           fg MC complete")
@@ -1562,7 +1488,7 @@ class cosmo_stats(object):
             T_use=self.T_primary
         else:
             T_use=self.T_pristine
-        assert(T_use.unit==u.mK)
+        T_use=T_use.to(u.mK)
         
         T_tilde=fftshift( fftn( ifftshift(T_use.value*self.taper_xyz_centre)*self.d3r,
                                 s=self.box_shape, axes=(0,1,2), norm="backward"        ) ) # s=self.box_shape, 
@@ -1608,7 +1534,8 @@ class cosmo_stats(object):
             except: # something goes wrong in the P_fid calculation
                 raise ValueError("not enough info")
         
-        assert(self.P_fid_box is not None)
+        if self.P_fid_box is None:
+            self.resample_P_fid_on_grid()
         sigmas=np.sqrt(self.physical_volume*self.P_fid_box/2.) # from inverting the estimator equation and turning variances into std devs
         zero_on_the_last_axis=tuple(slice(0,l) for l in self.box_shape[:-1]) + (slice(0,1),)
         sigmas[zero_on_the_last_axis]*=np.sqrt(2) # scipy irfftn puts all the variance into the real component of the half-axis slice of the last axis it transforms in the box. I need to anticipate this by giving those voxels' real components all the variance! (Nothing will be overcounted because the imag part is thrown away)
@@ -1661,45 +1588,6 @@ class cosmo_stats(object):
         self.bin_power(power_to_bin=P_unbinned_MC_complete)
         P_binned_MC_complete=self.P_binned
         self.P_binned_MC_complete=P_binned_MC_complete*self.P_unbinned_running_sum.unit
-
-        fracs=[0,1e-5,1/3,1/2,1]
-        Pnorm=CenteredNorm(vcenter=1.)
-        fig,axs=plt.subplots(len(fracs),3,layout="constrained",figsize=(8,15))
-        axs[0,0].set_title("x index 0/"+str(self.Nvox-1))
-        axs[0,1].set_title("y index 0/"+str(self.Nvox-1))
-        axs[0,2].set_title("z index 0/"+str(self.Nvoxz -1)+"\nslice std="+str(np.round(np.std(P_unbinned_MC_complete.value[:,:,0]),3)))
-        for i,frac in enumerate(fracs):
-            xy_idx=int(frac*self.Nvox)
-            z_idx=int(frac*self.Nvoxz)
-            if frac==1:
-                xy_idx-=1
-                z_idx-=1
-            elif frac==1e-5:
-                xy_idx=1
-                z_idx=1
-            if i>0:
-                axs[i,0].set_title(str(xy_idx)+"/"+str(self.Nvox-1))
-                axs[i,1].set_title(str(xy_idx)+"/"+str(self.Nvox-1))
-                axs[i,2].set_title(str(z_idx )+"/"+str(self.Nvoxz -1)+"\nslice std="+str(np.round(np.std(P_unbinned_MC_complete[:,:,z_idx]),3)))
-
-            sl0=P_unbinned_MC_complete[xy_idx,:,:].value
-            img=axs[i,0].imshow(sl0.T,origin="lower",norm=Pnorm)
-            plt.colorbar(img,ax=axs[i,0])
-            axs[i,0].set_xlabel("ky")
-            axs[i,0].set_ylabel("kz")
-
-            sl1=P_unbinned_MC_complete[:,xy_idx,:].value
-            img=axs[i,1].imshow(sl1.T,origin="lower",norm=Pnorm)
-            plt.colorbar(img,ax=axs[i,1])
-            axs[i,1].set_xlabel("kx")
-            axs[i,1].set_ylabel("kz")
-
-            sl2=P_unbinned_MC_complete[:,:,z_idx].value
-            img=axs[i,2].imshow(sl2.T,origin="lower",norm=Pnorm)
-            plt.colorbar(img,ax=axs[i,2])
-            axs[i,2].set_xlabel("kx")
-            axs[i,2].set_ylabel("ky")
-        plt.savefig("P_unbinned.png", dpi=500)
 
         self.N_per_realization=self.N_cumul/self.N_realizations
 
@@ -2225,7 +2113,8 @@ class reconfigure_CST_beam(object):
         self.box_outname=box_outname
         self.multi_CST=multi_CST
 
-        assert(freq_lo.unit==freq_hi.unit and freq_hi.unit==delta_nu_CST.unit)
+        freq_hi=freq_hi.to(freq_lo.unit)
+        delta_nu_CST=delta_nu_CST.to(freq_lo.unit)
         freqs=np.arange(freq_lo.value,freq_hi.value,delta_nu_CST.value)*delta_nu_CST.unit
         self.freqs=freqs
         Nfreqs=len(freqs)
@@ -2330,10 +2219,15 @@ class CHORD_sense(object): # modified from a notebook helpfully shared by Debanj
         sv:bool=False, # extract sample variance from 21cmSense? (defaults to false because 21cmSense is ill-suited to performing these calculations for post-EoR experiments with wide fields of view [like CHORD] and I get this info for free for my CHORD forecasts from my Monte Carlo ensembles)
         tn:bool=True   # thermal noise (this is the other big contributor to the noise calculation, and my main motivation for using 21cmSense at all for CHORD forecasts)
     ):
-        assert(bl_max.unit==u.m and bl_min.unit==u.m and dish_diameter.unit==u.m)
-        assert(freq_cen.unit==u.MHz and bandwidth.unit==u.MHz)
-        assert(integration_time.unit==u.s)
-        assert(tsky_ref_freq.unit==u.MHz and tsky_amplitude.unit==u.K and horizon_buffer.unit==littleh/u.Mpc)
+        bl_max=bl_max.to(u.m)
+        bl_min=bl_min.to(u.m)
+        dish_diameter=dish_diameter.to(u.m)
+        freq_cen=freq_cen.to(u.MHz)
+        bandwidth=bandwidth.to(u.MHz)
+        integration_time=integration_time.to(u.s)
+        tsky_ref_freq=tsky_ref_freq.to(u.MHz)
+        tsky_amplitude=tsky_amplitude.to(u.K)
+        horizon_buffer=horizon_buffer.to(littleh/u.Mpc)
         bl_max=np.sqrt((spacing[0]*n_side[0])**2+(spacing[1]*n_side[1])**2)
         bl_min=np.min(spacing)
         self.spacing = spacing
@@ -2489,7 +2383,6 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
     else:
         N_LHS_rows=Na
         N_LHS_cols=Nb
-    assert(k_perp.unit==1/u.Mpc and k_par.unit==1/u.Mpc)
     k_perp=k_perp.to(1/u.Mpc)
     k_par=k_par.to(1/u.Mpc)
     cyl_extent=[k_perp[0].value,k_perp[-1].value,k_par[0].value,k_par[-1].value]
@@ -2627,7 +2520,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     save_args_to_file(inspect.currentframe())
 
     ############################## other survey management factors ########################################################################################################################
-    assert(nu_ctr.unit==u.MHz)
+    nu_ctr=nu_ctr.to(u.MHz)
     nu_ctr_Hz=nu_ctr.to(u.Hz)
     wl_ctr_m=c/nu_ctr_Hz
     wl_ctr_m=wl_ctr_m.decompose()
