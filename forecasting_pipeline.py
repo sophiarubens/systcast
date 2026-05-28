@@ -10,7 +10,6 @@ from scipy.interpolate import RectBivariateSpline as RBS
 from scipy.interpolate import RegularGridInterpolator as RGI
 from scipy.interpolate import griddata as gd
 from scipy.signal import convolve
-from scipy.signal.windows import kaiser
 from scipy.stats import binned_statistic_dd
 
 import camb
@@ -767,7 +766,7 @@ class beam_effects(object):
             # bonus step: compute power spec to facilitate comparisons to power spectra with all the other cosmo + fidu beam + syst + fg ingredient permutations
             fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            T_pristine=fg_box,
-                           radial_taper=kaiser,
+                           radial_taper=True,
                            Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            frac_tol=self.frac_tol_conv,seed=self.seed)
             fg.power_Monte_Carlo()
@@ -2027,7 +2026,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                             convolution_here=convolve(kernel_padded,gridded,mode="valid") # beam-smeared version of the uv-plane for this perturbation permutation
                             uvplane+=convolution_here
 
-        uvplane*=self.kaiser_grid # this tapering is to avoid ringing. power spectrum–geared tapering and per-antenna box normalization happen separately, of course
+        uvplane*=self.taper_grid # this tapering is to avoid ringing. power spectrum–geared tapering and per-antenna box normalization happen separately, of course
         uv_bin_edges=[uvbins,uvbins]
         return uvplane,uv_bin_edges,thetamax # this is the gridded uvplane
 
@@ -2036,9 +2035,9 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
             self.nu_ctr_MHz>(nu_HI_z0/(1+self.evol_restriction_threshold/2))):
             raise ValueError("survey out of bounds")
         N_grid_pix=self.N_grid_pix
-        kaiser_1d=kaiser(N_grid_pix,per_antenna_beta)
-        kaiser_x,kaiser_y=np.meshgrid(kaiser_1d,kaiser_1d, indexing=mg_indexing)
-        self.kaiser_grid=np.sqrt(kaiser_x**2+kaiser_y**2)
+        taper_1d=Blackman_Harris_safe_for_FFT(N_grid_pix) # centre-origin
+        taper_x,taper_y=np.meshgrid(taper_1d,taper_1d, indexing=mg_indexing)
+        self.taper_grid=np.sqrt(taper_x**2+taper_y**2)
 
         box_uvz=np.zeros((N_grid_pix,N_grid_pix,self.N_chan),dtype="complex128")
         if not self.CST: # rescale chromatic beam widths by whatever was passed
@@ -2424,16 +2423,10 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
         else:
             pct995=np.percentile(ensemble_of_spectra_de_dimensionalized,99.5)
             half_middle=0.5*pct995 # fallback: put all power spectra in the ensemble on the same colour scales, informed by the extreme range
-            if norm_mid is None:
-                norm_mid=half_middle 
             if norm_ext is None:
                 norm_ext=half_middle # branch for absolute quantities: 
-            # norm=CenteredNorm(vcenter=norm_mid,halfrange=norm_ext)
-            pct005safe=np.percentile(ensemble_of_spectra_de_dimensionalized,0.5)
-            if pct005safe<0:
-                pct005safe=1e-6
-            norm=LogNorm(vmin=pct005safe,
-                         vmax=pct995)
+            norm=LogNorm(vmin=0.01*norm_ext,vmax=2*norm_ext)
+        
         im=axs[i][j].imshow(spec_to_plot.T, cmap=colourmap, origin="lower", extent=cyl_extent, norm=norm)
         xlims_to_use=axs[i][j].get_xlim()
         ylims_to_use=axs[i][j].get_ylim()
@@ -2459,6 +2452,7 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
         idx_for_k2=np.unravel_index(idx_for_k2,specshape)
         values_of_k[k,0]=spec[idx_for_k1]
         values_of_k[k,1]=spec[idx_for_k2]
+        print("values_of_k=",values_of_k)
 
     complexity_indices=np.arange(N_spectra)
     ax_right.scatter(complexity_indices,values_of_k[:,0],label=str(np.round(k1_inset,4))+" (~1st BAO wiggle scale)")
@@ -2680,7 +2674,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                             frac_tol_conv=frac_tol_conv,seed=seed,                                         
                                             ftol_deriv=1e-16,maxiter=5,                                       
                                             PA_N_grid_pix=def_PA_N_grid_pix,PA_img_bin_tol=img_bin_tol,      
-                                            radial_taper=kaiser,image_taper=None,
+                                            radial_taper=True,image_taper=None,
 
                                             # CONVENIENCE
                                             heavy_beam_recalc=redo_box_calc                                                   
@@ -2736,8 +2730,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                         init_and_box_tol=0.05,CAMB_tol=0.05,                                 
                                         frac_tol_conv=frac_tol_conv,seed=seed,                                         
                                         ftol_deriv=1e-16,maxiter=5,           
-                                        # radial_taper=kaiser,image_taper=None,
-                                        radial_taper=kaiser,image_taper=kaiser,
+                                        radial_taper=True,image_taper=True,
 
                                         # CONVENIENCE
                                         heavy_beam_recalc=redo_box_calc, already_imported_CST=alr_imp_CST                                                  
@@ -2924,12 +2917,12 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
 
     co_fi_sy_fg_str="cosmo + fidu beam + syst + fg"
     co_fi_xx_fg_str="cosmo + fidu beam + fg"
-    plot_version_names = ["fidu beam + syst + fg",  co_fi_xx_fg_str,                      co_fi_sy_fg_str,   "("+co_fi_sy_fg_str+") - ("+co_fi_xx_fg_str+")", "log10[ (fidu beam + syst + fg) / cosmo ]", 
-                          "fg",                    "log10[ (fidu beam + fg) / cosmo ]", "cosmo",           "cosmo + fidu beam",                            "cosmo + fidu beam + syst",
-                          "cosmo + fg",           "fidu beam",                          "fidu beam + syst", "fidu beam + fg",                                "COSMO"]
+    plot_version_names = ["fidu beam + syst + fg",  co_fi_xx_fg_str,                     co_fi_sy_fg_str,   "("+co_fi_sy_fg_str+") - ("+co_fi_xx_fg_str+")", "log10[ (fidu beam + syst + fg) / cosmo ]", 
+                          "fg",                    "log10[ (fidu beam + fg) / cosmo ]", "cosmo",            "cosmo + fidu beam",                             "cosmo + fidu beam + syst",
+                          "cosmo + fg",            "fidu beam",                         "fidu beam + syst", "fidu beam + fg",                                "COSMO"]
     save_names= ["fidu_syst_fg", "cosmo_fidu_fg",         "cosmo_fidu_syst_fg", "cosmo_fidu_syst_fg__minus__cosmo_fidu_fg", "fidu_syst_fg__divby__cosmo", 
                  "fg",           "fidu_fg__divby__cosmo", "cosmo",              "cosmo_fidu",                                "cosmo_fidu_syst",
-                 "cosmo_fg",    "fidu",                   "fidu_syst",           "fidu_fg",                                    "COSMOCOSMO"]
+                 "cosmo_fg",    "fidu",                   "fidu_syst",          "fidu_fg",                                   "COSMOCOSMO"]
     plot_cmaps= [abs_map, abs_map, abs_map, rel_map, rel_map, 
                  abs_map, rel_map, abs_map, abs_map, abs_map,
                  abs_map, abs_map, abs_map, abs_map, abs_map]
