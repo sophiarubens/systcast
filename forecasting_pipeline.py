@@ -2,9 +2,9 @@ import numpy as np
 
 from matplotlib import pyplot as plt
 from matplotlib import gridspec
-from matplotlib.colors import CenteredNorm,TwoSlopeNorm,LogNorm
+from matplotlib.colors import CenteredNorm,LogNorm,TwoSlopeNorm,SymLogNorm
 
-from scipy.fft import fftshift,ifftshift,fftfreq, fftn, irfftn, set_workers, ifftn, ihfftn, rfftn
+from scipy.fft import fftshift,ifftshift,fftfreq, fftn, irfftn, set_workers
 from scipy.integrate import quad
 from scipy.interpolate import RectBivariateSpline as RBS
 from scipy.interpolate import RegularGridInterpolator as RGI
@@ -20,7 +20,6 @@ from astropy import constants as const
 from astropy.units import Quantity
 from astropy import units as u
 from py21cmsense import GaussianBeam, Observatory, Observation, PowerSpectrum
-from uvtools.dspec import gen_window
 
 import cmasher
 import inspect
@@ -497,7 +496,7 @@ class beam_effects(object):
             p2="pol2/f_"
             if heavy_beam_recalc and not already_imported_fidu_CST:
                 fidu=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
-                                          beam_sim_directory=beam_sim_directory,f_head="fiducial/f_",
+                                          beam_sim_directory=beam_sim_directory,f_head="fiducial/",
                                           f_mid1=p1,f_mid2=p2,f_tail="_GHz.txt",box_outname="fidu_box_"+ioname)
                 fidu.gen_box_from_simulated_beams()
                 print("generated fidu beam box\n")
@@ -2026,7 +2025,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                             convolution_here=convolve(kernel_padded,gridded,mode="valid") # beam-smeared version of the uv-plane for this perturbation permutation
                             uvplane+=convolution_here
 
-        uvplane*=self.taper_grid # this tapering is to avoid ringing. power spectrum–geared tapering and per-antenna box normalization happen separately, of course
+        # uvplane*=self.taper_grid # this tapering is to avoid ringing. power spectrum–geared tapering and per-antenna box normalization happen separately, of course
         uv_bin_edges=[uvbins,uvbins]
         return uvplane,uv_bin_edges,thetamax # this is the gridded uvplane
 
@@ -2071,7 +2070,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                 interpolator_Re=RBS(uv_bin_edges,uv_bin_edges, chan_gridded_uvplane.real)
                 interpolator_Im=RBS(uv_bin_edges,uv_bin_edges, chan_gridded_uvplane.imag)
                 interpolated_slice=interpolator_Re(uv_bin_edges_0,uv_bin_edges_0)+1j*interpolator_Im(uv_bin_edges_0,uv_bin_edges_0)
-            box_uvz[:,:,i]=interpolated_slice
+            box_uvz[:,:,i]=interpolated_slice*self.taper_grid
             if ((i%(self.N_chan//3))==0):
                 print("{:7.1f} pct complete".format(i/self.N_chan*100))
         
@@ -2371,7 +2370,7 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
                     k_perp:np.ndarray, k_par:np.ndarray,                  # k-perp and k-par bins that anchor each plotted spectrum
                     case_title:str, case_units:str,                       # title describing this power spectrum quantity and the corresponding units
                     save_name:str,                                        # name for the summary figure
-                    norm_mid, norm_ext,                                   # if there is a physically motivated natural middle of the colour bar (e.g. 1 for a ratio or 0 for a residual), pass it to the plotter along with the extent of the range about this midpoint (possibly informed by the extent of the systematics you plugged into the simulation)
+                    norm_ext,                                             # if there is a physically motivated natural middle of the colour bar (e.g. 1 for a ratio or 0 for a residual), pass it to the plotter along with the extent of the range about this midpoint (possibly informed by the extent of the systematics you plugged into the simulation)
                     nu_ctr:float,                                         # only necessary if I insist on plotting the wedge 
                     k1_inset:float=0.06/u.Mpc, k2_inset:float=2.5/u.Mpc): # k-scales of interest to sample each spectrum in the ensemble
     N_spectra=len(ensemble_of_spectra)
@@ -2421,11 +2420,17 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
             norm=TwoSlopeNorm(0.,vmin=vminlog,
                                  vmax=vmaxlog)
         else:
-            pct995=np.percentile(ensemble_of_spectra_de_dimensionalized,99.5)
+            pct995=np.percentile(np.abs(ensemble_of_spectra_de_dimensionalized),99.5)
             half_middle=0.5*pct995 # fallback: put all power spectra in the ensemble on the same colour scales, informed by the extreme range
             if norm_ext is None:
                 norm_ext=half_middle # branch for absolute quantities: 
-            norm=LogNorm(vmin=0.01*norm_ext,vmax=2*norm_ext)
+            if (save_name=="cosmo_fidu_syst_fg__minus__cosmo_fidu_fg"):
+                ne,vmax=norm_ext
+                print("i=",i,"; norm_ext=",norm_ext)
+                norm=SymLogNorm(ne,vmin=-vmax,vmax=vmax)
+            else:
+                ne=norm_ext
+                norm=LogNorm(vmin=0.01*norm_ext,vmax=2*norm_ext)
         
         im=axs[i][j].imshow(spec_to_plot.T, cmap=colourmap, origin="lower", extent=cyl_extent, norm=norm)
         xlims_to_use=axs[i][j].get_xlim()
@@ -2452,14 +2457,14 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
         idx_for_k2=np.unravel_index(idx_for_k2,specshape)
         values_of_k[k,0]=spec[idx_for_k1]
         values_of_k[k,1]=spec[idx_for_k2]
-        print("values_of_k=",values_of_k)
+        # print("values_of_k=",values_of_k)
 
     complexity_indices=np.arange(N_spectra)
     ax_right.scatter(complexity_indices,values_of_k[:,0],label=str(np.round(k1_inset,4))+" (~1st BAO wiggle scale)")
     ax_right.scatter(complexity_indices,values_of_k[:,1],label=str(np.round(k2_inset,4))+" (~CHIME scale)")
     ax_right.set_xticks(complexity_indices, labels=ensemble_ids, rotation=40)
     if not plot_log:
-        ax_right.set_ylim(0,6*norm_ext)
+        ax_right.set_ylim(0,6*ne)
     ax_right.set_xlabel("N CST types, N pointing errors")
     ax_right.set_ylabel("power spectrum quantity "+case_units)
     ax_right.set_title("insets for k closest to...")
@@ -2730,7 +2735,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                         init_and_box_tol=0.05,CAMB_tol=0.05,                                 
                                         frac_tol_conv=frac_tol_conv,seed=seed,                                         
                                         ftol_deriv=1e-16,maxiter=5,           
-                                        radial_taper=True,image_taper=True,
+                                        radial_taper=False,image_taper=False,
 
                                         # CONVENIENCE
                                         heavy_beam_recalc=redo_box_calc, already_imported_CST=alr_imp_CST                                                  
@@ -2881,7 +2886,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                                    P_co_xx_xx_fg.value, P_xx_fi_xx_xx.value, P_xx_fi_sy_xx.value, P_xx_fi_xx_fg.value, P_CO_XX_XX_XX.value]) # N_pspec_types x Nkperp x Nkpar
         power_quantities_all.append(power_quantities_this_complexity) # N_complexity_cases x N_pspec_types x Nkperp x Nkpar
         
-        # Delta2_quantities_this_complexity=[P_qty[:-1,:-1]*k_mag_grid**3/(2*pi**2) for P_qty in power_quantities_this_complexity]
         Delta2_quantities_this_complexity=[P_qty*k_mag_grid**3/(2*pi**2) for P_qty in power_quantities_this_complexity]
         Delta2_quantities_all.append(Delta2_quantities_this_complexity)
         t01=time.time()
@@ -2905,15 +2909,16 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     if which_power=="P":
         abs_co_no_fg=np.percentile(power_quantities_all[:,abs_co_no_fg_indices,:,:],98) 
         abs_co_fg=np.percentile(power_quantities_all[:,abs_co_fg_indices,:,:],90)
-        fgmid=np.median(P_xx_xx_xx_fg).value
         fgext=3*np.std(P_xx_xx_xx_fg).value
+        abs_residual=[np.percentile(power_quantities_all[:,3,:,:],90),
+                      np.max(np.abs(power_quantities_all[:,3,:,:]))]
     elif which_power=="Delta2":
         # abs_co_no_fg=100*np.max(Delta2_quantities_all[:,abs_co_no_fg_indices,:,:])
         abs_co_no_fg=None
         abs_co_fg=np.percentile(Delta2_quantities_all[:,abs_co_fg_indices,:,:],90)
-        # abs_co_fg=0.15*np.max(Delta2_quantities_all[:,abs_co_fg_indices,:,:])
         fgext=None
-        fgmid=None
+        abs_residual=[np.percentile(Delta2_quantities_all[:,3,:,:],90),
+                      np.max(np.abs(Delta2_quantities_all[:,3,:,:]))]
 
     co_fi_sy_fg_str="cosmo + fidu beam + syst + fg"
     co_fi_xx_fg_str="cosmo + fidu beam + fg"
@@ -2926,10 +2931,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     plot_cmaps= [abs_map, abs_map, abs_map, rel_map, rel_map, 
                  abs_map, rel_map, abs_map, abs_map, abs_map,
                  abs_map, abs_map, abs_map, abs_map, abs_map]
-    norm_mids=  [None,      abs_co_fg, abs_co_fg,    0.,           0.,          
-                 fgmid,     0.,        abs_co_no_fg, abs_co_no_fg, abs_co_no_fg,
-                 abs_co_fg, None,      None,         None,         abs_co_no_fg] 
-    norm_exts=  [None,      abs_co_fg, abs_co_fg,    None,         None,        
+    norm_exts=  [None,      abs_co_fg, abs_co_fg,    abs_residual,         None,        
                  fgext,     None,      abs_co_no_fg, abs_co_no_fg, abs_co_no_fg,
                  abs_co_fg, None,      None,         None,         abs_co_no_fg]
     plot_log=   [False, False, False, False, True,
@@ -2949,5 +2951,5 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         power_quantity_this_plot_case=power_quantities_all_correct_type[:,i,:,:] # [:,i,:,:] = all complexity cases, ith power spectrum quantity, all kperps, all kpars
         memo_ii_plotter(power_quantity_this_plot_case, complexity_ids, plot_cmaps[i], plot_log[i],
                         kperp_internal, kpar_internal, 
-                        plot_version_names[i], plot_units[i], save_names[i], norm_mids[i], norm_exts[i], nu_ctr)
+                        plot_version_names[i], plot_units[i], save_names[i], norm_exts[i], nu_ctr)
         print("plotted ",plot_version_names[i])

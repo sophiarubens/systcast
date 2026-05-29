@@ -12,11 +12,11 @@ systnames = [ "+0.0+0.0+0.5", "+0.0+0.0-0.5",
 all_syst_dirs=[sn+"_deg/" for sn in systnames]
 
 N_systs_use=len(systnames) # exhaustive case
-N_systs_use=3 # pared-down case for debugging
+N_systs_use=3 # pared-down case for debugging. anything up to 3 has locally pre-evaluated boxes as of 12 May 13:34
 
 # configure pointing errors
 base_pointing_error=[1.2,-0.7,0.4]
-base_seed=5920185708
+base_seed=290526
 meta_rng=np.random.default_rng(base_seed-1)
 N_ptg_errs_per_CST=meta_rng.integers(low=0,high=6, size=N_systs_use,endpoint=False)
 pointingerrs=[pointing_family(base_pointing_error,Ni,seed=base_seed+i) for i,Ni in enumerate(N_ptg_errs_per_CST)]
@@ -25,7 +25,7 @@ with open("ptg_err.json", "w") as f:
 
 # re-simulate / re-plot
 power_comparison_plots(redo_window_calc=True, redo_box_calc=False, alr_imp_CST=True,
-                       mode="pathfinder", nu_ctr=600.*u.MHz, frac_tol_conv=0.5, which_power="P",
+                       mode="pathfinder", nu_ctr=600.*u.MHz, frac_tol_conv=0.05, which_power="Delta2",
                        categ="PA-CST", PA_dist="frame", pointing_errors=pointingerrs[:N_systs_use],
                        CST_lo=0.58*u.GHz,CST_hi=0.62*u.GHz,CST_deltanu=2e-4*u.GHz,
                        beam_sim_directory=CST_dir, CST_f_head_fidu=fiduname, CST_f_head_syst=all_syst_dirs[:N_systs_use])
