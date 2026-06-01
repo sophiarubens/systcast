@@ -752,9 +752,9 @@ class beam_effects(object):
             fg_box=np.zeros((self.Nvox_box_xy,self.Nvox_box_xy,self.Nvox_box_z))*u.mK
             # Adrian's 2011 foreground model. save point sources for later because I'll need to generalize my approach
             # format of params for each case: Tref, nuref, alpha, sigma_alpha
-            # fg_info_cases=[[335.4*u.K, 150*u.MHz, -2.8,  0.1],   # synchrotron
-                        #    [33.5 *u.K, 150*u.MHz, -2.15, 0.01] ] # free-free
-            fg_info_cases=[[335.4*u.K, 150*u.MHz, -2.8,  0.1]]
+            fg_info_cases=[[335.4*u.K, 150*u.MHz, -2.8,  0.1],   # synchrotron
+                           [33.5 *u.K, 150*u.MHz, -2.15, 0.01] ] # free-free
+            # fg_info_cases=[[335.4*u.K, 150*u.MHz, -2.8,  0.1]]
             for fg_info in fg_info_cases:
                 Tref,nuref,alpha,sigma_alpha=fg_info
                 fg_box_ingredient=self.get_pwr_law_FG_ingredient(Tref,nuref,alpha,sigma_alpha)
@@ -764,13 +764,11 @@ class beam_effects(object):
             # bonus step: compute power spec to facilitate comparisons to power spectra with all the other cosmo + fidu beam + syst + fg ingredient permutations
             fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            T_pristine=fg_box,
-                        #    radial_taper=True,
                            Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            frac_tol=self.frac_tol_conv,seed=self.seed)
             fg.power_Monte_Carlo()
 
             self.P_xx_xx_xx_fg=fg.P_binned_MC_complete
-            # self.P_xx_xx_xx_fg=fg.P_binned*u.Mpc**3*u.mK**2 # usually single-realization power is not the quantity of interest, so I haven't astropy-ified it, because I'd just have to take .value for the ensemble average anyway, so, for consistency, I have to layer units here manually.
             print("                           fg MC complete")
 
         co_fi_xx_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -1257,7 +1255,7 @@ class cosmo_stats(object):
         # Fourier space
         self.Deltakxy=twopi/self.Lxy                                        # voxel side length
         self.Deltakz= twopi/self.Lz
-        self.d3k=self.Deltakxy**2*self.Deltakz                              # volume element / voxel volume
+        d3k=self.Deltakxy**2*self.Deltakz                              # volume element / voxel volume
         self.kxy_vec_for_box_corner=twopi*fftfreq(self.Nvox,d=self.Deltaxy) # one Cartesian coordinate axis - non-fftshifted/ corner origin
         self.kz_vec_for_box_corner= twopi*fftfreq(self.Nvoxz,d=self.Deltaz)
         self.kx_grid_corner,self.ky_grid_corner,self.kz_grid_corner=np.meshgrid(self.kxy_vec_for_box_corner,
@@ -1275,6 +1273,15 @@ class cosmo_stats(object):
         self.kperpgrid3_flat=np.reshape(kperpgrid3,(self.Nvox**2*self.Nvoxz,),order="C")
         self.kpargrid3_flat= np.reshape(kpargrid3, (self.Nvox**2*self.Nvoxz,),order="C")
 
+        if self.Nvoxz>1:
+            self.transform_axes=(0,1,2)
+            self.d3k=d3k
+            self.iftnorm=twopi**3
+        else:
+            self.transform_axes=(0,1)
+            self.d3k=self.Deltakxy**2
+            self.iftnorm=twopi**2
+        
         # foreground groundwork
         self.wedge_cut=wedge_cut
         if wedge_cut:
@@ -1490,7 +1497,7 @@ class cosmo_stats(object):
         T_use=T_use.to(u.mK)
         
         T_tilde=fftshift( fftn( ifftshift(T_use.value*self.taper_xyz_centre)*self.d3r,
-                                s=self.box_shape, axes=(0,1,2), norm="backward"        ) ) # s=self.box_shape, 
+                                s=self.box_shape, axes=self.transform_axes, norm="backward"        ) ) # s=self.box_shape, 
         modsq_T_tilde=np.abs(T_tilde)**2 *T_use.unit**2*self.d3r.unit**2
         P_unbinned=modsq_T_tilde/self.effective_volume # box-shaped, but calculated according to the power spectrum estimator equation
 
@@ -1545,15 +1552,9 @@ class cosmo_stats(object):
         if self.wedge_cut:
             T_tilde[self.voxels_in_wedge_corner]=0.
 
-        if self.Nvoxz>1:
-            T=fftshift(irfftn(T_tilde*self.d3k.value,
-                              s=self.box_shape,
-                              axes=(0,1,2),norm="forward"))/(twopi)**3 # handle in one line: fftshiftedness, ensuring T is real-valued and box-shaped, enforcing the cosmology Fourier convention
-        
-        else:
-            T=fftshift(irfftn(T_tilde*self.Deltakxy**2,
-                              s=self.box_shape,
-                              axes=(0,1),norm="forward"))/(twopi)**2
+        T=fftshift(irfftn(T_tilde*self.d3k.value,
+                          s=self.box_shape,
+                          axes=self.transform_axes,norm="forward"))/self.iftnorm # handle in one line: fftshiftedness, ensuring T is real-valued and box-shaped, enforcing the cosmology Fourier convention
 
         T*=u.mK
         if self.fg_box is not None: # layer foregrounds
@@ -2073,9 +2074,12 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
             if ((i%(self.N_chan//3))==0):
                 print("{:7.1f} pct complete".format(i/self.N_chan*100))
         
-        box_xyz=fftshift(irfftn(ifftshift(box_uvz*d2u),
+        # box_xyz=fftshift(irfftn(ifftshift(box_uvz*d2u),
+        #                        axes=(0,1),s=(N_grid_pix,N_grid_pix),
+        #                        norm="forward")) # mixed coords before; all config space after
+        box_xyz=fftshift(irfftn(ifftshift(box_uvz*d2u, axes=(0,1)),
                                axes=(0,1),s=(N_grid_pix,N_grid_pix),
-                               norm="forward")) # mixed coords before; all config space after
+                               norm="forward"), axes=(0,1)) # mixed coords before; all config space after
         for i in range(self.N_chan): # the correct generalization is per-channel normalization
             slice_i=box_xyz[:,:,i]
             norm_i=np.max(slice_i)
@@ -2114,13 +2118,13 @@ class reconfigure_CST_beam(object):
 
         freq_hi=freq_hi.to(freq_lo.unit)
         delta_nu_CST=delta_nu_CST.to(freq_lo.unit)
-        freqs=np.arange(freq_lo.value,freq_hi.value,delta_nu_CST.value)*delta_nu_CST.unit
+        freqs=np.arange(freq_hi.value,freq_lo.value,delta_nu_CST.value)*delta_nu_CST.unit # descending; usually still in GHz
+        freqs=freqs.to(u.MHz) # descending; MHz
         self.freqs=freqs
         Nfreqs=len(freqs)
         self.Nfreqs=Nfreqs
-        freqs_MHz_flipped=np.flip(freqs).to(u.MHz) # flip to get the ascending comoving distances I expect
-        zs_for_xis=[nu_HI_z0/freq-1 for freq in freqs_MHz_flipped]
-        xis=[comoving_distance(z) for z in zs_for_xis]
+        zs_for_xis=[nu_HI_z0/freq-1 for freq in freqs] # ascending
+        xis=[comoving_distance(z) for z in zs_for_xis] # ascending
         xis=Quantity(xis) # for the typical coeval approximation
         self.xis=xis
         self.CST_z_vec=xis-xis[int(Nfreqs//2)]
@@ -2137,7 +2141,7 @@ class reconfigure_CST_beam(object):
         self.xy_for_unwrapping=xy_for_unwrapping
 
         nu_ctr=(freq_lo+freq_hi)/2
-        nu_ctr_MHz=nu_ctr.to(u.MHz) # take an arithmetic average but also *1000 for GHz to MHz
+        nu_ctr_MHz=nu_ctr.to(u.MHz)
         k_perp=kperp(nu_ctr_MHz,b_EW,bmax)
         L_xy=twopi/k_perp[0]
         xy_for_box=L_xy*fftshift(fftfreq(Nxy))
@@ -2190,7 +2194,7 @@ class reconfigure_CST_beam(object):
             if ((i%(self.Nfreqs//3))==0):
                 print("{:7.1f} pct complete".format(i/self.Nfreqs*100))
         np.save("CST_box_"+self.box_outname,box)
-        self.box=box
+        self.box=box # centre-origin
 
 class CHORD_sense(object): # modified from a notebook helpfully shared by Debanjan Sarkar in April 2025
     def __init__(
@@ -2734,7 +2738,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                         init_and_box_tol=0.05,CAMB_tol=0.05,                                 
                                         frac_tol_conv=frac_tol_conv,seed=seed,                                         
                                         ftol_deriv=1e-16,maxiter=5,           
-                                        radial_taper=False,image_taper=False,
+                                        radial_taper=True,image_taper=False,
 
                                         # CONVENIENCE
                                         heavy_beam_recalc=redo_box_calc, already_imported_CST=alr_imp_CST                                                  
