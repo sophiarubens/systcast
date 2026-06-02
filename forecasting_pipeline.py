@@ -68,9 +68,6 @@ ln2=np.log(2)
 maxint=   np.iinfo(np.int64  ).max
 BasicAiryHWHM=1.616339948310703178119139753683896309743121097215461023581 # intentionally preposterous number of sig figs from Mathematica
 eps=1e-15
-per_antenna_beta=14
-cosmo_stats_beta_perp=1 # 50/10*6=30
-cosmo_stats_beta_par=5 # 80/10*6=48
 dpi_to_use=250
 
 # CHORD
@@ -674,7 +671,6 @@ class beam_effects(object):
         if kpar_to_use is None:
             kpar_to_use=self.kpar_surv
         k,Psph_use=self.get_21cm_power_spec(pars_to_use,minkh=0.1*self.kmin_surv,maxkh=10*self.kmax_surv)
-        print("beam_effects.unbin_to_Pcyl: Psph_use.unit=",Psph_use.unit)
         # k=k/u.Mpc
         CAMBlength=len(Psph_use)
         k=k.reshape((CAMBlength,))
@@ -746,7 +742,9 @@ class beam_effects(object):
             raise ValueError("unknown P_fid_for_cont_pwr")
 
         power_unit=u.mK**2*self.Deltabox_xy.unit**3
-        P_flat=np.ones(10*self.Nkpar_surv) *power_unit
+        N_flat=10*self.Nkpar_surv
+        P_flat=np.ones(N_flat) *power_unit
+        # P_flat=np.ones(N_flat)/N_flat**2 *power_unit
         self.P_flat=P_flat
         self.k_for_flat=np.linspace(self.kparmin_surv,self.kparmax_surv,10*self.Nkpar_surv)
         if self.layer_foregrounds:
@@ -769,12 +767,10 @@ class beam_effects(object):
             # bonus step: compute power spec to facilitate comparisons to power spectra with all the other cosmo + fidu beam + syst + fg ingredient permutations
             fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            T_pristine=fg_box,
-                           Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                            frac_tol=self.frac_tol_conv,seed=self.seed)
             fg.power_Monte_Carlo()
 
             self.P_xx_xx_xx_fg=fg.P_binned_MC_complete
-            print("beam_effects.calc_power_contamination: self.Lsurv_box_xy.unit,fg_box.unit,self.P_xx_xx_xx_fg.unit=",self.Lsurv_box_xy.unit,"...",fg_box.unit,"...",self.P_xx_xx_xx_fg.unit)
             print("                           fg MC complete")
 
         co_fi_xx_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -984,7 +980,6 @@ class beam_effects(object):
                                              kperp_to_use=self.kperp_for_cosmo[:-1]+0.5*(self.kperp_for_cosmo[1]-self.kperp_for_cosmo[0]), 
                                              kpar_to_use=self.kpar_for_cosmo[:-1]+0.5*(self.kpar_for_cosmo[1]-self.kpar_for_cosmo[0]))# unbin_to_Pcyl(self,pars_to_use,kperp_to_use=None,kpar_to_use=None)
         self.P_co_xx_xx_xx=P_co_xx_xx_xx
-        print("beam_effects.calc_power_contamination: P_co_xx_xx_xx.unit=",P_co_xx_xx_xx.unit)
 
         if isolated==False:
             self.Pcont_cyl=self.P_co_fi_sy_fg-self.P_co_fi_xx_fg
@@ -1500,6 +1495,7 @@ class cosmo_stats(object):
         T_use=T_use.to(u.mK)
         
         T_tilde=fftshift( fftn( 
+                                # ifftshift(T_use*self.taper_xyz_centre)*self.d3r, # shouldn't make a difference
                                 ifftshift(T_use)*self.taper_xyz_corner*self.d3r,
                                 s=self.box_shape, axes=self.transform_axes, norm="backward"        
                               ) 
@@ -2378,7 +2374,9 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
                     save_name:str,                                        # name for the summary figure
                     norm_ext,                                             # if there is a physically motivated natural middle of the colour bar (e.g. 1 for a ratio or 0 for a residual), pass it to the plotter along with the extent of the range about this midpoint (possibly informed by the extent of the systematics you plugged into the simulation)
                     nu_ctr:float,                                         # only necessary if I insist on plotting the wedge 
-                    k1_inset:float=0.06/u.Mpc, k2_inset:float=2.5/u.Mpc): # k-scales of interest to sample each spectrum in the ensemble
+                    k1_inset:float=0.06/u.Mpc, 
+                    k2_inset:float=0.1/u.Mpc,
+                    k3_inset:float=2.5/u.Mpc): # k-scales of interest to sample each spectrum in the ensemble
     N_spectra=len(ensemble_of_spectra)
     assert(N_spectra==len(ensemble_ids)), "mismatched number of spectra and spectrum names"
     Na=int(np.ceil(np.sqrt(N_spectra)))
@@ -2394,7 +2392,7 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
     cyl_extent=[k_perp[0].value,k_perp[-1].value,k_par[0].value,k_par[-1].value]
     k_perp_grid,k_par_grid=np.meshgrid(k_perp,k_par, indexing="ij")*k_par.unit
     k_mag_grid=np.sqrt(k_perp_grid**2+k_par_grid**2)
-    values_of_k=np.zeros((N_spectra,2))
+    values_of_k=np.zeros((N_spectra,3))
 
     fig = plt.figure(figsize=(N_LHS_cols*4, N_LHS_cols*4),layout="constrained")
     gs = gridspec.GridSpec(N_LHS_rows, N_LHS_cols+2, figure=fig)
@@ -2461,13 +2459,15 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
         idx_for_k1=np.unravel_index(idx_for_k1,specshape)
         idx_for_k2=np.argmin(np.abs(k_mag_grid-k2_inset))
         idx_for_k2=np.unravel_index(idx_for_k2,specshape)
-        values_of_k[k,0]=spec[idx_for_k1]
-        values_of_k[k,1]=spec[idx_for_k2]
+        idx_for_k3=np.argmin(np.abs(k_mag_grid-k3_inset))
+        idx_for_k3=np.unravel_index(idx_for_k3,specshape)
+        values_of_k[k]=[ spec[idx_for_k1], spec[idx_for_k2], spec[idx_for_k3] ]
         # print("values_of_k=",values_of_k)
 
     complexity_indices=np.arange(N_spectra)
     ax_right.scatter(complexity_indices,values_of_k[:,0],label=str(np.round(k1_inset,4))+" (~1st BAO wiggle scale)")
-    ax_right.scatter(complexity_indices,values_of_k[:,1],label=str(np.round(k2_inset,4))+" (~CHIME scale)")
+    ax_right.scatter(complexity_indices,values_of_k[:,1],label=str(np.round(k2_inset,4))+" (LIM review comparison scale)")
+    ax_right.scatter(complexity_indices,values_of_k[:,2],label=str(np.round(k3_inset,4))+" (~CHIME scale)")
     ax_right.set_xticks(complexity_indices, labels=ensemble_ids, rotation=40)
     if not plot_log:
         ax_right.set_ylim(0,6*ne)
@@ -2796,10 +2796,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                 t0=time.time()
                 windowed_survey.calc_power_contamination(isolated=isolated) # loops over complexity
                 P_co_xx_xx_xx=windowed_survey.P_co_xx_xx_xx
-                print("after redoing window calcs in power_comparison_plots: P_co_xx_xx_xx.unit=",P_co_xx_xx_xx.unit)
                 np.save("P_co_xx_xx_xx_"+ioname+".npy",P_co_xx_xx_xx.value)
                 P_xx_xx_xx_fg=windowed_survey.P_xx_xx_xx_fg
-                print("after redoing window calcs in power_comparison_plots: P_xx_xx_xx_fg.unit=",P_xx_xx_xx_fg.unit)
                 np.save("P_xx_xx_xx_fg_"+ioname+".npy",P_xx_xx_xx_fg.value)
                 t1=time.time()
                 print("Pcont calculation time was",t1-t0)
@@ -2886,17 +2884,18 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         Pratio=    P_xx_fi_sy_fg/P_co_xx_xx_xx
         Pisoratio= P_xx_fi_xx_fg/P_co_xx_xx_xx
         assert(Pratio.unit.physical_type=="dimensionless" and Pisoratio.unit.physical_type=="dimensionless")
+        co_fg_linearity=(P_co_xx_xx_fg-P_co_xx_xx_xx-P_xx_xx_xx_fg).value
+        co_fi_linearity=(P_co_fi_xx_xx-P_co_xx_xx_xx-P_xx_fi_xx_xx).value
+        print("np.sum(np.isnan(co_fg_linearity)); np.mean(co_fg_linearity)=",np.sum(np.isnan(co_fg_linearity)),np.mean(co_fg_linearity))
+        print("np.sum(np.isnan(co_fi_linearity)); np.mean(co_fi_linearity)=",np.sum(np.isnan(co_fi_linearity)),np.mean(co_fi_linearity))
 
         k_perp_grid,k_par_grid=np.meshgrid(kperp_internal,kpar_internal, indexing="ij")
         k_mag_grid=np.sqrt(k_perp_grid**2+k_par_grid**2)
 
-        print("after imports in power_comparison_plots: P_co_xx_xx_fg.unit,P_co_xx_xx_xx.unit,P_xx_xx_xx_fg.unit=",P_co_xx_xx_fg.unit,P_co_xx_xx_xx.unit,P_xx_xx_xx_fg.unit)
         power_quantities_this_complexity=np.array([P_xx_fi_sy_fg.value,  P_co_fi_xx_fg.value, P_co_fi_sy_fg.value, Presidual.value,     Pratio,        
                                                    P_xx_xx_xx_fg.value,  Pisoratio,           P_co_xx_xx_xx.value, P_co_fi_xx_xx.value, P_co_fi_sy_xx.value, 
                                                    P_co_xx_xx_fg.value,  P_xx_fi_xx_xx.value, P_xx_fi_sy_xx.value, P_xx_fi_xx_fg.value, P_CO_XX_XX_XX.value,
-                                                   (P_co_xx_xx_fg-
-                                                    P_co_xx_xx_xx-
-                                                    P_xx_xx_xx_fg).value]) # N_pspec_types x Nkperp x Nkpar
+                                                   co_fg_linearity,      co_fi_linearity]) # N_pspec_types x Nkperp x Nkpar
         power_quantities_all.append(power_quantities_this_complexity) # N_complexity_cases x N_pspec_types x Nkperp x Nkpar
         
         Delta2_quantities_this_complexity=[P_qty*k_mag_grid**3/(2*pi**2) for P_qty in power_quantities_this_complexity]
@@ -2938,27 +2937,27 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     plot_version_names = ["fidu beam + syst + fg",  co_fi_xx_fg_str,                     co_fi_sy_fg_str,   "("+co_fi_sy_fg_str+") - ("+co_fi_xx_fg_str+")", "log10[ (fidu beam + syst + fg) / cosmo ]", 
                           "fg",                    "log10[ (fidu beam + fg) / cosmo ]", "cosmo",            "cosmo + fidu beam",                             "cosmo + fidu beam + syst",
                           "cosmo + fg",            "fidu beam",                         "fidu beam + syst", "fidu beam + fg",                                "COSMO",
-                          "cosmo–fg linearity"]
+                          "cosmo–fg linearity",    "cosmo–fidu beam linearity"]
     save_names= ["fidu_syst_fg", "cosmo_fidu_fg",         "cosmo_fidu_syst_fg", "cosmo_fidu_syst_fg__minus__cosmo_fidu_fg", "fidu_syst_fg__divby__cosmo", 
                  "fg",           "fidu_fg__divby__cosmo", "cosmo",              "cosmo_fidu",                                "cosmo_fidu_syst",
                  "cosmo_fg",    "fidu",                   "fidu_syst",          "fidu_fg",                                   "COSMOCOSMO",
-                 "cosmo_fg_linearity"]
+                 "cosmo_fg_linearity", "cosmo_fidu_linearity"]
     plot_cmaps= [abs_map, abs_map, abs_map, rel_map, rel_map, 
                  abs_map, rel_map, abs_map, abs_map, abs_map,
                  abs_map, abs_map, abs_map, abs_map, abs_map,
-                 rel_map]
+                 rel_map, rel_map]
     norm_exts=  [None,      abs_co_fg, abs_co_fg,    abs_residual,         None,        
                  fgext,     None,      abs_co_no_fg, abs_co_no_fg, abs_co_no_fg,
                  abs_co_fg, None,      None,         None,         abs_co_no_fg,
-                 None]
+                 None, None]
     plot_log=   [False, False, False, False, True,
                  False, True,  False, False, False,
                  False, False, False, False, False,
-                 None]
+                 False, False]
     plot_units=[absolute_units, absolute_units, absolute_units, absolute_units, relative_units, 
                 absolute_units, relative_units, absolute_units, absolute_units, absolute_units,
                 absolute_units, absolute_units, absolute_units, absolute_units, absolute_units,
-                absolute_units]
+                absolute_units, absolute_units]
     ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   
 
     print("\n\n")
