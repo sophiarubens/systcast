@@ -1209,10 +1209,11 @@ class cosmo_stats(object):
             assert nu_ctr is not None, "centre freq is required to compute FoG"
             z_ctr=nu_HI_z0/nu_ctr-1
             self.z_ctr=z_ctr
-            self.h=H0*np.sqrt( Omegar*(1+z_ctr)**4 
-                              +Omegam*(1+z_ctr)**3
-                              +Omegak*(1+z_ctr)**2
-                              +OmegaLambda)
+            redshift_factor=np.sqrt( Omegar/(1+z_ctr)**4 
+                                    +Omegam/(1+z_ctr)**3
+                                    +Omegak/(1+z_ctr)**2
+                                    +OmegaLambda)
+            self.h=h*redshift_factor
         print("self.compute_FoG=",self.compute_FoG)
         self.P_fid_box=None
         self.T_primary=T_primary
@@ -1506,14 +1507,17 @@ class cosmo_stats(object):
 
         FoG_modulation=1.
         if FoG:
-            print("NOT ACTUALLY COMPUTING FoG FOR NOW")
+            print("FoG COMPUTATION NOT YET FINALIZED")
             alpha_FoG=1 # what CHIME 2026 uses 
             sigma_FoG=(1.93-1.48*(self.z_ctr-1)+0.81*(self.z_ctr-1)**2)*self.h.value # cf. eq. 11 of the CHIME/cosmology 2026 interpretation paper
-            kmu=self.kz_grid_corner/self.kmag_grid_corner # k-par/k
-            kmu[np.isnan(kmu)]=0. # bad to leave as nan, set to 1...
+            print("self.h.value,sigma_FoG=",self.h.value,sigma_FoG)
+            kmag_safe=np.copy(self.kmag_grid_corner)
+            kmag_safe[kmag_safe==0]=1./u.Mpc # try inf (bad), 1., 0...
+            kmu=np.abs(self.kz_grid_corner)/kmag_safe # k-par/k
+            print("np.sum(np.isnan(kmu)),np.sum(np.isinf(kmu))=",np.sum(np.isnan(kmu)),np.sum(np.isinf(kmu))) # wait lol are they even getting sent to nan? or is it inf... because if not nan then it would explain why the numerical workarounds appear to have no effect ://
             D_FoG_HI=1/(1+ 0.5*(kmu*alpha_FoG*sigma_FoG)**2 ) # cf. eq. 10 of the CHIME/cosmology 2026 interpretation paper
-            # FoG_modulation=D_FoG_HI**2
-            # print("np.mean(FoG modulation)=",np.mean(FoG_modulation))
+            FoG_modulation=D_FoG_HI**2
+            print("np.mean(FoG_modulation),np.std(FoG_modulation)=",np.mean(FoG_modulation),np.std(FoG_modulation))
         self.P_fid_box=P_fid_box*FoG_modulation
             
     def generate_P(self,send_to_P_fid:bool=False,T_use=None): # from a box of temperature field values
