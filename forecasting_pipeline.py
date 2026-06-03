@@ -629,7 +629,11 @@ class beam_effects(object):
         self.F=None
         self.B=None
 
-    def get_21cm_power_spec(self,pars_use:np.ndarray,minkh:float=1e-4/u.Mpc,maxkh:float=1./u.Mpc): # get matter power spec from CAMB
+    def get_21cm_power_spec(self,pars_use:np.ndarray,minkh:float=1e-4/u.Mpc,maxkh:float=1./u.Mpc,
+                            alpha_FoG=1, # base model in the CHIME paper
+                            A_HI_sq=3.55, # we definitely don't have this many sig figs, but this is a plausible enough value to use for now, taken from the first row of Table 2 of the CHIME/cosmology 2026 interpretation paper, which has a frequency conveniently pretty close to the 600 MHz sim I've been doing a bunch of tests with.  this is also their no-disclaimers best-fit value in the middle of the right-hand column of pg. 2
+                            kmu=1 # k-par/k. ignore this FoG term for as long as I insist on starting with a spherical power spec
+                            ): # get matter power spec from CAMB
         N_zs=5
         z_ctr_idx=int(np.median(np.arange(1,N_zs+1)))
         z=[self.z_ctr+i for i in np.linspace(self.z_ctr/2,-self.z_ctr/2,N_zs,endpoint=True)] # matter power interpolator does better with more redshifts
@@ -653,16 +657,29 @@ class beam_effects(object):
             lengco_units=u.Mpc
 
         k_CAMB=np.linspace(minkh.value,maxkh.value,self.n_sph_modes)/lengco_units
-        P_density_only=matter_power_interpolator.P(self.z_ctr,k_CAMB.value)*lengco_units**3
+        P_m=matter_power_interpolator.P(self.z_ctr,k_CAMB.value)*lengco_units**3
 
         Hz= results.hubble_parameter(z[z_ctr_idx])*u.km/u.s/u.Mpc
         Hz=Hz.to(H0.unit)
         h=h.to(u.km/u.s/u.Mpc)
-        T_bar = 4.0*u.mK *(1+z[z_ctr_idx])**2 *ombh2.value/0.02 *0.7/h.value *H0.value/Hz.value # https://arxiv.org/pdf/astro-ph/0406676 eq. 5
-        # b_HI =calc_b_HI(z[z_ctr_idx])
-        # matter_to_21_cm=T_bar*b_HI
-        # P_21=P_density_only*matter_to_21_cm**2 # CAMB handles the \eta_{\rm HI}
-        P_21=P_density_only*T_bar**2
+        Omega_HI=4e-4*(1+self.z_ctr)**0.6 # Crichton et al. 2015 fitting function; cf. eq. 5 of the CHIME/cosmology 2026 interpretation paper
+        T_b_bar=191.06*(h.value*H0/Hz*Omega_HI*(1+self.z_ctr)**2) *u.mK # cf. eq. 3 of the CHIME/cosmology 2026 interpretation paper
+        # b_HI= # Villaescusa-Navarro 2018 model; cf. eq. 8 of the CHIME/cosmology 2026 interpretation paper
+        # bias_term= b_HI+fmu2
+
+        bias_term_sq= A_HI_sq/(1e6*Omega_HI**2) # cf. eq. 24 of the CHIME/cosmology 2026 interpretation paper
+        sigma_FoG=(1.93-1.48*(self.z_ctr-1)+0.81*(self.z_ctr-1)**2)*h.value # cf. eq. 11 of the CHIME/cosmology 2026 interpretation paper
+        D_FoG_HI=1/(1+ 0.5*(kmu*alpha_FoG*sigma_FoG)**2 ) # cf. eq. 10 of the CHIME/cosmology 2026 interpretation paper
+        
+        # T_bar = 4.0*u.mK *(1+z[z_ctr_idx])**2 *ombh2.value/0.02 *0.7/h.value *H0.value/Hz.value # https://arxiv.org/pdf/astro-ph/0406676 eq. 5
+        # P_21=T_b_bar**2 *bias_term**2 *P_m * D_FoG_HI**2
+        # print("Omega_HI.unit=",Omega_HI.unit)
+        print("T_b_bar.unit=",T_b_bar.unit)
+        # print("bias_term_sq.unit=",bias_term_sq.unit)
+        print("P_m.unit=",P_m.unit)
+        # print("D_FoG_HI.unit=",D_FoG_HI.unit)
+        P_21=T_b_bar**2 *bias_term_sq *P_m * D_FoG_HI**2
+        print("P_21.unit=",P_21.unit)
 
         return k_CAMB,P_21
     
@@ -2399,6 +2416,7 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
     axs = [[fig.add_subplot(gs[row, col]) for col in range(N_LHS_cols)] for row in range(N_LHS_rows)] # grid for the left
     ax_right = fig.add_subplot(gs[:, N_LHS_cols:]) # summary holder on the right
 
+    print("\n")
     for k in range(N_spectra):
         i=k//N_LHS_cols
         j=k%N_LHS_cols
@@ -2462,7 +2480,7 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
         idx_for_k3=np.argmin(np.abs(k_mag_grid-k3_inset))
         idx_for_k3=np.unravel_index(idx_for_k3,specshape)
         values_of_k[k]=[ spec[idx_for_k1], spec[idx_for_k2], spec[idx_for_k3] ]
-        print("\nLIM review cut:",spec[idx_for_k3])
+        print("LIM review cut:",spec[idx_for_k3])
         assert not np.any(np.asarray([idx_for_k1,idx_for_k2,idx_for_k3])>np.prod(specshape))
 
     complexity_indices=np.arange(N_spectra)
