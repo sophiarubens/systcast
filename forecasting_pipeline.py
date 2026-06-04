@@ -762,7 +762,6 @@ class beam_effects(object):
             # format of params for each case: Tref, nuref, alpha, sigma_alpha
             fg_info_cases=[[335.4*u.K, 150*u.MHz, -2.8,  0.1],   # synchrotron
                            [33.5 *u.K, 150*u.MHz, -2.15, 0.01] ] # free-free
-            # fg_info_cases=[[335.4*u.K, 150*u.MHz, -2.8,  0.1]]
             for fg_info in fg_info_cases:
                 Tref,nuref,alpha,sigma_alpha=fg_info
                 fg_box_ingredient=self.get_pwr_law_FG_ingredient(Tref,nuref,alpha,sigma_alpha)
@@ -1370,14 +1369,20 @@ class cosmo_stats(object):
         # tapering/apodization
         taper_xy=np.ones(self.Nvox)
         taper_z=np.ones(self.Nvoxz)
-        if radial_taper is not None:
-            taper_z= Blackman_Harris_safe_for_FFT(Nvoxz) # confirmed to be centre-, not corner-origin
+        fftshift_axes=()
         if image_taper is not None:
             taper_xy=Blackman_Harris_safe_for_FFT(Nvox)
+            fftshift_axes=(0,1)
+        if radial_taper is not None:
+            taper_z= Blackman_Harris_safe_for_FFT(Nvoxz) # confirmed to be centre-, not corner-origin
+            fftshift_axes+=(2,)
+        print("fftshift_axes=",fftshift_axes)
         taper_xxx,taper_yyy,taper_zzz=np.meshgrid(taper_xy,taper_xy,taper_z, indexing="ij")
         taper_xyz_product=taper_xxx*taper_yyy*taper_zzz
-        self.taper_xyz_centre=taper_xyz_product
-        self.taper_xyz_corner=ifftshift(taper_xyz_product)
+        self.taper_xyz_corner=taper_xyz_product
+        self.taper_xyz_centre=fftshift(taper_xyz_product,axes=fftshift_axes)
+        # self.taper_xyz_centre=taper_xyz_product
+        # self.taper_xyz_corner=ifftshift(taper_xyz_product)
 
         # primary beam
         self.primary_beam_num=primary_beam_num
@@ -2780,7 +2785,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                         init_and_box_tol=0.05,CAMB_tol=0.05,                                 
                                         frac_tol_conv=frac_tol_conv,seed=seed,                                         
                                         ftol_deriv=1e-16,maxiter=5,           
-                                        radial_taper=True,image_taper=False,
+                                        radial_taper=True,image_taper=None,
 
                                         # CONVENIENCE
                                         heavy_beam_recalc=redo_box_calc, already_imported_CST=alr_imp_CST                                                  
