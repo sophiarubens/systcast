@@ -735,6 +735,11 @@ class beam_effects(object):
         fg_box_this_ingredient*=Tref.unit
         fg_box_this_ingredient=fg_box_this_ingredient.to(u.mK)
 
+        plt.figure()
+        plt.plot(power_law_factor_means,label="power law factor means")
+        plt.savefig("power_law_factor_means.png")
+        plt.close()
+
         return fg_box_this_ingredient # centre-origin
 
     def calc_power_contamination(self, isolated:bool=False): # Monte Carlo numerical windowing of beam-aware brightness temp boxes to yield several cylindrically power spectra of interest for forecasting and diagnostics. various states of beam knowledge and fiducial spectrum as appropriate (see Memos I-II)
@@ -750,7 +755,7 @@ class beam_effects(object):
         power_unit=u.mK**2*self.Deltabox_xy.unit**3
         N_flat=10*self.Nkpar_surv
         P_flat=np.ones(N_flat) *power_unit
-        # P_flat=np.ones(N_flat)/N_flat**2 *power_unit
+        P_flat=np.ones(N_flat)/N_flat**2 *power_unit
         self.P_flat=P_flat
         self.k_for_flat=np.linspace(self.kparmin_surv,self.kparmax_surv,10*self.Nkpar_surv)
         if self.layer_foregrounds:
@@ -758,7 +763,7 @@ class beam_effects(object):
             box_z_freqs= np.linspace(self.nu_hi.value,self.nu_lo.value,self.Nvox_box_z,endpoint=True)*self.Deltanu.unit
             self.freqs_for_fg=box_z_freqs.to(u.MHz) # descending in frequency to match the iteration over increasing redshift
 
-            T_fg=np.zeros((self.Nvox_box_xy,self.Nvox_box_xy,self.Nvox_box_z))*u.mK
+            fg_box=np.zeros((self.Nvox_box_xy,self.Nvox_box_xy,self.Nvox_box_z))*u.mK
             # Adrian's 2011 foreground model. save point sources for later because I'll need to generalize my approach
             # format of params for each case: Tref, nuref, alpha, sigma_alpha
             fg_info_cases=[[335.4*u.K, 150*u.MHz, -2.8,  0.1],   # synchrotron
@@ -766,20 +771,18 @@ class beam_effects(object):
             # fg_info_cases=[[335.4*u.K, 150*u.MHz, -2.8,  0.1]]
             for fg_info in fg_info_cases:
                 Tref,nuref,alpha,sigma_alpha=fg_info
-                T_fg_ingredient=self.get_pwr_law_FG_ingredient(Tref,nuref,alpha,sigma_alpha)
-                T_fg+=T_fg_ingredient
-            self.T_fg=T_fg # centre-origin
+                fg_box_ingredient=self.get_pwr_law_FG_ingredient(Tref,nuref,alpha,sigma_alpha)
+                fg_box+=fg_box_ingredient
+            self.fg_box=fg_box # centre-origin
 
             # bonus step: compute power spec to facilitate comparisons to power spectra with all the other cosmo + fidu beam + syst + fg ingredient permutations
             fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
-                           T_pristine=T_fg,
+                           T_pristine=fg_box,
                            frac_tol=self.frac_tol_conv,seed=self.seed)
             fg.power_Monte_Carlo()
 
-            fg_unbinned_power=fg.P_unbinned_MC_complete
-            fg_power=fg.P_binned_MC_complete # *T_fg.unit**2 *self.Lsurv_box_xy.unit**2
+            self.P_xx_xx_xx_fg=fg.P_binned_MC_complete
             print("                           fg MC complete")
-            self.P_xx_xx_xx_fg=fg_power
 
         co_fi_xx_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                        P_fid=P_cosmo,k_fid=self.ksph, 
@@ -789,7 +792,7 @@ class beam_effects(object):
                        frac_tol=self.frac_tol_conv,seed=self.seed,    
                        primary_beam_modes=self.pbm_for_cs,
                        radial_taper=self.radial_taper,image_taper=self.image_taper,
-                       wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_unbinned_power) #,fg_box=fg_box)
+                       wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
         self.kperpbins_internal=co_fi_xx_fg.kperpbins
         self.kparbins_internal=co_fi_xx_fg.kparbins
         co_fi_sy_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -800,25 +803,25 @@ class beam_effects(object):
                        frac_tol=self.frac_tol_conv,seed=self.seed,
                        primary_beam_modes=self.pbm_for_cs,
                        radial_taper=self.radial_taper,image_taper=self.image_taper,
-                       wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_unbinned_power) #,fg_box=fg_box)
+                       wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
         xx_fi_sy_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
-                       P_fid=P_flat,k_fid=self.k_for_flat,
+                    #    P_fid=P_flat,k_fid=self.k_for_flat,
                        Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                        primary_beam_num=self.primary_real,primary_beam_type_num="manual",
                        primary_beam_den=self.primary_thgt,primary_beam_type_den="manual",
                        frac_tol=self.frac_tol_conv,seed=self.seed,
                        primary_beam_modes=self.pbm_for_cs,
                        radial_taper=self.radial_taper,image_taper=self.image_taper,
-                       wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_unbinned_power) #,fg_box=fg_box)
+                       wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
         xx_fi_xx_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
-                       P_fid=P_flat,k_fid=self.k_for_flat,
+                    #    P_fid=P_flat,k_fid=self.k_for_flat,
                        Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                        primary_beam_num=self.primary_real,primary_beam_type_num="manual",
                        primary_beam_den=self.primary_real,primary_beam_type_den="manual",
                        frac_tol=self.frac_tol_conv,seed=self.seed,
                        primary_beam_modes=self.pbm_for_cs,
                        radial_taper=self.radial_taper,image_taper=self.image_taper,
-                       wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_unbinned_power) #,fg_box=fg_box)
+                       wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
         co_fi_xx_xx=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                        P_fid=P_cosmo,k_fid=self.ksph, 
                        Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
@@ -842,9 +845,9 @@ class beam_effects(object):
                        Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                        frac_tol=self.frac_tol_conv,seed=self.seed,    
                        radial_taper=self.radial_taper,image_taper=self.image_taper,
-                       wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_unbinned_power) #,fg_box=fg_box)
+                       wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
         xx_fi_xx_xx=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
-                       P_fid=P_flat,k_fid=self.k_for_flat, 
+                    #    P_fid=P_flat,k_fid=self.k_for_flat, 
                        Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                        primary_beam_num=self.primary_fidu,primary_beam_type_num="manual",
                        primary_beam_den=self.primary_fidu,primary_beam_type_den="manual",
@@ -853,7 +856,7 @@ class beam_effects(object):
                        radial_taper=self.radial_taper,image_taper=self.image_taper,
                        wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=None)
         xx_fi_sy_xx=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
-                       P_fid=P_flat,k_fid=self.k_for_flat, 
+                    #    P_fid=P_flat,k_fid=self.k_for_flat, 
                        Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                        primary_beam_num=self.primary_fidu,primary_beam_type_num="manual",
                        primary_beam_den=self.primary_real,primary_beam_type_den="manual",
@@ -1201,13 +1204,8 @@ class cosmo_stats(object):
         self.physical_volume=physical_volume
         self.fg_box=fg_box
         self.P_fid=P_fid
-        P_fid_is_flat=False
-        compute_FoG=False
-        if P_fid is not None:
-            P_fid_is_flat=np.allclose(P_fid,np.mean(P_fid.value)*np.ones_like(P_fid))
-            compute_FoG = not P_fid_is_flat
-        self.compute_FoG=compute_FoG
-        if compute_FoG:
+        self.compute_FoG = P_fid is not None
+        if self.compute_FoG:
             assert nu_ctr is not None, "centre freq is required to compute FoG"
             z_ctr=nu_HI_z0/nu_ctr-1
             self.z_ctr=z_ctr
@@ -1219,7 +1217,7 @@ class cosmo_stats(object):
         self.P_fid_box=None
         self.T_primary=T_primary
         self.T_pristine=T_pristine
-        if ((T_primary is None) and (T_pristine is None) and (P_fid is None)): # require either a box or a fiducial power spec (il faut some way of determining #voxels/side; passing just Nvox is not good enough)
+        if ((T_primary is None) and (T_pristine is None) and (P_fid is None) and (primary_beam_num is None)): # require either a box or a fiducial power spec (il faut some way of determining #voxels/side; passing just Nvox is not good enough)
             raise ValueError("not enough info")
         else:                                                                  # there is possibly enough info to proceed, but still need to check for conflicts and gaps
             if ((T_pristine is not None) and (T_primary is not None)):
@@ -1470,10 +1468,10 @@ class cosmo_stats(object):
         self.evaled_primary_den=evaled_primary_den
         self.evaled_primary_num=evaled_primary_num
 
+        if self.P_fid is None and self.primary_beam_num is not None:
+            self.T_primary=np.ones(self.box_shape) *u.mK
+
         self.effective_volume=np.sum((evaled_primary_use_for_eff_vol*self.taper_xyz_centre)**2*self.d3r)
-        if P_fid_is_flat:
-            self.P_fid=np.ones_like(self.P_fid)/self.effective_volume.value
-            print("self.P_fid[0]=",self.P_fid[0])
 
         assert self.effective_volume>0
         
@@ -1515,20 +1513,12 @@ class cosmo_stats(object):
             alpha_FoG=1 # what CHIME 2026 uses 
             sigma_FoG=(1.93-1.48*(self.z_ctr-1)+0.81*(self.z_ctr-1)**2)*self.h.value # cf. eq. 11 of the CHIME/cosmology 2026 interpretation paper
             kmag_safe=np.copy(self.kmag_grid_corner)
-            kmag_safe[kmag_safe==0]=1./self.Lxy.unit # try inf (bad), 1., 0...
+            kmag_safe[kmag_safe==0]=1./u.Mpc # try inf (bad), 1., 0...
             kmu=np.abs(self.kz_grid_corner)/kmag_safe # k-par/k
             D_FoG_HI=1/(1+ 0.5*(kmu*alpha_FoG*sigma_FoG)**2 ) # cf. eq. 10 of the CHIME/cosmology 2026 interpretation paper
             FoG_modulation=D_FoG_HI**2
             FoG_modulation=1
             print("np.mean(FoG_modulation),np.std(FoG_modulation)=",np.mean(FoG_modulation),np.std(FoG_modulation))
-
-        if self.fg_box is not None:
-            tempunit=u.mK
-            if self.T_pristine is not None:
-                tempunit=self.T_pristine.unit
-            assert self.Lxy.unit**3 *tempunit**2 == self.fg_box.unit
-            P_fid_box+=self.fg_box.value
-
         self.P_fid_box=P_fid_box*FoG_modulation
             
     def generate_P(self,send_to_P_fid:bool=False,T_use=None): # from a box of temperature field values
@@ -1556,7 +1546,7 @@ class cosmo_stats(object):
             self.bin_power()
         
         if send_to_P_fid: # if generate_P was called speficially to have a spec from which all future box realizations will be generated
-            self.P_fid_box=ifftshift(self.P_unbinned) # P_fid_box is corner-origin, but P_unbinned is centre-origin
+            self.P_fid_box=ifftshift(self.P_unbinned) # P_fid_box is corner-origin
         else:             # the "normal" case where you're just accumulating a realization (any binning happens at the end of the Monte Carlo)
             self.P_unbinned_running_sum+=P_unbinned
 
@@ -1581,7 +1571,6 @@ class cosmo_stats(object):
         assert self.Nkpar<self.Nvoxz, "Nvoxz should be >= Nkpar"
         if (self.P_fid_box is None):
             try:
-                print("P_fid oversubscription activated in generate_GRF")
                 self.generate_P(send_to_P_fid=True) # even if you start with a random realization, it'll be helpful to have a power spec summary stat to generate future realizations
             except: # something goes wrong in the P_fid calculation
                 raise ValueError("not enough info")
@@ -1609,16 +1598,15 @@ class cosmo_stats(object):
                           norm="forward"))/self.iftnorm
 
         T*=u.mK # centre_origin
-        # if self.fg_box is not None:
-            # T+=self.fg_box # this makes sense on paper
-
+        if self.fg_box is not None:
+            T+=self.fg_box
+        
         self.T_pristine=T
         if self.primary_beam_num is not None:
             self.T_primary=T*self.evaled_primary_num
 
     def power_Monte_Carlo(self,interfix:str=""): # since box generation is not deterministic
         if self.P_fid_box is None:
-            print("P_fid oversubscription activated in power_Monte_Carlo")
             self.generate_P(send_to_P_fid=True)
         self.MC_not_complete=True
         if self.primary_beam_num is None:
@@ -2126,7 +2114,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
             box_uvz[:,:,i]=interpolated_slice*self.taper_grid
             if ((i%(self.N_chan//3))==0):
                 print("{:7.1f} pct complete".format(i/self.N_chan*100))
-        
+
         box_xyz=fftshift(irfftn(ifftshift(box_uvz*d2u, axes=(0,1)),
                                axes=(0,1),s=(N_grid_pix,N_grid_pix),
                                norm="forward"), axes=(0,1)) # mixed coords before; all config space after
