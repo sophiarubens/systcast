@@ -708,27 +708,28 @@ class beam_effects(object):
 
         return kpar_grid,kperp_grid,Pcyl
     
-    def get_pwr_law_FG_ingredient(self,Tref,nuref,alpha,sigma_alpha,rngseed=438): # change args to get different kinds of FGs described well enough as a power law (like synchrotron or free-free)
-        # initialize a cosmo_stats object with a flat input power spec (P)
+    def get_pwr_law_FG_ingredient(self,              # synchrotron and free-free FG emission are both well described by power laws. cf. Liu & Tegmark 2011 (https://arxiv.org/abs/1106.0007)
+                                  Tref,nuref,        # temp and freq to which this kind of power law FG are referenced
+                                  alpha,sigma_alpha, # spectral index and its spread for this kind of power law FG (cf. Liu 2011)
+                                  rngseed=438): 
+        # generate a slice of white noise
         fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Deltabox_z,
                        P_fid=self.P_flat,k_fid=self.k_for_flat,
                        Nvox=self.Nvox_box_xy,Nvoxz=1,
                        seed=self.seed, nu_ctr=self.nu_ctr) 
-
-        # generate a slice from the flat temp spec
         fg.generate_GRF()
         white_noise_slice=fg.T_pristine 
         
-        # apply LoS power law renormalization to each slice  
+        # bookkeeping to prep for power law
         freqs_in_ref_unit=self.freqs_for_fg.to(nuref.unit)   
         fg_box_this_ingredient=np.zeros((self.Nvox_box_xy,self.Nvox_box_xy,self.Nvox_box_z))
         rng=np.random.default_rng(rngseed)
         freq_ratios=freqs_in_ref_unit/nuref
-        power_law_factor_means=np.zeros(self.Nvox_box_z)
         slice_of_alphas=rng.normal(loc=alpha, scale=sigma_alpha, size=(self.Nvox_box_xy,self.Nvox_box_xy))
+
+        # apply LoS power law renormalization to each slice  
         for i,freq_ratio_i in enumerate(freq_ratios):
             power_law_factor=Tref.value*freq_ratio_i**slice_of_alphas
-            power_law_factor_means[i]=np.mean(power_law_factor)
             fg_slice=white_noise_slice*power_law_factor
             fg_box_this_ingredient[:,:,i]=fg_slice
 
@@ -2416,7 +2417,7 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
                     nu_ctr:float,                                         # only necessary if I insist on plotting the wedge 
                     k1_inset:float=0.06/u.Mpc, 
                     k2_inset:float=0.1/u.Mpc,
-                    k3_inset:float=2.5/u.Mpc): # k-scales of interest to sample each spectrum in the ensemble
+                    k3_inset:float=0.4/u.Mpc): #2.5/u.Mpc): # k-scales of interest to sample each spectrum in the ensemble
     N_spectra=len(ensemble_of_spectra)
     assert(N_spectra==len(ensemble_ids)), "mismatched number of spectra and spectrum names"
     Na=int(np.ceil(np.sqrt(N_spectra)))
@@ -2505,7 +2506,8 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
         idx_for_k3=np.argmin(np.abs(k_mag_grid-k3_inset))
         idx_for_k3=np.unravel_index(idx_for_k3,specshape)
         values_of_k[k]=[ spec[idx_for_k1], spec[idx_for_k2], spec[idx_for_k3] ]
-        print("LIM review cut:",spec[idx_for_k3])
+        print("LIM review k=0.1:",spec[idx_for_k2])
+        print("CHIME autocorr k=0.4:",spec[idx_for_k3])
         assert not np.any(np.asarray([idx_for_k1,idx_for_k2,idx_for_k3])>np.prod(specshape))
 
     complexity_indices=np.arange(N_spectra)
@@ -2931,6 +2933,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         co_xx_xx_fg_lin=( P_co_xx_xx_fg - P_co_xx_xx_xx - P_xx_xx_xx_fg ).value /P_co_xx_xx_fg.value
         co_fi_xx_fg_lin=( P_co_fi_xx_fg - P_co_fi_xx_xx - P_xx_fi_xx_fg ).value /P_co_fi_xx_fg.value
         co_fi_sy_fg_lin=( P_co_fi_sy_fg - P_co_fi_sy_xx - P_xx_fi_sy_fg ).value /P_co_fi_sy_fg.value
+        co__minus__fg=P_co_xx_xx_xx-P_xx_xx_xx_fg
 
         k_perp_grid,k_par_grid=np.meshgrid(kperp_internal,kpar_internal, indexing="ij")
         k_mag_grid=np.sqrt(k_perp_grid**2+k_par_grid**2)
@@ -2938,7 +2941,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         power_quantities_this_complexity=np.array([P_xx_fi_sy_fg.value,  P_co_fi_xx_fg.value, P_co_fi_sy_fg.value, Presidual.value,     Pratio,        
                                                    P_xx_xx_xx_fg.value,  Pisoratio,           P_co_xx_xx_xx.value, P_co_fi_xx_xx.value, P_co_fi_sy_xx.value, 
                                                    P_co_xx_xx_fg.value,  P_xx_fi_xx_xx.value, P_xx_fi_sy_xx.value, P_xx_fi_xx_fg.value, P_CO_XX_XX_XX.value,
-                                                   co_xx_xx_fg_lin,      co_fi_xx_fg_lin,     co_fi_sy_fg_lin  ]) # N_pspec_types x Nkperp x Nkpar
+                                                   co_xx_xx_fg_lin,      co_fi_xx_fg_lin,     co_fi_sy_fg_lin,     co__minus__fg  ]) # N_pspec_types x Nkperp x Nkpar
         power_quantities_all.append(power_quantities_this_complexity) # N_complexity_cases x N_pspec_types x Nkperp x Nkpar
         
         Delta2_quantities_this_complexity=[P_qty*k_mag_grid**3/(2*pi**2) for P_qty in power_quantities_this_complexity]
@@ -2967,73 +2970,55 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         fgext=3*np.std(P_xx_xx_xx_fg).value
         abs_residual=[np.percentile(power_quantities_all[:,3,:,:],90),
                       np.max(np.abs(power_quantities_all[:,3,:,:]))]
-        coxxxxfg_lin=[np.percentile(power_quantities_all[:,-3,:,:],90),
+        coxxxxfg_lin=[np.percentile(power_quantities_all[:,-4,:,:],90),
+                      np.max(np.abs(power_quantities_all[:,-4,:,:]))]
+        cofixxfg_lin=[np.percentile(power_quantities_all[:,-3,:,:],90),
                       np.max(np.abs(power_quantities_all[:,-3,:,:]))]
-        cofixxfg_lin=[np.percentile(power_quantities_all[:,-2,:,:],90),
+        cofisyfg_lin=[np.percentile(power_quantities_all[:,-2,:,:],90),
                       np.max(np.abs(power_quantities_all[:,-2,:,:]))]
-        cofisyfg_lin=[np.percentile(power_quantities_all[:,-1,:,:],90),
-                      np.max(np.abs(power_quantities_all[:,-1,:,:]))]
-        # cofg_lin=[np.percentile(power_quantities_all[:,-5,:,:],90),
-        #           np.max(np.abs(power_quantities_all[:,-5,:,:]))]
-        # cofi_lin=[np.percentile(power_quantities_all[:,-4,:,:],90),
-        #           np.max(np.abs(power_quantities_all[:,-4,:,:]))]
-        # fifg_lin=[np.percentile(power_quantities_all[:,-3,:,:],90),
-        #           np.max(np.abs(power_quantities_all[:,-3,:,:]))]
-        # all__lin=[np.percentile(power_quantities_all[:,-2,:,:],90),
-        #           np.max(np.abs(power_quantities_all[:,-2,:,:]))]
-        # cofisy_lin=[np.percentile(power_quantities_all[:,-1,:,:],90),
-        #             np.max(np.abs(power_quantities_all[:,-1,:,:]))]
+        co_m_fg=[np.percentile(power_quantities_all[:,-1,:,:],90),
+                 np.percentile(np.abs(power_quantities_all[:,-1,:,:]),98)]
     elif which_power=="Delta2":
-        # abs_co_no_fg=100*np.max(Delta2_quantities_all[:,abs_co_no_fg_indices,:,:])
         abs_co_no_fg=None
         abs_co_fg=np.percentile(Delta2_quantities_all[:,abs_co_fg_indices,:,:],90) # good for whole dynamic range
         fgext=np.percentile(Delta2_quantities_all[:,5,:,:],90)
         abs_residual=[np.percentile(Delta2_quantities_all[:,3,:,:],90),
                       np.max(np.abs(Delta2_quantities_all[:,3,:,:]))]
-        coxxxxfg_lin=[np.percentile(Delta2_quantities_all[:,-3,:,:],90),
-                      np.max(np.abs(power_quantities_all[:,-3,:,:]))]
-        cofixxfg_lin=[np.percentile(Delta2_quantities_all[:,-2,:,:],90),
+        coxxxxfg_lin=[np.percentile(Delta2_quantities_all[:,-4,:,:],90),
+                      np.max(np.abs(Delta2_quantities_all[:,-4,:,:]))]
+        cofixxfg_lin=[np.percentile(Delta2_quantities_all[:,-3,:,:],90),
+                      np.max(np.abs(Delta2_quantities_all[:,-3,:,:]))]
+        cofisyfg_lin=[np.percentile(Delta2_quantities_all[:,-2,:,:],90),
                       np.max(np.abs(Delta2_quantities_all[:,-2,:,:]))]
-        cofisyfg_lin=[np.percentile(Delta2_quantities_all[:,-1,:,:],90),
-                      np.max(np.abs(Delta2_quantities_all[:,-1,:,:]))]
-        # cofg_lin=[np.percentile(Delta2_quantities_all[:,-5,:,:],90),
-        #           np.max(np.abs(Delta2_quantities_all[:,-5,:,:]))]
-        # cofi_lin=[np.percentile(Delta2_quantities_all[:,-4,:,:],90),
-        #           np.max(np.abs(Delta2_quantities_all[:,-4,:,:]))]
-        # fifg_lin=[np.percentile(Delta2_quantities_all[:,-3,:,:],90),
-        #           np.max(np.abs(Delta2_quantities_all[:,-3,:,:]))]
-        # all__lin=[np.percentile(Delta2_quantities_all[:,-2,:,:],90),
-        #           np.max(np.abs(Delta2_quantities_all[:,-2,:,:]))]
-        # cofisy_lin=[np.percentile(Delta2_quantities_all[:,-1,:,:],90),
-        #             np.max(np.abs(Delta2_quantities_all[:,-1,:,:]))]
+        co_m_fg=[np.percentile(Delta2_quantities_all[:,-1,:,:],90),
+                 np.percentile(np.abs(Delta2_quantities_all[:,-1,:,:]),98)]
 
     co_fi_sy_fg_str="cosmo + fidu beam + syst + fg"
     co_fi_xx_fg_str="cosmo + fidu beam + fg"
     plot_version_names = ["fidu beam + syst + fg",  co_fi_xx_fg_str,                     co_fi_sy_fg_str,   "("+co_fi_sy_fg_str+") - ("+co_fi_xx_fg_str+")", "log10[ (fidu beam + syst + fg) / cosmo ]", 
                           "fg",                    "log10[ (fidu beam + fg) / cosmo ]", "cosmo",            "cosmo + fidu beam",                             "cosmo + fidu beam + syst",
                           "cosmo + fg",            "fidu beam",                         "fidu beam + syst", "fidu beam + fg",                                "COSMO",
-                          "cosmo–fg linearity frac dif",    "cosmo–fidu beam–fg linearity frac dif", "all linearity frac dif", "cosmo—fidu beam–syst linearity frac dif"]
-    # co_xx_xx_fg_lin,      co_fi_xx_fg_lin,     co_fi_sy_fg_lin
+                          "cosmo–fg linearity frac dif",    "cosmo–fidu beam–fg linearity frac dif", "all linearity frac dif", "cosmo - fg"]
     save_names= ["fidu_syst_fg", "cosmo_fidu_fg",         "cosmo_fidu_syst_fg", "cosmo_fidu_syst_fg__minus__cosmo_fidu_fg", "fidu_syst_fg__divby__cosmo", 
                  "fg",           "fidu_fg__divby__cosmo", "cosmo",              "cosmo_fidu",                                "cosmo_fidu_syst",
                  "cosmo_fg",    "fidu",                   "fidu_syst",          "fidu_fg",                                   "COSMOCOSMO",
-                 "cosmo_fg_linearity", "cosmo_fidu_fg_linearity", "all_linearity"]
+                 "cosmo_fg_linearity", "cosmo_fidu_fg_linearity", "all_linearity", "cosmo__minus__fg"]
     plot_cmaps= [abs_map, abs_map, abs_map, rel_map, rel_map, 
                  abs_map, rel_map, abs_map, abs_map, abs_map,
                  abs_map, abs_map, abs_map, abs_map, abs_map,
-                 rel_map, rel_map, rel_map]
+                 rel_map, rel_map, rel_map, rel_map]
     norm_exts=  [None,      abs_co_fg, abs_co_fg,    abs_residual,         None,        
                  fgext,     None,      abs_co_no_fg, abs_co_no_fg, abs_co_no_fg,
                  abs_co_fg, None,      None,         None,         abs_co_no_fg,
-                 coxxxxfg_lin, cofixxfg_lin, cofisyfg_lin]
+                 coxxxxfg_lin, cofixxfg_lin, cofisyfg_lin, co_m_fg]
     plot_log=   [False, False, False, False, True,
                  False, True,  False, False, False,
                  False, False, False, False, False,
-                 False, False, False]
+                 False, False, False, False]
     plot_units=[absolute_units, absolute_units, absolute_units, absolute_units, relative_units, 
                 absolute_units, relative_units, absolute_units, absolute_units, absolute_units,
                 absolute_units, absolute_units, absolute_units, absolute_units, absolute_units,
-                absolute_units, absolute_units, absolute_units]
+                relative_units, relative_units, relative_units, absolute_units]
     ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   
 
     print("\n\n")
