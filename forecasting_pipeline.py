@@ -445,7 +445,8 @@ class beam_effects(object):
                 fidu_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.N_timesteps,
                                                     N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                                     distribution="random",
-                                                    sub_ensemble_of_CST_beams=fidu_box,CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
+                                                    sub_ensemble_of_CST_beams=fidu_box,
+                                                    CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
                 fidu_per_antenna_ified.stack_to_box()
                 print("finished per-antenna calculation for fidu CST beam")
                 fidu_box_per_antenna_ified=fidu_per_antenna_ified.box
@@ -454,7 +455,8 @@ class beam_effects(object):
                 syst_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.N_timesteps,
                                                     N_pbws_pert=N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                                     distribution=PA_distribution,
-                                                    sub_ensemble_of_CST_beams=[fidu_box,CST_syst_ensemble],CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
+                                                    sub_ensemble_of_CST_beams=[fidu_box,CST_syst_ensemble],
+                                                    CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
                 syst_per_antenna_ified.stack_to_box()
                 print("finished per-antenna calculation for syst CST beam")
                 syst_box_per_antenna_ified=syst_per_antenna_ified.box
@@ -548,7 +550,8 @@ class beam_effects(object):
                 fidu_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.N_timesteps,
                                                     N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                                     distribution="random",
-                                                    sub_ensemble_of_CST_beams=fidu_box,CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
+                                                    sub_ensemble_of_CST_beams=fidu_box,
+                                                    CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
                 fidu_per_antenna_ified.stack_to_box()
                 print("finished per-antenna calculation for fidu CST beam")
                 fidu_box_per_antenna_ified=fidu_per_antenna_ified.box
@@ -557,7 +560,8 @@ class beam_effects(object):
                 syst_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.N_timesteps,
                                                     N_pbws_pert=N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                                     distribution=PA_distribution,
-                                                    sub_ensemble_of_CST_beams=[fidu_box,CST_syst_ensemble],CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
+                                                    sub_ensemble_of_CST_beams=[fidu_box,CST_syst_ensemble],
+                                                    CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
                 syst_per_antenna_ified.stack_to_box()
                 print("finished per-antenna calculation for syst CST beam")
                 syst_box_per_antenna_ified=syst_per_antenna_ified.box
@@ -580,6 +584,7 @@ class beam_effects(object):
             self.primary_fidu=fidu_box_per_antenna_ified
             self.primary_real=fidu_box_per_antenna_ified
             self.primary_thgt=syst_box_per_antenna_ified
+            print("np.std(syst_box_per_antenna_ified-fidu_box_per_antenna_ified)=",np.std(syst_box_per_antenna_ified-fidu_box_per_antenna_ified))
         else:
             raise ValueError("unknown primary_beam_categ") # as far as primary power beam perturbations go, they can all pretty much be described as being applied PA, or in some externally-implemented custom way
 
@@ -762,8 +767,9 @@ class beam_effects(object):
             self.freqs_for_fg= np.linspace(self.nu_hi.value,self.nu_lo.value, # descending in frequency to match the iteration over increasing redshift
                                            self.Nvox_box_z,endpoint=True)*self.Deltanu.unit
             fg_box=np.zeros((self.Nvox_box_xy,self.Nvox_box_xy,self.Nvox_box_z))*u.mK
-            fg_info_cases=[ [335.4*u.K, 150*u.MHz, -2.8,  0.1],   # synchrotron
-                            [33.5 *u.K, 150*u.MHz, -2.15, 0.01] ] # free-free
+            # fg_info_cases=[ [335.4*u.K, 150*u.MHz, -2.8,  0.1],   # synchrotron
+                            # [33.5 *u.K, 150*u.MHz, -2.15, 0.01] ] # free-free
+            fg_info_cases=[ [1e3*u.K, 150*u.MHz, -8,  0.05] ] # artificial
             for fg_info in fg_info_cases:
                 Tref,nuref,alpha,sigma_alpha=fg_info
                 fg_box_ingredient=self.get_pwr_law_FG_ingredient(Tref,nuref,alpha,sigma_alpha)
@@ -1156,6 +1162,7 @@ class cosmo_stats(object):
         self.fg_box=fg_box
         self.P_fid=P_fid
         self.compute_FoG = P_fid is not None
+        print("self.compute_FoG=",self.compute_FoG)
         if self.compute_FoG:
             assert nu_ctr is not None, "centre freq is required to compute FoG"
             z_ctr=nu_HI_z0/nu_ctr-1
@@ -1469,7 +1476,6 @@ class cosmo_stats(object):
             D_FoG_HI=1/(1+ 0.5*(kmu*alpha_FoG*sigma_FoG)**2 ) # cf. eq. 10 of the CHIME/cosmology 2026 interpretation paper
             FoG_modulation=D_FoG_HI**2
             FoG_modulation=1
-            print("np.mean(FoG_modulation),np.std(FoG_modulation)=",np.mean(FoG_modulation),np.std(FoG_modulation))
         self.P_fid_box=P_fid_box*FoG_modulation
             
     def generate_P(self,send_to_P_fid:bool=False,T_use=None): # from a box of temperature field values
@@ -1671,10 +1677,17 @@ def beam_type_distribution(N_NS,N_EW,N_types,distribution="random",frame_width=2
                 rng=np.random.default_rng()
                 sh=per_antenna_types.shape
                 sz=per_antenna_types.size
-                per_antenna_types[~np.isin(np.arange(sz).reshape(sh), 
-                                           np.arange(sz).reshape(sh)[frame_width:-frame_width, 
-                                                                     frame_width:-frame_width])]=rng.integers(1,high=N_types,
-                                                                                                              size=2*(N_NS+N_EW)-4)
+                sz_ind=np.arange(sz)
+                sz_ind_rectangular=sz_ind.reshape(sh)
+                indices_for_systs=~np.isin(sz_ind_rectangular, 
+                                           sz_ind_rectangular[frame_width:-frame_width, 
+                                                              frame_width:-frame_width])
+                np.savetxt("frame_check.txt",per_antenna_types[indices_for_systs])
+                print("np.sum(indices_for_systs),   2*(N_NS+N_EW)-4=",np.sum(indices_for_systs),   2*(N_NS+N_EW)-4)
+                per_antenna_types[indices_for_systs]=1
+                per_antenna_types[indices_for_systs]=rng.integers(1,high=N_types,
+                                                                  size=np.sum(per_antenna_types[indices_for_systs]))
+                                                                #   size=2*(N_NS+N_EW)-4)
         else:
             raise ValueError("beam distribution pattern not yet implemented")
         
@@ -1797,6 +1810,8 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
             self.N_CST_freqs=len(CST_freqs)
 
             if type(sub_ensemble_of_CST_beams) is not list: # can't use .ndim because it doesn't behave well for the inhomog arrays of the else
+                print("fidu CST only")
+
                 fidu_box=sub_ensemble_of_CST_beams
 
                 self.all_boxes=np.expand_dims(sub_ensemble_of_CST_beams,axis=0)
@@ -1804,26 +1819,39 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                 N_total_beam_types=1
                 self.N_total_beam_types=1
             else:
+                print("fidu and syst CST")
                 fidu_box,syst_boxes=sub_ensemble_of_CST_beams # should be unpackable into two arrays:
                 assert fidu_box.ndim==3 and syst_boxes.ndim==5 # one box and one "2D array of 3D boxes"
                 self.N_CST_types,self.N_max_pointing_errors,Nxy,_,Nz=syst_boxes.shape
 
                 # figure out the actual number of beam types
                 N_pointing_errors_per_CST_case=np.zeros(self.N_CST_types,dtype=int)
+                nnn=0
                 for i in range(self.N_CST_types):
                     for j in range(self.N_max_pointing_errors):
-                        if np.all(np.isclose(syst_boxes[i,j,:,:,:],0.)):
+                        # if np.all(np.isclose(syst_boxes[i,j,:,:,:],0.)): # OLD
+                        if not np.all(np.isclose(syst_boxes[i,j,:,:,:],0.)): # NEW
+                            print("syst box in this chunk of 5d arr IS NOT identically vanishing")
                             N_pointing_errors_per_CST_case[i]=j # only the (j-1)st case is meaningful, but that is in zero-based indexing, not one-based counting.
+                            nnn+=1
+                        else:
+                            print("syst box in this chunk of 5d arr IS identically vanishing")
+                print("N_pointing_errors_per_CST_case=",N_pointing_errors_per_CST_case)
                 self.N_pointing_errors_per_CST_case=N_pointing_errors_per_CST_case
-                N_total_beam_types=int(np.sum(N_pointing_errors_per_CST_case)+1) # +1 to include the fiducial beam
+                # N_total_beam_types=int(np.sum(N_pointing_errors_per_CST_case)+1) # +1 to include the fiducial beam # OLD
+                # N_total_beam_types=int(np.max(N_pointing_errors_per_CST_case)+1) # +1 to include the fiducial beam # NEW
+                N_total_beam_types=nnn
                 self.N_total_beam_types=N_total_beam_types
+                print("N TOTAL BEAM TYPES = ",N_total_beam_types)
 
                 # store the actual beam types as a list of boxes, not 2D array of boxes + standalone box
                 all_boxes=np.zeros((N_total_beam_types,Nxy,Nxy,Nz))
                 all_boxes[0]=fidu_box
                 k=1 # start at 1 because 0 was already taken up by the fidu box
+                print("N CST TYPES, pt err TALLY=",self.N_CST_types,N_pointing_errors_per_CST_case)
                 for i in range(self.N_CST_types):
                     for j in range(N_pointing_errors_per_CST_case[i]):
+                        print("k=",k)
                         box_to_add=syst_boxes[i,j,:,:,:]
                         all_boxes[k]=box_to_add
                         k+=1
@@ -1976,6 +2004,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
             for i in range(self.N_total_beam_types):
                 type_i=self.pb_types[i]
                 for j in range(i+1):
+                    # print("per-antenna ij=",i,j)
                     type_j=self.pb_types[j]
 
                     here=(self.indices_of_constituent_ant_pb_types[:,0]==i
