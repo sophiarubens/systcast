@@ -239,6 +239,7 @@ class beam_effects(object):
                  ):   
                 
         # forecasting considerations
+        print("beam_effects: primary_beam_categ=",primary_beam_categ)
         self.seed=seed
         self.pars_set_cosmo=pars_set_cosmo
         self.N_pars_set_cosmo=len(pars_set_cosmo)
@@ -460,6 +461,7 @@ class beam_effects(object):
                 syst_per_antenna_ified.stack_to_box()
                 print("finished per-antenna calculation for syst CST beam")
                 syst_box_per_antenna_ified=syst_per_antenna_ified.box
+                print("np.std(syst_box_per_antenna_ified-fidu_box_per_antenna_ified)=",np.std(syst_box_per_antenna_ified-fidu_box_per_antenna_ified))
                 
                 np.save("fidu_box_PA_ified_"+ioname+".npy",fidu_box_per_antenna_ified)
                 np.save("syst_box_PA_ified_"+ioname+".npy",syst_box_per_antenna_ified)
@@ -512,6 +514,8 @@ class beam_effects(object):
             N_CST_z=len(CST_z_vec)
 
             if heavy_beam_recalc and not already_imported_CST: # only import the fiducial beam once
+                print("beam_effects.__init__: N_CST_types=",N_CST_types)
+                print("beam_effects.__init__: CST_f_head_syst=",CST_f_head_syst)
                 syst_boxes=np.zeros((N_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)) # this needs to be 4D to be forward-compatible with the new iteration strategy in per_antenna
                 for i,CST_f_head_syst_i in enumerate(CST_f_head_syst):
                     syst=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
@@ -800,7 +804,7 @@ class beam_effects(object):
                                 P_fid=P_cosmo,k_fid=self.ksph,
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                                 primary_beam_num=self.primary_thgt,primary_beam_type_num="manual",
-                                primary_beam_den=self.primary_real,primary_beam_type_den="manual",
+                                primary_beam_den=self.primary_thgt,primary_beam_type_den="manual",
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
                                 primary_beam_modes=self.pbm_for_cs,
                                 radial_taper=self.radial_taper,image_taper=self.image_taper,
@@ -808,15 +812,15 @@ class beam_effects(object):
         xx_fi_sy_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                                 primary_beam_num=self.primary_thgt,primary_beam_type_num="manual",
-                                primary_beam_den=self.primary_real,primary_beam_type_den="manual",
+                                primary_beam_den=self.primary_thgt,primary_beam_type_den="manual",
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
                                 primary_beam_modes=self.pbm_for_cs,
                                 radial_taper=self.radial_taper,image_taper=self.image_taper,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
         xx_fi_xx_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                                primary_beam_num=self.primary_real,primary_beam_type_num="manual",
-                                primary_beam_den=self.primary_real,primary_beam_type_den="manual",
+                                primary_beam_num=self.primary_fidu,primary_beam_type_num="manual",
+                                primary_beam_den=self.primary_fidu,primary_beam_type_den="manual",
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
                                 primary_beam_modes=self.pbm_for_cs,
                                 radial_taper=self.radial_taper,image_taper=self.image_taper,
@@ -833,8 +837,8 @@ class beam_effects(object):
         co_fi_sy_xx=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                                primary_beam_num=self.primary_fidu,primary_beam_type_num="manual",
-                                primary_beam_den=self.primary_real,primary_beam_type_den="manual",
+                                primary_beam_num=self.primary_thgt,primary_beam_type_num="manual",
+                                primary_beam_den=self.primary_thgt,primary_beam_type_den="manual",
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 primary_beam_modes=self.pbm_for_cs,
                                 radial_taper=self.radial_taper,image_taper=self.image_taper,
@@ -1162,7 +1166,7 @@ class cosmo_stats(object):
         self.fg_box=fg_box
         self.P_fid=P_fid
         self.compute_FoG = P_fid is not None
-        print("self.compute_FoG=",self.compute_FoG)
+        # print("self.compute_FoG=",self.compute_FoG)
         if self.compute_FoG:
             assert nu_ctr is not None, "centre freq is required to compute FoG"
             z_ctr=nu_HI_z0/nu_ctr-1
@@ -1429,8 +1433,11 @@ class cosmo_stats(object):
         self.evaled_primary_den=evaled_primary_den
         self.evaled_primary_num=evaled_primary_num
 
+        if np.all(np.isclose(evaled_primary_use_for_eff_vol,0)):
+            print("BEAM IS ZERO EVERYWHERE!! OVERRIDING!")
+            evaled_primary_use_for_eff_vol=1
         self.effective_volume=np.sum((evaled_primary_use_for_eff_vol*self.taper_xyz_centre)**2*self.d3r)
-
+        print("self.effective_volume=",self.effective_volume)
         assert self.effective_volume>0
         
         if (self.T_pristine is not None):
@@ -1827,34 +1834,46 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                 # figure out the actual number of beam types
                 N_pointing_errors_per_CST_case=np.zeros(self.N_CST_types,dtype=int)
                 nnn=0
+                all_boxes=[fidu_box]
                 for i in range(self.N_CST_types):
                     for j in range(self.N_max_pointing_errors):
-                        # if np.all(np.isclose(syst_boxes[i,j,:,:,:],0.)): # OLD
-                        if not np.all(np.isclose(syst_boxes[i,j,:,:,:],0.)): # NEW
+                        box_to_add=syst_boxes[i,j,:,:,:]
+                        if not np.all(np.isclose(box_to_add,0.)): # NEW
                             print("syst box in this chunk of 5d arr IS NOT identically vanishing")
                             N_pointing_errors_per_CST_case[i]=j # only the (j-1)st case is meaningful, but that is in zero-based indexing, not one-based counting.
+                            all_boxes.append(box_to_add)
                             nnn+=1
                         else:
                             print("syst box in this chunk of 5d arr IS identically vanishing")
                 print("N_pointing_errors_per_CST_case=",N_pointing_errors_per_CST_case)
                 self.N_pointing_errors_per_CST_case=N_pointing_errors_per_CST_case
-                # N_total_beam_types=int(np.sum(N_pointing_errors_per_CST_case)+1) # +1 to include the fiducial beam # OLD
-                # N_total_beam_types=int(np.max(N_pointing_errors_per_CST_case)+1) # +1 to include the fiducial beam # NEW
                 N_total_beam_types=nnn
                 self.N_total_beam_types=N_total_beam_types
                 print("N TOTAL BEAM TYPES = ",N_total_beam_types)
 
                 # store the actual beam types as a list of boxes, not 2D array of boxes + standalone box
-                all_boxes=np.zeros((N_total_beam_types,Nxy,Nxy,Nz))
-                all_boxes[0]=fidu_box
-                k=1 # start at 1 because 0 was already taken up by the fidu box
-                print("N CST TYPES, pt err TALLY=",self.N_CST_types,N_pointing_errors_per_CST_case)
-                for i in range(self.N_CST_types):
-                    for j in range(N_pointing_errors_per_CST_case[i]):
-                        print("k=",k)
-                        box_to_add=syst_boxes[i,j,:,:,:]
-                        all_boxes[k]=box_to_add
-                        k+=1
+                # all_boxes=np.ones((N_total_beam_types,Nxy,Nxy,Nz)) # zeros and proper indexing is the safe choice. revisit after Albania.
+                # all_boxes[0]=fidu_box
+                # k=1 # start at 1 because 0 was already taken up by the fidu box
+                # print("N CST TYPES, pt err TALLY=",self.N_CST_types,N_pointing_errors_per_CST_case)
+                # if self.N_CST_types>1:
+                #     for i in range(self.N_CST_types-1):
+                #         print("i loop... k=",k)
+                #         if N_pointing_errors_per_CST_case[i]>0:
+                #             for j in range(N_pointing_errors_per_CST_case[i]):
+                #                 print("j loop... k=",k)
+                #                 box_to_add=syst_boxes[i,j,:,:,:]
+                #                 if np.all(np.isclose(box_to_add,0)):
+                #                     print("inconsistent indexing led me to try to process a box full of zeros! skipping!")
+                #                     break
+                #                 print("no inconsistencies at the CST translation stage! proceeding!")
+                #                 all_boxes[k]=box_to_add
+                #                 k+=1
+                #         else:
+                #             all_boxes[k]=syst_boxes[i,0,:,:,:]
+                #             k+=1
+                all_boxes=np.asarray(all_boxes)
+                print("all_boxes.shape=",all_boxes.shape)
                 self.all_boxes=all_boxes
             self.pb_types=beam_type_distribution(N_NS,N_EW,N_total_beam_types, distribution=self.distribution)
 
@@ -1991,12 +2010,14 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         uvmagmin=2*uvmagmax/Npix
         thetamax=1/uvmagmin # these are 1/-convention Fourier duals, not 2pi/-convention Fourier duals
         self.thetamax=thetamax
+        xy_use=self.ctr_chan_comov_dist*np.linspace(-thetamax//2,thetamax//2,Npix)
 
         uvbins=np.linspace(-uvmagmax,uvmagmax,Npix)
         d2u=uvbins[1]-uvbins[0]
         self.d2u=d2u
         uubins,vvbins=np.meshgrid(uvbins,uvbins, indexing="ij")
         uvplane=np.zeros((Npix,Npix),dtype="complex128") # 0.*uubins
+        # uvplane=np.zeros((Npix,Npix)) # 0.*uubins
         uvbins_use=np.append(uvbins,uvbins[-1]+uvbins[1]-uvbins[0])
         pad_lo,pad_hi=get_padding(Npix)
 
@@ -2022,10 +2043,16 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                     assert np.all(image_i>=0.), "image i beam slice should be entirely nonnegative"
                     assert np.all(image_j>=0.), "image j beam slice should be entirely nonnegative"
                     image_ij=np.sqrt(image_i*image_j) # geo mean of the beams of this baseline's two constituent antennas. still on initial CST grid
-                    uv_ij=fftshift(fftn(ifftshift(image_ij*self.CST_dxdy),norm="forward")) # FT to put in uv space 
-                    interpolator_Re=RBS(self.uvbins_CST,self.uvbins_CST, uv_ij.real)
-                    interpolator_Im=RBS(self.uvbins_CST,self.uvbins_CST, uv_ij.imag)
-                    kernel=interpolator_Re(uvbins_use[:-1],uvbins_use[:-1])+1j*interpolator_Im(uvbins_use[:-1],uvbins_use[:-1])
+                    
+                    interpolator=RBS(self.CST_xy,self.CST_xy, image_ij)
+                    image_ij_interpolated=interpolator(xy_use,xy_use)
+                    # print("np.sum(image_ij_interpolated)=",np.sum(image_ij_interpolated))
+                    kernel=np.abs(fftshift(fftn(ifftshift(image_ij_interpolated*self.CST_dxdy),norm="forward"))) # FT to put in uv space
+                    
+                    # uv_ij=fftshift(fftn(ifftshift(image_ij*self.CST_dxdy),norm="forward")) # FT to put in uv space 
+                    # interpolator_Re=RBS(self.uvbins_CST,self.uvbins_CST, uv_ij.real)
+                    # interpolator_Im=RBS(self.uvbins_CST,self.uvbins_CST, uv_ij.imag)
+                    # kernel=interpolator_Re(uvbins_use[:-1],uvbins_use[:-1])+1j*interpolator_Im(uvbins_use[:-1],uvbins_use[:-1])
                     
                     kernel_padded=np.pad(kernel,((pad_lo,pad_hi),(pad_lo,pad_hi)),"edge")
                     convolution_here=convolve(kernel_padded,gridded,mode="valid") # beam-smeared version of the uv-plane for this perturbation permutation
@@ -2099,9 +2126,11 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                 interpolated_slice=chan_gridded_uvplane
                 d2u=self.d2u
             else: # chunk excision and mode interpolation in one step
-                interpolator_Re=RBS(uv_bin_edges,uv_bin_edges, chan_gridded_uvplane.real)
-                interpolator_Im=RBS(uv_bin_edges,uv_bin_edges, chan_gridded_uvplane.imag)
-                interpolated_slice=interpolator_Re(uv_bin_edges_0,uv_bin_edges_0)+1j*interpolator_Im(uv_bin_edges_0,uv_bin_edges_0)
+                # interpolator_Re=RBS(uv_bin_edges,uv_bin_edges, chan_gridded_uvplane.real)
+                # interpolator_Im=RBS(uv_bin_edges,uv_bin_edges, chan_gridded_uvplane.imag)
+                # interpolated_slice=interpolator_Re(uv_bin_edges_0,uv_bin_edges_0)+1j*interpolator_Im(uv_bin_edges_0,uv_bin_edges_0)
+                interpolator=RBS(uv_bin_edges,uv_bin_edges, chan_gridded_uvplane)
+                interpolated_slice=interpolator(uv_bin_edges_0,uv_bin_edges_0)
             box_uvz[:,:,i]=interpolated_slice*self.taper_grid
             if ((i%(self.N_chan//3))==0):
                 print("{:7.1f} pct complete".format(i/self.N_chan*100))
@@ -2109,6 +2138,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         box_xyz=fftshift(irfftn(ifftshift(box_uvz*d2u, axes=(0,1)),
                                axes=(0,1),s=(N_grid_pix,N_grid_pix),
                                norm="forward"), axes=(0,1)) # mixed coords before; all config space after
+        print("np.sum(box_xyz<0.1)=",np.sum(box_xyz<0.1))
         for i in range(self.N_chan): # the correct generalization is per-channel normalization
             slice_i=box_xyz[:,:,i]
             norm_i=np.max(slice_i)
@@ -2145,13 +2175,17 @@ class reconfigure_CST_beam(object):
         self.box_outname=box_outname
         self.multi_CST=multi_CST
 
-        freq_hi=freq_hi.to(freq_lo.unit)
-        delta_nu_CST=delta_nu_CST.to(freq_lo.unit)
-        freqs=np.arange(freq_hi.value,freq_lo.value,delta_nu_CST.value)*delta_nu_CST.unit # descending; usually still in GHz
-        freqs=freqs.to(u.MHz) # descending; MHz
+        freq_hi=freq_hi.to(u.GHz)
+        freq_lo=freq_lo.to(u.GHz)
+        delta_nu_CST=delta_nu_CST.to(u.GHz)
+        print("freq_hi.value,freq_lo.value,delta_nu_CST.value=",freq_hi.value,freq_lo.value,delta_nu_CST.value)
+        freqs_GHz=np.arange(freq_hi.value,freq_lo.value,-delta_nu_CST.value)*delta_nu_CST.unit # descending; usually still in GHz
+        print("freqs_GHz="),freqs_GHz
+        freqs=freqs_GHz.to(u.MHz) # descending; MHz
         self.freqs=freqs
         Nfreqs=len(freqs)
         self.Nfreqs=Nfreqs
+        print("reconfigure_CST_beam: Nfreqs=",Nfreqs)
         zs_for_xis=[nu_HI_z0/freq-1 for freq in freqs] # ascending
         xis=[comoving_distance(z) for z in zs_for_xis] # ascending
         xis=Quantity(xis) # for the typical coeval approximation
@@ -2179,7 +2213,7 @@ class reconfigure_CST_beam(object):
         self.Nxy=Nxy
         self.xx_grid,self.yy_grid=np.meshgrid(self.xy_for_unwrapping,self.xy_for_unwrapping, indexing="ij") # config space points of interest for the slice (guided by the transverse extent of the eventual config-space box)
         freq_names=np.zeros(Nfreqs,dtype="U6") # store the GHz CST frequencies as strings of the format that Aditya's sims use
-        for i,freq in enumerate(self.freqs):
+        for i,freq in enumerate(freqs_GHz):
             freq_name=f"{freq:.4f}" # round to four decimal places and convert to string
             if multi_CST: # do not strip trailing zeros because of how those file names are formatted
                 freq_names[i]=freq_name
@@ -2915,7 +2949,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         power_quantities_this_complexity=np.array([P_xx_fi_sy_fg.value,  P_co_fi_xx_fg.value, P_co_fi_sy_fg.value, Presidual.value,     Pratio,        
                                                    P_xx_xx_xx_fg.value,  Pisoratio,           P_co_xx_xx_xx.value, P_co_fi_xx_xx.value, P_co_fi_sy_xx.value, 
                                                    P_co_xx_xx_fg.value,                                              P_xx_fi_xx_fg.value, P_CO_XX_XX_XX.value,
-                                                   co_xx_xx_fg_lin,      co_fi_xx_fg_lin,     co_fi_sy_fg_lin,     co__divby__fg  ]) # N_pspec_types x Nkperp x Nkpar
+                                                   co_xx_xx_fg_lin,      co_fi_xx_fg_lin,     co_fi_sy_fg_lin,     co__divby__fg  ,
+                                                   P_co_fi_sy_fg/P_co_fi_xx_fg]) # N_pspec_types x Nkperp x Nkpar
         power_quantities_all.append(power_quantities_this_complexity) # N_complexity_cases x N_pspec_types x Nkperp x Nkpar
         
         Delta2_quantities_this_complexity=[P_qty*k_mag_grid**3/(2*pi**2) for P_qty in power_quantities_this_complexity]
@@ -2972,27 +3007,37 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     plot_version_names = ["fidu beam + syst + fg",  co_fi_xx_fg_str,                     co_fi_sy_fg_str,   "("+co_fi_sy_fg_str+") - ("+co_fi_xx_fg_str+")", "log10[ (fidu beam + syst + fg) / cosmo ]", 
                           "fg",                    "log10[ (fidu beam + fg) / cosmo ]", "cosmo",            "cosmo + fidu beam",                             "cosmo + fidu beam + syst",
                           "cosmo + fg",             "fidu beam + fg",                                "COSMO",
-                          "cosmo–fg linearity frac dif",    "cosmo–fidu beam–fg linearity frac dif", "all linearity frac dif", "log10[ cosmo / fg ]"]
+                          "cosmo–fg linearity frac dif",    "cosmo–fidu beam–fg linearity frac dif", "all linearity frac dif", "log10[ cosmo / fg ]",
+                          "( "+co_fi_sy_fg_str+") / ("+co_fi_xx_fg_str+" )"]
     save_names= ["fidu_syst_fg", "cosmo_fidu_fg",         "cosmo_fidu_syst_fg", "cosmo_fidu_syst_fg__minus__cosmo_fidu_fg", "fidu_syst_fg__divby__cosmo", 
                  "fg",           "fidu_fg__divby__cosmo", "cosmo",              "cosmo_fidu",                                "cosmo_fidu_syst",
                  "cosmo_fg",       "fidu_fg",                                   "COSMOCOSMO",
-                 "cosmo_fg_linearity", "cosmo_fidu_fg_linearity", "all_linearity", "cosmo__divby__fg"]
+                 "cosmo_fg_linearity", "cosmo_fidu_fg_linearity", "all_linearity", "cosmo__divby__fg",
+                 "cosmo_fidu_syst_fg__divby__cosmo_fidu_fg"]
     plot_cmaps= [abs_map, abs_map, abs_map, rel_map, rel_map, 
                  abs_map, rel_map, abs_map, abs_map, abs_map,
                  abs_map, abs_map, abs_map,
-                 rel_map, rel_map, rel_map, rel_map]
+                 rel_map, rel_map, rel_map, rel_map,
+                 rel_map]
     norm_exts=  [None,      abs_co_fg, abs_co_fg,    abs_residual,         None,        
                  fgext,     None,      abs_co_no_fg, abs_co_no_fg, abs_co_no_fg,
                  abs_co_fg,        None,         abs_co_no_fg,
-                 coxxxxfg_lin, cofixxfg_lin, cofisyfg_lin, co_d_fg]
+                 coxxxxfg_lin, cofixxfg_lin, cofisyfg_lin, co_d_fg,
+                 None]
+    # norm_exts=  [None,      None, None,    None,         None,        
+    #              None,     None,      None, None, None,
+    #              None,        None,         None,
+    #              None, None, None, None]
     plot_log=   [False, False, False, False, True,
                  False, True,  False, False, False,
                  False, False, False,
-                 False, False, False, True]
+                 False, False, False, True,
+                 True]
     plot_units=[absolute_units, absolute_units, absolute_units, absolute_units, relative_units, 
                 absolute_units, relative_units, absolute_units, absolute_units, absolute_units,
                 absolute_units, absolute_units, absolute_units,
-                relative_units, relative_units, relative_units, absolute_units]
+                relative_units, relative_units, relative_units, absolute_units,
+                relative_units]
     ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   
 
     print("\n\n")
@@ -3000,6 +3045,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         power_quantities_all_correct_type=power_quantities_all
     elif which_power=="Delta2":
         power_quantities_all_correct_type=Delta2_quantities_all
+    print("lengths of all mega arrs:")
+    print(len(power_quantities_all_correct_type[0,:,0,0]),len(plot_cmaps),len(plot_log),len(plot_version_names),len(plot_units),len(save_names),len(norm_exts)) #,len(),len(),)
     for i in range(N_plots): # iterate over plot cases
         power_quantity_this_plot_case=power_quantities_all_correct_type[:,i,:,:] # [:,i,:,:] = all complexity cases, ith power spectrum quantity, all kperps, all kpars
         memo_ii_plotter(power_quantity_this_plot_case, complexity_ids, plot_cmaps[i], plot_log[i],
