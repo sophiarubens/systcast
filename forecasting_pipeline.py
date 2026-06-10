@@ -1180,6 +1180,7 @@ class cosmo_stats(object):
                                     +OmegaLambda)
             self.h=h*redshift_factor
         self.P_fid_box=None
+        self.no_cosmo=False
         self.T_primary=T_primary
         self.T_pristine=T_pristine
         if ((T_primary is None) and (T_pristine is None) and (P_fid is None) and (primary_beam_num is None)): # require either a box or a fiducial power spec (il faut some way of determining #voxels/side; passing just Nvox is not good enough)
@@ -1491,9 +1492,19 @@ class cosmo_stats(object):
     def generate_P(self,send_to_P_fid:bool=False,T_use=None): # from a box of temperature field values
         if self.T_pristine is None and self.T_primary is None:
             if self.fg_box is not None:
-                T_use=self.fg_box
+                self.no_cosmo=True
+                T_starting_point=self.fg_box
             else:
                 raise ValueError("not enough info")
+            
+            if T_use is None or T_use.lower()=="primary":
+                assert self.evaled_primary_num is not None
+                T_use=None
+                if self.T_primary is None and self.T_pristine is not None:
+                    T_starting_point*=self.evaled_primary_num
+            T_use=T_starting_point
+            
+            
         else:
             if (T_use is None or T_use.lower()=="primary"):
                 assert self.evaled_primary_num is not None
@@ -1575,7 +1586,7 @@ class cosmo_stats(object):
                           norm="forward"))/self.iftnorm
 
         T*=u.mK # centre_origin
-        if self.fg_box is not None:
+        if self.fg_box is not None and self.no_cosmo:
             T+=self.fg_box
         
         self.T_pristine=T
@@ -2961,28 +2972,28 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         fgext=3*np.std(P_xx_xx_xx_fg).value
         abs_residual=[np.percentile(power_quantities_all[:,3,:,:],90),
                       np.max(np.abs(power_quantities_all[:,3,:,:]))]
-        coxxxxfg_lin=[np.percentile(power_quantities_all[:,-4,:,:],90),
+        coxxxxfg_lin=[np.percentile(power_quantities_all[:,-5,:,:],90),
+                      np.max(np.abs(power_quantities_all[:,-5,:,:]))]
+        cofixxfg_lin=[np.percentile(power_quantities_all[:,-4,:,:],90),
                       np.max(np.abs(power_quantities_all[:,-4,:,:]))]
-        cofixxfg_lin=[np.percentile(power_quantities_all[:,-3,:,:],90),
+        cofisyfg_lin=[np.percentile(power_quantities_all[:,-3,:,:],90),
                       np.max(np.abs(power_quantities_all[:,-3,:,:]))]
-        cofisyfg_lin=[np.percentile(power_quantities_all[:,-2,:,:],90),
-                      np.max(np.abs(power_quantities_all[:,-2,:,:]))]
-        co_m_fg=[np.percentile(power_quantities_all[:,-1,:,:],90),
-                 np.percentile(np.abs(power_quantities_all[:,-1,:,:]),98)]
+        co_d_fg=[np.percentile(power_quantities_all[:,-2,:,:],90),
+                 np.percentile(np.abs(power_quantities_all[:,-2,:,:]),98)]
     elif which_power=="Delta2":
         abs_co_no_fg=None
         abs_co_fg=np.percentile(Delta2_quantities_all[:,abs_co_fg_indices,:,:],90) # good for whole dynamic range
         fgext=np.percentile(Delta2_quantities_all[:,5,:,:],90)
         abs_residual=[np.percentile(Delta2_quantities_all[:,3,:,:],90),
                       np.max(np.abs(Delta2_quantities_all[:,3,:,:]))]
-        coxxxxfg_lin=[np.percentile(Delta2_quantities_all[:,-4,:,:],90),
+        coxxxxfg_lin=[np.percentile(Delta2_quantities_all[:,-5,:,:],90),
+                      np.max(np.abs(Delta2_quantities_all[:,-5,:,:]))]
+        cofixxfg_lin=[np.percentile(Delta2_quantities_all[:,-4,:,:],90),
                       np.max(np.abs(Delta2_quantities_all[:,-4,:,:]))]
-        cofixxfg_lin=[np.percentile(Delta2_quantities_all[:,-3,:,:],90),
+        cofisyfg_lin=[np.percentile(Delta2_quantities_all[:,-3,:,:],90),
                       np.max(np.abs(Delta2_quantities_all[:,-3,:,:]))]
-        cofisyfg_lin=[np.percentile(Delta2_quantities_all[:,-2,:,:],90),
-                      np.max(np.abs(Delta2_quantities_all[:,-2,:,:]))]
-        co_d_fg=[np.percentile(Delta2_quantities_all[:,-1,:,:],90),
-                 np.percentile(np.abs(Delta2_quantities_all[:,-1,:,:]),98)]
+        co_d_fg=[np.percentile(Delta2_quantities_all[:,-2,:,:],90),
+                 np.percentile(np.abs(Delta2_quantities_all[:,-2,:,:]),98)]
 
     co_fi_sy_fg_str="cosmo + fidu beam + syst + fg"
     co_fi_xx_fg_str="cosmo + fidu beam + fg"
