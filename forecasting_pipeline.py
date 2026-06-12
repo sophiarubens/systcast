@@ -2,7 +2,7 @@ import numpy as np
 
 from matplotlib import pyplot as plt
 from matplotlib import gridspec
-from matplotlib.colors import LogNorm,TwoSlopeNorm,SymLogNorm #,CenteredNorm 
+from matplotlib.colors import LogNorm,TwoSlopeNorm,SymLogNorm ,CenteredNorm 
 
 from scipy.fft import fftshift,ifftshift,fftfreq, fftn, irfftn, set_workers
 from scipy.integrate import quad
@@ -770,7 +770,7 @@ class beam_effects(object):
             self.fg_box=fg_box # centre-origin
 
             fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
-                           LoS_taper=True,
+                        #    LoS_taper=True,
                            T_pristine=fg_box)
             fg.generate_P()
             fg.bin_power()
@@ -787,6 +787,7 @@ class beam_effects(object):
                                 primary_beam_modes=self.pbm_for_cs,
                                 LoS_taper=self.LoS_taper,image_taper=self.image_taper,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
+        # assert(1==0), "checking beam per_antenna-ification and interpolation numerics"
         self.kperpbins_internal=co_fi_xx_fg.kperpbins
         self.kparbins_internal=co_fi_xx_fg.kparbins
         co_fi_sy_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -1391,6 +1392,85 @@ class cosmo_stats(object):
                 evaled_primary_num=RGI(primary_beam_modes,self.primary_beam_num,
                                        bounds_error=False,fill_value=None)(to_eval_at).T
                 self.evaled_primary_num=evaled_primary_num
+
+                # fracs=[0,1e-5,1/3,1/2,1]
+                # Pnorm=LogNorm(vmin=1e-8,vmax=1)
+                # fig,axs=plt.subplots(len(fracs),3,layout="constrained",figsize=(8,15))
+                # axs[0,0].set_title("x index 0/"+str(self.Nvox-1))
+                # axs[0,1].set_title("y index 0/"+str(self.Nvox-1))
+                # axs[0,2].set_title("z index 0/"+str(self.Nvoxz -1)+"\nslice std="+str(np.round(np.std(self.primary_beam_num),3)))
+                # sh0,_,sh2=self.primary_beam_num.shape
+                # for i,frac in enumerate(fracs):
+                #     xy_idx=int(frac*sh0)
+                #     z_idx=int(frac*sh2)
+                #     if frac==1:
+                #         xy_idx-=1
+                #         z_idx-=1
+                #     elif frac==1e-5:
+                #         xy_idx=1
+                #         z_idx=1
+                #     if i>0:
+                #         axs[i,0].set_title(str(xy_idx)+"/"+str(sh0-1))
+                #         axs[i,1].set_title(str(xy_idx)+"/"+str(sh0-1))
+                #         axs[i,2].set_title(str(z_idx )+"/"+str(sh2 -1)+"\nslice std="+str(np.round(np.std(self.primary_beam_num[:,:,z_idx]),3)))
+
+                #     sl0=self.primary_beam_num[xy_idx,:,:]
+                #     img=axs[i,0].imshow(sl0.T,origin="lower",norm=Pnorm)
+                #     plt.colorbar(img,ax=axs[i,0])
+                #     axs[i,0].set_xlabel("y idx")
+                #     axs[i,0].set_ylabel("z idx")
+
+                #     sl1=self.primary_beam_num[:,xy_idx,:]
+                #     img=axs[i,1].imshow(sl1.T,origin="lower",norm=Pnorm)
+                #     plt.colorbar(img,ax=axs[i,1])
+                #     axs[i,1].set_xlabel("x idx")
+                #     axs[i,1].set_ylabel("z idx")
+
+                #     sl2=self.primary_beam_num[:,:,z_idx]
+                #     img=axs[i,2].imshow(sl2.T,origin="lower",norm=Pnorm)
+                #     plt.colorbar(img,ax=axs[i,2])
+                #     axs[i,2].set_xlabel("x idx")
+                #     axs[i,2].set_ylabel("y idx")
+                # plt.savefig("beam_box_pre__interpolation.png", dpi=500)
+                # plt.close()
+
+                # fig,axs=plt.subplots(len(fracs),3,layout="constrained",figsize=(8,15))
+                # axs[0,0].set_title("x index 0/"+str(self.Nvox-1))
+                # axs[0,1].set_title("y index 0/"+str(self.Nvox-1))
+                # axs[0,2].set_title("z index 0/"+str(self.Nvoxz -1)+"\nslice std="+str(np.round(np.std(evaled_primary_num),3)))
+                # for i,frac in enumerate(fracs):
+                #     xy_idx=int(frac*self.Nvox)
+                #     z_idx=int(frac*self.Nvoxz)
+                #     if frac==1:
+                #         xy_idx-=1
+                #         z_idx-=1
+                #     elif frac==1e-5:
+                #         xy_idx=1
+                #         z_idx=1
+                #     if i>0:
+                #         axs[i,0].set_title(str(xy_idx)+"/"+str(self.Nvox-1))
+                #         axs[i,1].set_title(str(xy_idx)+"/"+str(self.Nvox-1))
+                #         axs[i,2].set_title(str(z_idx )+"/"+str(self.Nvoxz -1)+"\nslice std="+str(np.round(np.std(evaled_primary_num[:,:,z_idx]),3)))
+
+                #     sl0=evaled_primary_num[xy_idx,:,:]
+                #     img=axs[i,0].imshow(sl0.T,origin="lower",norm=Pnorm)
+                #     plt.colorbar(img,ax=axs[i,0])
+                #     axs[i,0].set_xlabel("y idx")
+                #     axs[i,0].set_ylabel("z idx")
+
+                #     sl1=evaled_primary_num[:,xy_idx,:]
+                #     img=axs[i,1].imshow(sl1.T,origin="lower",norm=Pnorm)
+                #     plt.colorbar(img,ax=axs[i,1])
+                #     axs[i,1].set_xlabel("x idx")
+                #     axs[i,1].set_ylabel("z idx")
+
+                #     sl2=evaled_primary_num[:,:,z_idx]
+                #     img=axs[i,2].imshow(sl2.T,origin="lower",norm=Pnorm)
+                #     plt.colorbar(img,ax=axs[i,2])
+                #     axs[i,2].set_xlabel("x idx")
+                #     axs[i,2].set_ylabel("y idx")
+                # plt.savefig("beam_box_post_interpolation.png", dpi=500)
+                # plt.close()
             
             else:
                 raise ValueError("not yet implemented")
@@ -2043,7 +2123,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
             self.nu_ctr_MHz>(nu_HI_z0/(1+self.evol_restriction_threshold/2))):
             raise ValueError("survey out of bounds")
         N_grid_pix=self.N_grid_pix
-        taper_1d=Blackman_Harris_safe_for_FFT(N_grid_pix) # centre-origin
+        taper_1d=fftshift(Blackman_Harris_safe_for_FFT(N_grid_pix)) # centre-origin
         taper_x,taper_y=np.meshgrid(taper_1d,taper_1d, indexing="ij")
         self.taper_grid=np.sqrt(taper_x**2+taper_y**2)
 
@@ -2076,9 +2156,6 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                 interpolated_slice=chan_gridded_uvplane
                 d2u=self.d2u
             else: # chunk excision and mode interpolation in one step
-                # interpolator_Re=RBS(uv_bin_edges,uv_bin_edges, chan_gridded_uvplane.real)
-                # interpolator_Im=RBS(uv_bin_edges,uv_bin_edges, chan_gridded_uvplane.imag)
-                # interpolated_slice=interpolator_Re(uv_bin_edges_0,uv_bin_edges_0)+1j*interpolator_Im(uv_bin_edges_0,uv_bin_edges_0)
                 interpolator=RBS(uv_bin_edges,uv_bin_edges, chan_gridded_uvplane)
                 interpolated_slice=interpolator(uv_bin_edges_0,uv_bin_edges_0)
             box_uvz[:,:,i]=interpolated_slice*self.taper_grid
@@ -2094,7 +2171,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
             norm_i=np.max(slice_i)
             if norm_i>0:
                 box_xyz[:,:,i]=slice_i/norm_i # peak-normalize in configuration space
-        box_xyz[box_xyz<0.]=0.
+        box_xyz[box_xyz<0.]=np.abs(box_xyz[box_xyz<0.])
         self.box=box_xyz
 
         # generate a box of r-values (necessary for interpolation to survey modes in the manual beam mode of cosmo_stats as called by beam_effects)
@@ -2763,8 +2840,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                         init_and_box_tol=0.05,CAMB_tol=0.05,                                 
                                         frac_tol_conv=frac_tol_conv,seed=seed,                                         
                                         ftol_deriv=1e-16,maxiter=5,   
-                                        LoS_taper=True,image_taper=None,        
-                                        # LoS_taper=None,image_taper=None,
+                                        # LoS_taper=True,image_taper=None,        
+                                        LoS_taper=None,image_taper=None,
 
                                         # CONVENIENCE
                                         heavy_beam_recalc=redo_box_calc, already_imported_CST=alr_imp_CST                                                  
