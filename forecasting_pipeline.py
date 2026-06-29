@@ -2249,11 +2249,13 @@ class reconfigure_CST_beam(object):
     def translate_sim_beam_slice(self,CST_filename:str,i:int=0):
         df = pd.read_table(CST_filename, skiprows=[0, 1,], sep='\s+', 
                            names=['theta', 'phi', 'AbsE', 'AbsCr', 'PhCr', 'AbsCo', 'PhCo', 'AxRat'])
-        power=10**(df.AbsE.values/10) # non-log values
         theta_deg=df.theta.values*u.deg
-        theta=theta_deg.to(u.rad)
+        idx_with_theta_to_keep=np.nonzero(np.abs(theta_deg)<=90.*u.deg)
+        power=10**(df.AbsE[idx_with_theta_to_keep].values/10) # non-log values
+        theta=theta_deg[idx_with_theta_to_keep].to(u.rad)
         phi_deg=df.phi.values*u.deg
-        phi=phi_deg.to(u.rad)
+        phi=phi_deg[idx_with_theta_to_keep].to(u.rad)
+        print("reconfigure_CST_beam.translate_sim_beam_slice: len(phi), len(theta) = ",len(phi),len(theta))
         x=self.xis[i]*theta*np.cos(phi)
         y=self.xis[i]*theta*np.sin(phi)
         sky_xy_points=np.array([x,y]).T
@@ -2273,6 +2275,7 @@ class reconfigure_CST_beam(object):
             _,            uninterp_slice_pol2=self.translate_sim_beam_slice(name2, i=i)            
 
             product=uninterp_slice_pol1*uninterp_slice_pol2
+            print("reconfigure_CST_beam.gen_box_from_simulated_beams: len(sky_xy_points), len(product), len(slice_grid_points) = ",len(sky_xy_points), len(product), len(slice_grid_points))
             product_interpolated=gd(sky_xy_points,product,slice_grid_points,  # assumes pol1, pol2 discretized the same way... they will be, for sensibly-configured simulations
                                     method="nearest") # linear applies nans when extrap would be necessary
             power=product_interpolated/np.max(product_interpolated)
@@ -2569,8 +2572,8 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
     ax_right.scatter(complexity_indices,values_of_k[:,1],label=str(np.round(k2_inset,4))+" (LIM review comparison scale)")
     ax_right.scatter(complexity_indices,values_of_k[:,2],label=str(np.round(k3_inset,4))+" (~CHIME scale)")
     ax_right.set_xticks(complexity_indices, labels=ensemble_ids, rotation=40)
-    if not plot_log:
-        ax_right.set_ylim(0,6*ne)
+    # if not plot_log:
+    #     ax_right.set_ylim(0,6*ne)
     ax_right.set_xlabel("N CST types, N pointing errors")
     ax_right.set_ylabel("power spectrum quantity "+case_units)
     ax_right.set_title("insets for k closest to...")
