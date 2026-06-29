@@ -159,11 +159,13 @@ def calc_b_HI(z):
     return 1.489 +0.460*(z-1) -0.118*(z-1)**2 +0.0678*(z-1)**3 -0.0128*(z-1)**4 +0.0009*(z-1)**5 # https://arxiv.org/abs/1804.09180 # Villaescusa-Navarro 2018. Widely accepted, but CHIME disagrees. CHIME is just one data point, but CHORD will probably be doing early science at similarly nonlinear scales
 def Blackman_Harris_safe_for_FFT(N):
     a0,a1,a2,a3=0.35875,0.48829,0.14128,0.01168 # from the MATLAB (!) docs https://www.mathworks.com/help/signal/ref/blackmanharris.html
-    n=N*fftfreq(N)
+    # n=N*fftfreq(N)
+    n=np.arange(N)
     w= a0 \
-        -a1*np.cos(twopi*n/N) \
-        +a2*np.cos(4.*pi*n/N) \
-        -a3*np.cos(6.*pi*n/N)
+      -a1*np.cos(twopi*n/N) \
+      +a2*np.cos(4.*pi*n/N) \
+      -a3*np.cos(6.*pi*n/N)
+    w=ifftshift(w)
     return w
 
 # main computations
@@ -765,7 +767,6 @@ class beam_effects(object):
             fg_box=np.zeros((self.Nvox_box_xy,self.Nvox_box_xy,self.Nvox_box_z))*u.mK
             fg_info_cases=[ [335.4*u.K, 150*u.MHz, -2.8,  0.1],   # synchrotron
                             [33.5 *u.K, 150*u.MHz, -2.15, 0.01] ] # free-free
-            # fg_info_cases=[ [335.4*u.K, 150*u.MHz, -2.8,  0.1] ]
             for fg_info in fg_info_cases:
                 Tref,nuref,alpha,sigma_alpha=fg_info
                 fg_box_ingredient=self.get_pwr_law_FG_ingredient(Tref,nuref,alpha,sigma_alpha)
@@ -2507,11 +2508,14 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
 
             off=5 # 0.5
             vminlog=np.log10(np.percentile(spec_to_plot_de_dimensionalized,off))
+            if (type(norm_ext)==list):
+                vminlog,vmaxlog=norm_ext
             if vminlog>0:
                 vminlog=-0.01
             vmaxlog=np.log10(np.percentile(spec_to_plot_de_dimensionalized,100-off))
             if vmaxlog<0:
                 vmaxlog=0.01
+            print("LOG CASE VMIN AND VMAX: ",vminlog,vmaxlog)
             norm=TwoSlopeNorm(0.,vmin=vminlog,
                                  vmax=vmaxlog)
         else:
@@ -2843,8 +2847,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                         init_and_box_tol=0.05,CAMB_tol=0.05,                                 
                                         frac_tol_conv=frac_tol_conv,seed=seed,                                         
                                         ftol_deriv=1e-16,maxiter=5,   
-                                        LoS_taper=True,image_taper=None,        
-                                        # LoS_taper=None,image_taper=None,
+                                        # LoS_taper=True,image_taper=None,        
+                                        LoS_taper=None,image_taper=None,
 
                                         # CONVENIENCE
                                         heavy_beam_recalc=redo_box_calc, already_imported_CST=alr_imp_CST                                                  
@@ -3015,8 +3019,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                     np.max(np.abs(co_fi_xx_fg_lin))]
     cofisyfg_lin=[np.percentile(co_fi_sy_fg_lin,90),
                     np.max(np.abs(co_fi_sy_fg_lin))]
-    co_d_fg=[np.percentile(co__divby__fg,90),
-                np.percentile(co__divby__fg,98)]
+    co_d_fg=[np.min(np.log10(co__divby__fg)),
+             np.percentile(np.log10(co__divby__fg),98)]
     if which_power=="P":
         abs_co_no_fg=np.percentile(power_quantities_all[:,abs_co_no_fg_indices,:,:],98) 
         abs_co_fg=np.percentile(power_quantities_all[:,abs_co_fg_indices,:,:],90)
@@ -3033,8 +3037,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                       np.max(np.abs(Delta2_quantities_all[:,-5,:,:]))]
         cofisyfg_lin=[np.percentile(Delta2_quantities_all[:,-4,:,:],90),
                       np.max(np.abs(Delta2_quantities_all[:,-4,:,:]))]
-        co_d_fg=[np.percentile(Delta2_quantities_all[:,-3,:,:],90),
-                 np.percentile(np.abs(Delta2_quantities_all[:,-3,:,:]),98)]
+        co_d_fg=[np.min(np.log10(Delta2_quantities_all[:,-3,:,:])),
+                 np.percentile(np.abs(np.log10(Delta2_quantities_all[:,-3,:,:])),98)]
 
     co_fi_sy_fg_str="cosmo + fidu beam + syst + fg"
     co_fi_xx_fg_str="cosmo + fidu beam + fg"
