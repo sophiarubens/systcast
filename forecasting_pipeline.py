@@ -2251,11 +2251,10 @@ class reconfigure_CST_beam(object):
                            names=['theta', 'phi', 'AbsE', 'AbsCr', 'PhCr', 'AbsCo', 'PhCo', 'AxRat'])
         theta_deg=df.theta.values*u.deg
         idx_with_theta_to_keep=np.nonzero(np.abs(theta_deg)<=90.*u.deg)
-        power=10**(df.AbsE[idx_with_theta_to_keep].values/10) # non-log values
+        power=10**(df.AbsE.values/10)[idx_with_theta_to_keep] # non-log values
         theta=theta_deg[idx_with_theta_to_keep].to(u.rad)
         phi_deg=df.phi.values*u.deg
         phi=phi_deg[idx_with_theta_to_keep].to(u.rad)
-        print("reconfigure_CST_beam.translate_sim_beam_slice: len(phi), len(theta) = ",len(phi),len(theta))
         x=self.xis[i]*theta*np.cos(phi)
         y=self.xis[i]*theta*np.sin(phi)
         sky_xy_points=np.array([x,y]).T
@@ -2275,7 +2274,6 @@ class reconfigure_CST_beam(object):
             _,            uninterp_slice_pol2=self.translate_sim_beam_slice(name2, i=i)            
 
             product=uninterp_slice_pol1*uninterp_slice_pol2
-            print("reconfigure_CST_beam.gen_box_from_simulated_beams: len(sky_xy_points), len(product), len(slice_grid_points) = ",len(sky_xy_points), len(product), len(slice_grid_points))
             product_interpolated=gd(sky_xy_points,product,slice_grid_points,  # assumes pol1, pol2 discretized the same way... they will be, for sensibly-configured simulations
                                     method="nearest") # linear applies nans when extrap would be necessary
             power=product_interpolated/np.max(product_interpolated)
