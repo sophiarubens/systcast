@@ -156,15 +156,13 @@ def PA_Gaussian(u,v,ctr,fwhm):
     return evaled
 def calc_b_HI(z):
     return 1.489 +0.460*(z-1) -0.118*(z-1)**2 +0.0678*(z-1)**3 -0.0128*(z-1)**4 +0.0009*(z-1)**5 # https://arxiv.org/abs/1804.09180 # Villaescusa-Navarro 2018. Widely accepted, but CHIME disagrees. CHIME is just one data point, but CHORD will probably be doing early science at similarly nonlinear scales
-def Blackman_Harris_safe_for_FFT(N):
+def Blackman_Harris_safe_for_FFT(N): # !!centre-origin!! apodization function
     a0,a1,a2,a3=0.35875,0.48829,0.14128,0.01168 # from the MATLAB (!) docs https://www.mathworks.com/help/signal/ref/blackmanharris.html
-    # n=N*fftfreq(N)
     n=np.arange(N)
     w= a0 \
       -a1*np.cos(twopi*n/N) \
       +a2*np.cos(4.*pi*n/N) \
       -a3*np.cos(6.*pi*n/N)
-    w=ifftshift(w)
     return w
 
 # main computations
@@ -1333,16 +1331,14 @@ class cosmo_stats(object):
         fftshift_axes=()
         if image_taper:
             taper_xy=Blackman_Harris_safe_for_FFT(Nvox)
-            # taper_xy=kaiser(Nvox,sym=False,beta=0.5)
             fftshift_axes=(0,1)
         if LoS_taper:
             taper_z= Blackman_Harris_safe_for_FFT(Nvoxz) # confirmed to be centre-, not corner-origin
-            # taper_z=kaiser(Nvoxz,sym=False,beta=0.5)
             fftshift_axes+=(2,)
         taper_xxx,taper_yyy,taper_zzz=np.meshgrid(taper_xy,taper_xy,taper_z, indexing="ij")
         taper_xyz_product=taper_xxx*taper_yyy*taper_zzz
-        self.taper_xyz_corner=taper_xyz_product
-        self.taper_xyz_centre=fftshift(taper_xyz_product,axes=fftshift_axes)
+        self.taper_xyz_centre=taper_xyz_product
+        self.taper_xyz_corner=ifftshift(taper_xyz_product,axes=fftshift_axes)
 
         # primary beam
         self.primary_beam_num=primary_beam_num
@@ -2407,20 +2403,19 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
         if plot_log:
             spec_to_plot=np.log10(spec_to_plot_de_dimensionalized)
 
-            off=5 # 0.5
-            vminlog=np.log10(np.percentile(spec_to_plot_de_dimensionalized,off))
+            vminlog=np.log10(np.min(spec_to_plot_de_dimensionalized))
             if (type(norm_ext)==list):
                 vminlog,vmaxlog=norm_ext
             if vminlog>0:
                 vminlog=-0.01
-            vmaxlog=np.log10(np.percentile(spec_to_plot_de_dimensionalized,100-off))
+            vmaxlog=np.log10(np.max(spec_to_plot_de_dimensionalized))
             if vmaxlog<0:
                 vmaxlog=0.01
             norm=TwoSlopeNorm(0.,vmin=vminlog,
                                  vmax=vmaxlog)
         else:
-            pct995=np.percentile(np.abs(ensemble_of_spectra_de_dimensionalized),99.5)
-            half_middle=0.5*pct995 # fallback: put all power spectra in the ensemble on the same colour scales, informed by the extreme range
+            large=np.max(np.abs(ensemble_of_spectra_de_dimensionalized))
+            half_middle=0.5*large # fallback: put all power spectra in the ensemble on the same colour scales, informed by the extreme range
             if norm_ext is None:
                 norm_ext=half_middle # branch for absolute quantities: 
             if (type(norm_ext)==list):
@@ -2907,6 +2902,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   
     abs_co_no_fg_indices=np.r_[7,8,9,12]
     abs_co_fg_indices=np.r_[1,2,10]
+
     abs_residual=[np.percentile(Presidual.value,90),
                     np.max(np.abs(Presidual.value))]
     coxxxxfg_lin=[np.percentile(co_xx_xx_fg_lin,90),
@@ -2917,14 +2913,15 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                     np.max(np.abs(co_fi_sy_fg_lin))]
     co_d_fg=[np.min(np.log10(co__divby__fg)),
              np.percentile(np.log10(co__divby__fg),98)]
+    fgext=None
     if which_power=="P":
         abs_co_no_fg=np.percentile(power_quantities_all[:,abs_co_no_fg_indices,:,:],98) 
         abs_co_fg=np.percentile(power_quantities_all[:,abs_co_fg_indices,:,:],90)
-        fgext=3*np.std(P_xx_xx_xx_fg).value
+        # fgext=np.percentile(P_xx_xx_xx_fg.value,97)
     elif which_power=="Delta2":
         abs_co_no_fg=None
         abs_co_fg=np.percentile(Delta2_quantities_all[:,abs_co_fg_indices,:,:],90) # good for whole dynamic range
-        fgext=np.percentile(Delta2_quantities_all[:,5,:,:],90)
+        # fgext=np.percentile(Delta2_quantities_all[:,5,:,:],97)
         abs_residual=[np.percentile(Delta2_quantities_all[:,3,:,:],90),
                       np.max(np.abs(Delta2_quantities_all[:,3,:,:]))]
         coxxxxfg_lin=[np.percentile(Delta2_quantities_all[:,-6,:,:],90),
@@ -2940,12 +2937,12 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     co_fi_xx_fg_str="cosmo + fidu beam + fg"
 
     # vers_name, units, save_name, norm_ext, cmap, plotlog
-    xx_fi_sy_fg_params=                       ["fidu beam + syst + fg",
+    xx_fi_sy_fg_params=                       ["log10[ fidu beam + syst + fg ]",
                                                 absolute_units, 
                                                "fidu_syst_fg",
-                                                None,
+                                                fgext,
                                                 abs_map,
-                                                False]
+                                                True]
     
     co_fi_xx_fg_params=                       [ co_fi_xx_fg_str,
                                                 absolute_units,
@@ -2975,12 +2972,12 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                                 rel_map,
                                                 True]
     
-    xx_xx_xx_fg_params=                       ["fg",                                
+    xx_xx_xx_fg_params=                       ["log10[ fg ]",                                
                                                 absolute_units,
                                                "fg",
                                                 fgext,
                                                 abs_map,
-                                                False]
+                                                True]
     
     isoratio_params=                          ["log10[ (fidu beam + fg) / cosmo ]",
                                                 relative_units,
@@ -3017,12 +3014,12 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                                 abs_map,
                                                 False]
     
-    xx_fi_xx_fg_params=                       ["fidu beam + fg",
+    xx_fi_xx_fg_params=                       ["log10[ fidu beam + fg ]",
                                                 absolute_units,
                                                "fidu_fg",
-                                                None,
+                                                fgext,
                                                 abs_map,
-                                                False]
+                                                True]
     
     P_CO_XX_XX_XX_params=                     ["COSMO",
                                                 absolute_units,
