@@ -80,7 +80,7 @@ b_EW=6.3*u.m
 b_max_CHORD=np.sqrt((N_NS_full*b_NS)**2+(N_EW_full*b_EW)**2)*u.m
 DRAO_lat=49.320791*pi/180.*u.rad # Google Maps satellite view, eyeballing what looks like the middle of the CHORD site: 49.320791, -119.621842 (bc considering drift-scan CHIME-like "pointing at zenith" mode, same as dec)
 D=6.*u.m
-CHORD_channel_widco_MHz=0.1953125*u.MHz
+CHORD_channel_width_MHz=0.1953125*u.MHz
 def_observing_dec=pi/60.
 def_offset=1.75*pi/180. # for this placeholder state where I build up the CHORD layout using rotation matrices instead of actual measurements. probably add Hans' mask at some point to punch the corners and receiver hut holes out...
 def_pbw_pert_frac=1e-2
@@ -103,9 +103,9 @@ def get_padding(n): # avoid edge effects in a convolution
     padding_hi=padding-padding_lo
     return padding_lo,padding_hi
 def synthesized_beam_crossing_time(nu,bmax,dec=30.*u.deg): # to accumulate rotation synthesis
-    synthesized_beam_widco_rad=dif_lim_prefac*(c/nu)/bmax
-    beam_widco_deg=synthesized_beam_widco_rad*180/pi
-    crossing_time_hrs_no_dec=beam_widco_deg/15
+    synthesized_beam_width_rad=dif_lim_prefac*(c/nu)/bmax
+    beam_width_deg=synthesized_beam_width_rad*180/pi
+    crossing_time_hrs_no_dec=beam_width_deg/15
     crossing_time_hrs= crossing_time_hrs_no_dec*np.cos(dec.to(u.rad))
     return crossing_time_hrs
 def extrapolation_warning(regime,want,have):
@@ -178,7 +178,7 @@ class beam_effects(object):
                  # the observation
                  bmin:float=b_EW,bmax:float=b_max_CHORD,                          # max and min baselines of the array
                  nu_ctr:float=600.*u.MHz,                                         # central freq of survey
-                 delta_nu:float=CHORD_channel_widco_MHz,                          # channel width
+                 delta_nu:float=CHORD_channel_width_MHz,                          # channel width
                  evol_restriction_threshold:float=def_evol_restriction_threshold, # how close to coeval is close enough? \Delta z/z
                  
                  # beam generalities
@@ -1388,6 +1388,85 @@ class cosmo_stats(object):
                 evaled_primary_num=RGI(primary_beam_modes,self.primary_beam_num,
                                        bounds_error=False,fill_value=None)(to_eval_at).T
                 self.evaled_primary_num=evaled_primary_num
+
+                fracs=[0,1e-5,1/3,1/2,1]
+                Pnorm=LogNorm(vmin=1e-8,vmax=1)
+                fig,axs=plt.subplots(len(fracs),3,layout="constrained",figsize=(8,15))
+                axs[0,0].set_title("x index 0/"+str(self.Nvox-1))
+                axs[0,1].set_title("y index 0/"+str(self.Nvox-1))
+                axs[0,2].set_title("z index 0/"+str(self.Nvoxz -1)+"\nslice std="+str(np.round(np.std(self.primary_beam_num),3)))
+                sh0,_,sh2=self.primary_beam_num.shape
+                for i,frac in enumerate(fracs):
+                    xy_idx=int(frac*sh0)
+                    z_idx=int(frac*sh2)
+                    if frac==1:
+                        xy_idx-=1
+                        z_idx-=1
+                    elif frac==1e-5:
+                        xy_idx=1
+                        z_idx=1
+                    if i>0:
+                        axs[i,0].set_title(str(xy_idx)+"/"+str(sh0-1))
+                        axs[i,1].set_title(str(xy_idx)+"/"+str(sh0-1))
+                        axs[i,2].set_title(str(z_idx )+"/"+str(sh2 -1)+"\nslice std="+str(np.round(np.std(self.primary_beam_num[:,:,z_idx]),3)))
+
+                    sl0=self.primary_beam_num[xy_idx,:,:]
+                    img=axs[i,0].imshow(sl0.T,origin="lower",norm=Pnorm)
+                    plt.colorbar(img,ax=axs[i,0])
+                    axs[i,0].set_xlabel("y idx")
+                    axs[i,0].set_ylabel("z idx")
+
+                    sl1=self.primary_beam_num[:,xy_idx,:]
+                    img=axs[i,1].imshow(sl1.T,origin="lower",norm=Pnorm)
+                    plt.colorbar(img,ax=axs[i,1])
+                    axs[i,1].set_xlabel("x idx")
+                    axs[i,1].set_ylabel("z idx")
+
+                    sl2=self.primary_beam_num[:,:,z_idx]
+                    img=axs[i,2].imshow(sl2.T,origin="lower",norm=Pnorm)
+                    plt.colorbar(img,ax=axs[i,2])
+                    axs[i,2].set_xlabel("x idx")
+                    axs[i,2].set_ylabel("y idx")
+                plt.savefig("beam_box_pre__interpolation.png", dpi=500)
+                plt.close()
+
+                fig,axs=plt.subplots(len(fracs),3,layout="constrained",figsize=(8,15))
+                axs[0,0].set_title("x index 0/"+str(self.Nvox-1))
+                axs[0,1].set_title("y index 0/"+str(self.Nvox-1))
+                axs[0,2].set_title("z index 0/"+str(self.Nvoxz -1)+"\nslice std="+str(np.round(np.std(evaled_primary_num),3)))
+                for i,frac in enumerate(fracs):
+                    xy_idx=int(frac*self.Nvox)
+                    z_idx=int(frac*self.Nvoxz)
+                    if frac==1:
+                        xy_idx-=1
+                        z_idx-=1
+                    elif frac==1e-5:
+                        xy_idx=1
+                        z_idx=1
+                    if i>0:
+                        axs[i,0].set_title(str(xy_idx)+"/"+str(self.Nvox-1))
+                        axs[i,1].set_title(str(xy_idx)+"/"+str(self.Nvox-1))
+                        axs[i,2].set_title(str(z_idx )+"/"+str(self.Nvoxz -1)+"\nslice std="+str(np.round(np.std(evaled_primary_num[:,:,z_idx]),3)))
+
+                    sl0=evaled_primary_num[xy_idx,:,:]
+                    img=axs[i,0].imshow(sl0.T,origin="lower",norm=Pnorm)
+                    plt.colorbar(img,ax=axs[i,0])
+                    axs[i,0].set_xlabel("y idx")
+                    axs[i,0].set_ylabel("z idx")
+
+                    sl1=evaled_primary_num[:,xy_idx,:]
+                    img=axs[i,1].imshow(sl1.T,origin="lower",norm=Pnorm)
+                    plt.colorbar(img,ax=axs[i,1])
+                    axs[i,1].set_xlabel("x idx")
+                    axs[i,1].set_ylabel("z idx")
+
+                    sl2=evaled_primary_num[:,:,z_idx]
+                    img=axs[i,2].imshow(sl2.T,origin="lower",norm=Pnorm)
+                    plt.colorbar(img,ax=axs[i,2])
+                    axs[i,2].set_xlabel("x idx")
+                    axs[i,2].set_ylabel("y idx")
+                plt.savefig("beam_box_post_interpolation.png", dpi=500)
+                plt.close()
             
             else:
                 raise ValueError("not yet implemented")
@@ -1656,7 +1735,6 @@ def beam_type_distribution(N_NS,N_EW,N_types,distribution="random",frame_width=2
                 indices_for_systs=~np.isin(sz_ind_rectangular, 
                                            sz_ind_rectangular[frame_width:-frame_width, 
                                                               frame_width:-frame_width])
-                np.savetxt("frame_check.txt",per_antenna_types[indices_for_systs])
                 per_antenna_types[indices_for_systs]=1
                 per_antenna_types[indices_for_systs]=rng.integers(1,high=N_types,
                                                                   size=np.sum(per_antenna_types[indices_for_systs]))
@@ -1688,7 +1766,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                  nu_ctr:float=nu_HI_z0,                                            # central frequency of the survey of interest
                  pbw_fidu:float=None,                                              # ** fiducial primary beam width (defaults to a diffraction-limited Airy beam, modulo any differences imposed by the number of fiducial beam types)
                  N_grid_pix:int=def_PA_N_grid_pix,                                 # number of pixels per side of the gridded uv plane
-                 Delta_nu:float=CHORD_channel_widco_MHz,                           # channel width in frequency (MHz)
+                 Delta_nu:float=CHORD_channel_width_MHz,                           # channel width in frequency (MHz)
                  distribution:str="random",                                        # distribution of per-antenna systematics. the options I've encoded for now are random, column, and corner, based on where the fiducial beam types are placed within the array
                  fidu_types_prefactors=None,                                       # ** multiplicative prefactors by which the different fiducial beam types differ from the physics-informed fiducial beam width for a given frequency channel
                  per_channel_systematic=None,                                      # apply a systematic that corrupts the 1/lambda scaling of the beam width? options encoded so far are sporadic (multiply the beam widths for a contiguous chunk of frequency channels by a different multiplicative prefactor for the different fiducial beam types) and D3A-like (noise + too wide at low frequencies... inspired by early three-dish transit beam measurements)
@@ -1718,7 +1796,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
             N_EW=N_EW//2
         N_ant=N_NS*N_EW
         N_bl=N_ant*(N_ant-1)//2
-        self.nu_ctr_MHz=nu_ctr
+        self.nu_ctr_MHz=nu_ctr.to(u.MHz)
         self.nu_ctr_Hz=nu_ctr.to(u.Hz)
         self.Dc_ctr=comoving_distance(nu_HI_z0/nu_ctr-1)
         self.N_hrs=hrs_per_night
@@ -1936,7 +2014,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         self.uv_synth=uv_synth
         print("synthesized rotation")        
 
-    def calc_dirty_image(self, Npix:int=1024, pbw_fidu_use:float=None,tol:float=img_bin_tol):
+    def calc_uv_coverage(self, Npix:int=1024, pbw_fidu_use:float=None,tol:float=img_bin_tol):
         if pbw_fidu_use is None: # otherwise, use the one that was passed
             pbw_fidu_use=self.pbw_fidu
         all_ungridded_u=self.uv_synth[:,0,:]
@@ -1954,7 +2032,6 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         self.d2u=d2u
         uubins,vvbins=np.meshgrid(uvbins,uvbins, indexing="ij")
         uvplane=np.zeros((Npix,Npix),dtype="complex128") # 0.*uubins
-        # uvplane=np.zeros((Npix,Npix)) # 0.*uubins
         uvbins_use=np.append(uvbins,uvbins[-1]+uvbins[1]-uvbins[0])
         pad_lo,pad_hi=get_padding(Npix)
 
@@ -2008,19 +2085,30 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                             reshaped_u=np.reshape(u_here,N_here,order="C")
                             reshaped_v=np.reshape(v_here,N_here,order="C")
                             gridded,_,_=np.histogram2d(reshaped_u,reshaped_v,bins=uvbins_use)
-                            widco_here=np.sqrt((1-eps_i)*(1-eps_j)*fidu_type_k*fidu_type_l)*pbw_fidu_use
-                            kernel=PA_Gaussian(uubins,vvbins,[0.,0.],widco_here)
+                            width_here=np.sqrt((1-eps_i)*(1-eps_j)*fidu_type_k*fidu_type_l)*pbw_fidu_use
+                            kernel=PA_Gaussian(uubins,vvbins,[0.,0.],width_here)
                             kernel_padded=np.pad(kernel,((pad_lo,pad_hi),(pad_lo,pad_hi)),"edge") # no edge effects!! rigorously tested in July 2025
                             convolution_here=convolve(kernel_padded,gridded,mode="valid") # beam-smeared version of the uv-plane for this perturbation permutation
                             uvplane+=convolution_here
 
         uv_bin_edges=[uvbins,uvbins]
+        uvplane=uvplane.real # by construction, imag part vanishes
+        # print("np.sum(not np.allclose(uvplane.imag,0)) =",np.sum(not np.allclose(uvplane.imag,0)))
+        # fig,axs=plt.subplots(1,2,layout="constrained")
+        # im=axs[0].imshow(uvplane.real.T,origin="lower")
+        # plt.colorbar(im,ax=axs[0])
+        # im=axs[1].imshow(uvplane.imag.T,origin="lower")
+        # plt.colorbar(im,ax=axs[1])
+        plt.figure()
+        plt.imshow(uvplane.T,origin="lower")
+        plt.savefig("uvplane.png")
+        plt.close()
         return uvplane,uv_bin_edges,thetamax # this is the gridded uvplane
 
     def stack_to_box(self, tol:float=img_bin_tol):
         if (self.nu_ctr_MHz.value<(350/(1-self.evol_restriction_threshold/2)) or 
             self.nu_ctr_MHz>(nu_HI_z0/(1+self.evol_restriction_threshold/2))):
-            raise ValueError("survey out of bounds")
+            raise ValueError("{:6.2f} is out of bounds".format(self.nu_ctr_MHz))
         N_grid_pix=self.N_grid_pix
         taper_1d=Blackman_Harris_safe_for_FFT(N_grid_pix) # centre-origin
         taper_x,taper_y=np.meshgrid(taper_1d,taper_1d, indexing="ij")
@@ -2042,10 +2130,10 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
 
             # compute the dirty image
             if self.CST:
-                chan_gridded_uvplane,chan_uv_bin_edges,thetamax=self.calc_dirty_image(Npix=N_grid_pix, tol=tol)
+                chan_gridded_uvplane,chan_uv_bin_edges,thetamax=self.calc_uv_coverage(Npix=N_grid_pix, tol=tol)
             else:
                 xy_beam_width=enumerate(xy_beam_widths_desc)
-                chan_gridded_uvplane,chan_uv_bin_edges,thetamax=self.calc_dirty_image(Npix=N_grid_pix, pbw_fidu_use=xy_beam_width, tol=tol)
+                chan_gridded_uvplane,chan_uv_bin_edges,thetamax=self.calc_uv_coverage(Npix=N_grid_pix, pbw_fidu_use=xy_beam_width, tol=tol)
             uv_bin_edges=chan_uv_bin_edges[0]
 
             # interpolate to store in stack
@@ -2055,8 +2143,14 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                 interpolated_slice=chan_gridded_uvplane
                 d2u=self.d2u
             else: # chunk excision and mode interpolation in one step
+                # interpolator_Re=RBS(uv_bin_edges,uv_bin_edges, chan_gridded_uvplane.real)
+                # interpolated_slice_Re=interpolator_Re(uv_bin_edges_0,uv_bin_edges_0)
+                # interpolator_Im=RBS(uv_bin_edges,uv_bin_edges, chan_gridded_uvplane.imag)
+                # interpolated_slice_Im=interpolator_Im(uv_bin_edges_0,uv_bin_edges_0)
+                # interpolated_slice=interpolated_slice_Re+1j*interpolated_slice_Im
                 interpolator=RBS(uv_bin_edges,uv_bin_edges, chan_gridded_uvplane)
                 interpolated_slice=interpolator(uv_bin_edges_0,uv_bin_edges_0)
+            # box_uvz[:,:,i]=interpolated_slice
             box_uvz[:,:,i]=interpolated_slice*self.taper_grid
             if ((i%(self.N_chan//3))==0):
                 print("{:7.1f} pct complete".format(i/self.N_chan*100))
@@ -2064,12 +2158,13 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         box_xyz=fftshift(irfftn(ifftshift(box_uvz*d2u, axes=(0,1)),
                                axes=(0,1),s=(N_grid_pix,N_grid_pix),
                                norm="forward"), axes=(0,1)) # mixed coords before; all config space after
+        box_xyz=box_xyz.real # real by construction (mathematically) and coding (irfftn), so stop carrying around the trivial imag part
         for i in range(self.N_chan): # the correct generalization is per-channel normalization
             slice_i=box_xyz[:,:,i]
             norm_i=np.max(slice_i)
             if norm_i>0:
                 box_xyz[:,:,i]=slice_i/norm_i # peak-normalize in configuration space
-        box_xyz[box_xyz<0.]=np.abs(box_xyz[box_xyz<0.]) # I tried this on a whim and it makes things make sense but I still need to motivate it to myself mathematically
+        # box_xyz[box_xyz<0.]=np.abs(box_xyz[box_xyz<0.]) # I tried this on a whim and it makes things make sense but I still need to motivate it to myself mathematically
         self.box=box_xyz
 
         # generate a box of r-values (necessary for interpolation to survey modes in the manual beam mode of cosmo_stats as called by beam_effects)
@@ -2112,28 +2207,18 @@ class reconfigure_CST_beam(object):
         xis=[comoving_distance(z) for z in zs_for_xis] # ascending
         xis=Quantity(xis) # for the typical coeval approximation
         self.xis=xis
-        self.CST_z_vec=xis-xis[int(Nfreqs//2)]
+        comoving_middle=xis[int(Nfreqs//2)]
+        self.CST_z_vec=xis-comoving_middle
 
         if beam_sim_directory is None:
             print("Do you really mean to attempt CST imports from the working directory?")
-        N_ant=64
-        bmax=np.sqrt((b_NS*10)**2+(b_EW*7)**2)
-        if mode=="full":
-            N_ant*=8
-            bmax=np.sqrt((b_NS*N_NS_full)**2+(b_EW*N_EW_full)**2)
-        hemi=pi*(xis[-1]-xis[0])
-        xy_for_unwrapping=np.linspace(-hemi,hemi,Nxy)
-        self.xy_for_unwrapping=xy_for_unwrapping
 
-        nu_ctr=(freq_lo+freq_hi)/2
-        nu_ctr_MHz=nu_ctr.to(u.MHz)
-        k_perp=kperp(nu_ctr_MHz,b_EW,bmax)
-        L_xy=twopi/k_perp[0]
+        L_xy=comoving_middle
         xy_for_box=L_xy*fftshift(fftfreq(Nxy))
         self.xy_for_box=xy_for_box
         np.save("xy_vec_for_box"+box_outname,xy_for_box.value)
         self.Nxy=Nxy
-        self.xx_grid,self.yy_grid=np.meshgrid(self.xy_for_unwrapping,self.xy_for_unwrapping, indexing="ij") # config space points of interest for the slice (guided by the transverse extent of the eventual config-space box)
+        self.xx_grid,self.yy_grid=np.meshgrid(xy_for_box,xy_for_box, indexing="ij") # config space points of interest for the slice (guided by the transverse extent of the eventual config-space box)
         freq_names=np.zeros(Nfreqs,dtype="U6") # store the GHz CST frequencies as strings of the format that Aditya's sims use
         for i,freq in enumerate(freqs_GHz):
             freq_name=f"{freq:.4f}" # round to four decimal places and convert to string
@@ -2145,18 +2230,26 @@ class reconfigure_CST_beam(object):
         self.freq_names=freq_names
 
     def translate_sim_beam_slice(self,CST_filename:str,i:int=0):
-        df = pd.read_table(CST_filename, skiprows=[0, 1,], sep='\s+', 
-                           names=['theta', 'phi', 'AbsE', 'AbsCr', 'PhCr', 'AbsCo', 'PhCo', 'AxRat'])
+        df = pd.read_table(CST_filename, skiprows=[0, 1,], sep="\s+", 
+                           
+                           # lots of fields in each CST sim, but only the first three are helpful for forming Stokes I E-field beams (precursor for the Stokes I power beams I form from two pols of a given simulation setup and frequency)
+                           names=["theta", "phi",  # spherical coordinates, only valid locally, that specify which direction each beam value describes
+                                  "AbsE",          # amplitude of E-field beam for the pol you are currently reading
+                                                   # two terms in breaking AbsE into Ludwig-III, which is more nonlocally generalizable than the native CST sph coords
+                                  "AbsCr", "PhCr", # 1. if you excite a current in x and your feed is x-polarized, what is the response in y?       
+                                  "AbsCo", "PhCo", # 2. if you excite a current in x and your feed is x-polarized, what is the response in x?
+                                  "AxRat"])        # polarization ellipticity
         theta_deg=df.theta.values*u.deg
         idx_with_theta_to_keep=np.nonzero(np.abs(theta_deg)<=90.*u.deg)
-        power=10**(df.AbsE.values/10)[idx_with_theta_to_keep] # non-log values
+        linear_units_one_pol=10**(df.AbsE.values/10)[idx_with_theta_to_keep] # non-log values
         theta=theta_deg[idx_with_theta_to_keep].to(u.rad)
         phi_deg=df.phi.values*u.deg
         phi=phi_deg[idx_with_theta_to_keep].to(u.rad)
-        x=self.xis[i]*theta*np.cos(phi)
-        y=self.xis[i]*theta*np.sin(phi)
+        x=self.xis[i]*np.sin(theta)*np.cos(phi)
+        y=self.xis[i]*np.sin(theta)*np.sin(phi)
         sky_xy_points=np.array([x,y]).T
-        return sky_xy_points,power
+        print("extrema of sky xy points:",np.min(sky_xy_points),np.max(sky_xy_points))
+        return sky_xy_points,linear_units_one_pol
     
     def gen_box_from_simulated_beams(self):
         slice_grid_points=np.array([self.xx_grid,self.yy_grid]).T
@@ -2230,7 +2323,7 @@ class CHORD_sense(object): # modified from a notebook helpfully shared by Debanj
         self.integration_time = integration_time
         self.time_per_day = time_per_day
         self.n_days = n_days
-        n_channels = bandwidth.value/CHORD_channel_widco_MHz
+        n_channels = bandwidth.value/CHORD_channel_width_MHz
         self.n_channels = n_channels
         self.bandwidth = bandwidth
         self.coherent = coherent
