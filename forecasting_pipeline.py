@@ -1848,145 +1848,63 @@ class synthesize_beam(beam_effects): # still fairly tailored to rectangular arra
 
         # helper args specific to Gaussian or CST calculations
         self.CST=False if sub_ensemble_of_CST_beams is None else True
-        if self.CST:
-            self.CST_xy=CST_xy
-            CST_Delta_xy=CST_xy[1]-CST_xy[0]
-            CST_dxdy=(CST_Delta_xy)**2
-            self.CST_dxdy=CST_dxdy
-            self.uvbins_CST=fftshift(fftfreq(len(CST_xy),d=CST_Delta_xy))
-            self.CST_freqs=CST_freqs
-            self.N_CST_xy=len(CST_xy)
-            self.N_CST_freqs=len(CST_freqs)
+        self.CST_xy=CST_xy
+        CST_Delta_xy=CST_xy[1]-CST_xy[0]
+        CST_dxdy=(CST_Delta_xy)**2
+        self.CST_dxdy=CST_dxdy
+        self.uvbins_CST=fftshift(fftfreq(len(CST_xy),d=CST_Delta_xy))
+        self.CST_freqs=CST_freqs
+        self.N_CST_xy=len(CST_xy)
+        self.N_CST_freqs=len(CST_freqs)
 
-            if type(sub_ensemble_of_CST_beams) is not list: # can't use .ndim because it doesn't behave well for the inhomog arrays of the else
-                print("synthesize_beam received only a !fiducial! beam box")
+        if type(sub_ensemble_of_CST_beams) is not list: # can't use .ndim because it doesn't behave well for the inhomog arrays of the else
+            print("synthesize_beam received only a !fiducial! beam box")
 
-                fidu_box=sub_ensemble_of_CST_beams
+            fidu_box=sub_ensemble_of_CST_beams
 
-                self.all_boxes=np.expand_dims(sub_ensemble_of_CST_beams,axis=0)
+            self.all_boxes=np.expand_dims(sub_ensemble_of_CST_beams,axis=0)
 
-                N_total_beam_types=1
-                self.N_total_beam_types=1
-            else:
-                print("synthesize_beam received both !fiducial and systematic-laden! beam boxes")
-                fidu_box,syst_boxes=sub_ensemble_of_CST_beams # should be unpackable into two arrays:
-                assert fidu_box.ndim==3 and syst_boxes.ndim==5 # one box and one "2D array of 3D boxes"
-                self.N_CST_types,self.N_max_pointing_errors,Nxy,_,Nz=syst_boxes.shape
-
-                # figure out the actual number of beam types and store the beam types as a list of boxes, not 2D array of boxes + standalone box
-                N_pointing_errors_per_CST_case=np.zeros(self.N_CST_types,dtype=int)
-                nnn=0
-                all_boxes=[fidu_box]
-                for i in range(self.N_CST_types):
-                    for j in range(self.N_max_pointing_errors):
-                        box_to_add=syst_boxes[i,j,:,:,:]
-                        if not np.all(np.isclose(box_to_add,0.)): # NEW
-                            N_pointing_errors_per_CST_case[i]=j # only the (j-1)st case is meaningful, but that is in zero-based indexing, not one-based counting.
-                            all_boxes.append(box_to_add)
-                            nnn+=1
-                self.N_pointing_errors_per_CST_case=N_pointing_errors_per_CST_case
-                N_total_beam_types=nnn
-                self.N_total_beam_types=N_total_beam_types
-
-                all_boxes=np.asarray(all_boxes)
-                self.all_boxes=all_boxes
-            self.pb_types=beam_type_distribution(N_NS,N_EW,N_total_beam_types, distribution=self.distribution)
-
+            N_total_beam_types=1
+            self.N_total_beam_types=1
         else:
-            pbw_fidu_types=beam_type_distribution(N_NS,N_EW,self.N_fiducial_beam_types, distribution=self.distribution)
-            pbw_pert_types=beam_type_distribution(N_NS,N_EW,self.N_pert_types,          distribution="random")
+            print("synthesize_beam received both !fiducial and systematic-laden! beam boxes")
+            fidu_box,syst_boxes=sub_ensemble_of_CST_beams # should be unpackable into two arrays:
+            assert fidu_box.ndim==3 and syst_boxes.ndim==5 # one box and one "2D array of 3D boxes"
+            self.N_CST_types,self.N_max_pointing_errors,Nxy,_,Nz=syst_boxes.shape
 
-            # K-PERP / ARRAY LAYOUT THINGS
-            if fidu_types_prefactors is None:
-                fidu_types_prefactors=np.ones(N_fiducial_beam_types)
-            self.fidu_types_prefactors=fidu_types_prefactors
+            # figure out the actual number of beam types and store the beam types as a list of boxes, not 2D array of boxes + standalone box
+            N_pointing_errors_per_CST_case=np.zeros(self.N_CST_types,dtype=int)
+            nnn=0
+            all_boxes=[fidu_box]
+            for i in range(self.N_CST_types):
+                for j in range(self.N_max_pointing_errors):
+                    box_to_add=syst_boxes[i,j,:,:,:]
+                    if not np.all(np.isclose(box_to_add,0.)): # NEW
+                        N_pointing_errors_per_CST_case[i]=j # only the (j-1)st case is meaningful, but that is in zero-based indexing, not one-based counting.
+                        all_boxes.append(box_to_add)
+                        nnn+=1
+            self.N_pointing_errors_per_CST_case=N_pointing_errors_per_CST_case
+            N_total_beam_types=nnn
+            self.N_total_beam_types=N_total_beam_types
 
-            epsilons=np.zeros(N_pert_types+1)
-            if (self.N_pbws_pert>0):
-                if (self.N_pert_types>1):
-                    rng=np.random.default_rng()
-                    random_draw=rng.uniform(size=(N_pert_types,))
-                    random_perturbations=random_draw*self.pbw_pert_frac
-                    epsilons[1:]=random_perturbations
-                else: 
-                    epsilons[1]=self.pbw_pert_frac
-                rng=np.random.default_rng()
-                indices_of_ants_w_pert_pbws=rng.randint(0,N_ant,size=self.N_pbws_pert) # indices of antenna pbs to perturb (independent of the indices of antenna positions to perturb, by design)
-            else:
-                indices_of_ants_w_pert_pbws=None
-            self.indices_of_ants_w_pert_pbws=indices_of_ants_w_pert_pbws
-            self.epsilons=epsilons
-            self.per_chan_syst_facs=per_chan_syst_facs
-
-            # K-PAR / CHROMATICITY THINGS
-            surv_beam_widths=dif_lim_prefac*surv_wavelengths/D # incr.
-            surv_beam_widths=surv_beam_widths.decompose()
-            self.surv_beam_widths=surv_beam_widths
-            plt.figure()
-            plt.plot(surv_channels_MHz,surv_beam_widths,label="diffraction-limited Airy FWHM")    
-            per_chan_syst_name="None"        
-            if self.per_channel_systematic=="early_transit_measurement_like":
-                surv_beam_widths=(surv_beam_widths)**1.2 # keep things dimensionless, but use a steeper decay
-                noise_bound_lo=0.95
-                noise_bound_hi=1.05
-                rng=np.random.default_rng()
-                noise_frac=(noise_bound_hi-noise_bound_lo)*rng.random_sample(size=(N_chan,))+noise_bound_lo # random_sample draws fall within [0,1) but I want values between [0.75,1.25)*(that channel's beam width)
-                surv_beam_widths*=noise_frac
-                per_chan_syst_name="early_transit_measurement_like"
-            elif self.per_channel_systematic=="sporadic":
-                bad=np.ones(N_chan)
-                per_chan_syst_locs=[slice(  N_chan//5,    N_chan//4+1,1), slice(  N_chan//2,  7*N_chan//13+1,1),slice(11*N_chan//12,   None,        1),
-                                    slice(7*N_chan//9, 10*N_chan//11  ,1),slice(  N_chan//10,   N_chan//9+ 1,1),slice( 2*N_chan//3 , 5*N_chan//6   ,1),
-                                    slice(4*N_chan//5,  9*N_chan//10  ,1),slice(  None,         N_chan//9,   1),slice( 8*N_chan//11, 4*N_chan//5   ,1),
-                                    slice(5*N_chan//6,  7*N_chan//8   ,1)] # (not user-specifiable yet)
-                per_chan_syst_name="sporadic_"
-                for i,fac_i in enumerate(self.per_chan_syst_facs):
-                    loc_i=per_chan_syst_locs[i]
-                    bad[loc_i]=fac_i
-                    per_chan_syst_name=per_chan_syst_name+str(fac_i)+"_"
-                surv_beam_widths*=bad
-            elif self.per_channel_systematic is None:
-                pass
-            else:
-                raise ValueError("not yet implemented")
-            if self.per_channel_systematic is not None:
-                plt.plot(surv_channels_MHz,surv_beam_widths,label="chromaticity systematic–laden")
-            plt.xlabel("frequency (MHz)")
-            plt.ylabel("beam FWHM (rad)")
-            plt.title("reference beam widths by frequency bin")
-            plt.legend()
-            plt.savefig("beam_chromaticity_slice_"+str(self.nu_ctr_MHz)+"_MHz_"+per_chan_syst_name+".png")
-            plt.close()
-            self.per_chan_syst_name=per_chan_syst_name
+            all_boxes=np.asarray(all_boxes)
+            self.all_boxes=all_boxes
+        self.pb_types=beam_type_distribution(N_NS,N_EW,N_total_beam_types, distribution=self.distribution)
 
         # ungridded instantaneous uv-coverage (baselines in xyz)
         # second use of the loop: iterate over baselines to make arrays of beam type indices     
         uvw_inst=np.zeros((N_bl,3))
-        if self.CST:
-            indices_of_constituent_ant_pb_types=np.zeros((N_bl,2))
-        else:
-            indices_of_constituent_ant_pb_fidu_types=np.zeros((N_bl,2))
-            indices_of_constituent_ant_pb_pert_types=np.zeros((N_bl,2))
+        indices_of_constituent_ant_pb_types=np.zeros((N_bl,2))
         k=0
         for i in range(N_ant):
             for j in range(i+1,N_ant):
                 uvw_inst[k,:]=antennas_xyz[i,:]-antennas_xyz[j,:]
-                if self.CST:
-                    indices_of_constituent_ant_pb_types[k]=[self.pb_types[i],self.pb_types[j]]
-                else: 
-                    indices_of_constituent_ant_pb_fidu_types[k]=[pbw_fidu_types[i],pbw_fidu_types[j]]
-                    indices_of_constituent_ant_pb_pert_types[k]=[pbw_pert_types[i],pbw_pert_types[j]]
+                indices_of_constituent_ant_pb_types[k]=[self.pb_types[i],self.pb_types[j]]
                 k+=1
         uvw_inst=np.vstack((uvw_inst,-uvw_inst))
         self.uvw_inst=uvw_inst
-        if self.CST:
-            indices_of_constituent_ant_pb_types=np.vstack((indices_of_constituent_ant_pb_types,indices_of_constituent_ant_pb_types)) # get the opposite-permutation baselines for free
-            self.indices_of_constituent_ant_pb_types=indices_of_constituent_ant_pb_types
-        else:
-            indices_of_constituent_ant_pb_fidu_types=np.vstack((indices_of_constituent_ant_pb_fidu_types,indices_of_constituent_ant_pb_fidu_types))
-            indices_of_constituent_ant_pb_pert_types=np.vstack((indices_of_constituent_ant_pb_pert_types,indices_of_constituent_ant_pb_pert_types))
-            self.indices_of_constituent_ant_pb_fidu_types=indices_of_constituent_ant_pb_fidu_types
-            self.indices_of_constituent_ant_pb_pert_types=indices_of_constituent_ant_pb_pert_types
+        indices_of_constituent_ant_pb_types=np.vstack((indices_of_constituent_ant_pb_types,indices_of_constituent_ant_pb_types)) # get the opposite-permutation baselines for free
+        self.indices_of_constituent_ant_pb_types=indices_of_constituent_ant_pb_types
         print("computed ungridded instantaneous uv-coverage")
 
         # rotation-synthesized uv-coverage *******(N_bl,3,N_timesteps), accumulating xyz->uvw transformations at each timestep
@@ -2032,79 +1950,55 @@ class synthesize_beam(beam_effects): # still fairly tailored to rectangular arra
         self.d2u=d2u
         uubins,vvbins=np.meshgrid(uvbins,uvbins, indexing="ij")
         uvplane=np.zeros((Npix,Npix),dtype="complex128") # 0.*uubins
+        implane=np.zeros((Npix,Npix))
         uvbins_use=np.append(uvbins,uvbins[-1]+uvbins[1]-uvbins[0])
         pad_lo,pad_hi=get_padding(Npix)
 
-        if self.CST:
-            for i in range(self.N_total_beam_types):
-                type_i=self.pb_types[i]
-                for j in range(i+1):
-                    type_j=self.pb_types[j]
+        for i in range(self.N_total_beam_types):
+            type_i=self.pb_types[i]
+            for j in range(i+1):
+                type_j=self.pb_types[j]
 
-                    here=(self.indices_of_constituent_ant_pb_types[:,0]==i
-                          )&(self.indices_of_constituent_ant_pb_types[:,1]==j)
-                    u_here=self.uv_synth[here,0,:] # [N_bl,2,N_hr_angles]
-                    v_here=self.uv_synth[here,1,:]
-                    N_bl_here,N_hr_angles_here=u_here.shape # (N_bl,N_hr_angles)
-                    N_here=N_bl_here*N_hr_angles_here
-                    reshaped_u=np.reshape(u_here,N_here,order="C")
-                    reshaped_v=np.reshape(v_here,N_here,order="C")
-                    gridded,_,_=np.histogram2d(reshaped_u,reshaped_v,bins=uvbins_use)
-                    LoS_idx=np.argmin(np.abs(self.nu_obs-self.CST_freqs))
-                    image_i=self.all_boxes[type_i,:,:,LoS_idx] # [N_total_beam_types, Nxy, Nxy, Nz]
-                    image_j=self.all_boxes[type_j,:,:,LoS_idx]
-                    assert np.all(image_i>=0.), "image i beam slice should be entirely nonnegative"
-                    assert np.all(image_j>=0.), "image j beam slice should be entirely nonnegative"
-                    image_ij=np.sqrt(image_i*image_j) # geo mean of the beams of this baseline's two constituent antennas. still on initial CST grid
-                    
-                    interpolator=RBS(self.CST_xy,self.CST_xy, image_ij)
-                    image_ij_interpolated=interpolator(xy_use,xy_use)
-                    image_ij_interpolated_padded=np.pad(image_ij_interpolated,((pad_lo,pad_hi),(pad_lo,pad_hi)),"edge")
-                    kernel_padded=np.abs(fftshift(fftn(ifftshift(image_ij_interpolated_padded*self.CST_dxdy),norm="forward"))) # FT to put in uv space
-                    # kernel=np.abs(fftshift(fftn(ifftshift(image_ij_interpolated_padded*self.CST_dxdy),norm="forward"))) # FT to put in uv space
-                    # kernel_padded=np.pad(kernel,((pad_lo,pad_hi),(pad_lo,pad_hi)),"edge")
-                    convolution_here=convolve(kernel_padded,gridded,mode="valid") # beam-smeared version of the uv-plane for this perturbation permutation
-                    uvplane+=convolution_here
-        else:
-            for i in range(self.N_pert_types+1):
-                eps_i=self.epsilons[i]
-                for j in range(i+1):
-                    eps_j=self.epsilons[j]
-                    for k in range(self.N_fiducial_beam_types):
-                        fidu_type_k=self.fidu_types_prefactors[k]
-                        for l in range(k+1):
-                            fidu_type_l=self.fidu_types_prefactors[l]
-
-                            here=(self.indices_of_constituent_ant_pb_pert_types[:,0]==i
-                                )&(self.indices_of_constituent_ant_pb_pert_types[:,1]==j
-                                    )&(self.indices_of_constituent_ant_pb_fidu_types[:,0]==k
-                                        )&(self.indices_of_constituent_ant_pb_fidu_types[:,1]==l) # which baselines to treat during this loop trip... pbws has shape (N_bl,2) ... one column for antenna a and the other for antenna b
-                            u_here=self.uv_synth[here,0,:] # [N_bl,3,N_hr_angles]
-                            v_here=self.uv_synth[here,1,:]
-                            N_bl_here,N_hr_angles_here=u_here.shape # (N_bl,N_hr_angles)
-                            N_here=N_bl_here*N_hr_angles_here
-                            reshaped_u=np.reshape(u_here,N_here,order="C")
-                            reshaped_v=np.reshape(v_here,N_here,order="C")
-                            gridded,_,_=np.histogram2d(reshaped_u,reshaped_v,bins=uvbins_use)
-                            width_here=np.sqrt((1-eps_i)*(1-eps_j)*fidu_type_k*fidu_type_l)*pbw_fidu_use
-                            kernel=PA_Gaussian(uubins,vvbins,[0.,0.],width_here)
-                            kernel_padded=np.pad(kernel,((pad_lo,pad_hi),(pad_lo,pad_hi)),"edge") # no edge effects!! rigorously tested in July 2025
-                            convolution_here=convolve(kernel_padded,gridded,mode="valid") # beam-smeared version of the uv-plane for this perturbation permutation
-                            uvplane+=convolution_here
+                here=(self.indices_of_constituent_ant_pb_types[:,0]==i
+                        )&(self.indices_of_constituent_ant_pb_types[:,1]==j)
+                u_here=self.uv_synth[here,0,:] # [N_bl,2,N_hr_angles]
+                v_here=self.uv_synth[here,1,:]
+                N_bl_here,N_hr_angles_here=u_here.shape # (N_bl,N_hr_angles)
+                N_here=N_bl_here*N_hr_angles_here
+                reshaped_u=np.reshape(u_here,N_here,order="C")
+                reshaped_v=np.reshape(v_here,N_here,order="C")
+                gridded_uv,_,_=np.histogram2d(reshaped_u,reshaped_v,bins=uvbins_use)
+                gridded_im=fftshift(irfftn(ifftshift(gridded_uv*self.d2u),norm="forward"))
+                LoS_idx=np.argmin(np.abs(self.nu_obs-self.CST_freqs))
+                beam_i=self.all_boxes[type_i,:,:,LoS_idx] # [N_total_beam_types, Nxy, Nxy, Nz]
+                beam_j=self.all_boxes[type_j,:,:,LoS_idx]
+                assert np.all(beam_i>=0.), "image i beam slice should be entirely nonnegative"
+                assert np.all(beam_j>=0.), "image j beam slice should be entirely nonnegative"
+                beam_ij=np.sqrt(beam_i*beam_j) # geo mean of the beams of this baseline's two constituent antennas. still on initial CST grid
+                
+                interpolator=RBS(self.CST_xy,self.CST_xy, beam_ij)
+                beam_ij_interpolated=interpolator(xy_use,xy_use)
+                # beam_ij_interpolated_padded=np.pad(beam_ij_interpolated,((pad_lo,pad_hi),(pad_lo,pad_hi)),"edge")
+                # kernel=fftshift(fftn(ifftshift(beam_ij_interpolated_padded*self.CST_dxdy),norm="forward"))[pad_lo:Npix+pad_hi+1,pad_lo:Npix+pad_hi+1] # FT to put in uv space
+                # kernel=fftshift(fftn(ifftshift(beam_ij_interpolated*self.CST_dxdy),norm="forward")) # FT to put in uv space
+                # kernel_padded=np.pad(kernel,((pad_lo,pad_hi),(pad_lo,pad_hi)),"edge")
+                # convolution_here=convolve(kernel_padded,gridded_uv,mode="valid") # beam-smeared version of the uv-plane for this perturbation permutation
+                # uvplane+=convolution_here
+                implane+=gridded_im*beam_ij
 
         uv_bin_edges=[uvbins,uvbins]
-        uvplane=uvplane.real # by construction, imag part vanishes
         # print("np.sum(not np.allclose(uvplane.imag,0)) =",np.sum(not np.allclose(uvplane.imag,0)))
         # fig,axs=plt.subplots(1,2,layout="constrained")
         # im=axs[0].imshow(uvplane.real.T,origin="lower")
         # plt.colorbar(im,ax=axs[0])
         # im=axs[1].imshow(uvplane.imag.T,origin="lower")
         # plt.colorbar(im,ax=axs[1])
-        plt.figure()
-        plt.imshow(uvplane.T,origin="lower")
-        plt.savefig("uvplane.png",dpi=500)
-        plt.close()
-        return uvplane,uv_bin_edges,thetamax # this is the gridded uvplane
+        # plt.figure()
+        # plt.imshow(uvplane.T,origin="lower")
+        # plt.savefig("uvplane.png",dpi=500)
+        # plt.close()
+        # return uvplane,uv_bin_edges,thetamax # this is the gridded uvplane
+        return implane, im_bin_edges,thetamax
 
     def stack_to_box(self, tol:float=img_bin_tol):
         if (self.nu_ctr_MHz.value<(350/(1-self.evol_restriction_threshold/2)) or 
@@ -2115,7 +2009,6 @@ class synthesize_beam(beam_effects): # still fairly tailored to rectangular arra
         taper_x,taper_y=np.meshgrid(taper_1d,taper_1d, indexing="ij")
         self.taper_grid=np.sqrt(taper_x**2+taper_y**2)
         self.taper_box=np.tile(self.taper_grid[:,:,None],(1,1,self.N_chan))
-        print("self.taper_box.shape=",self.taper_box.shape)
 
         box_uvz=np.zeros((N_grid_pix,N_grid_pix,self.N_chan),dtype="complex128")
         if not self.CST: # rescale chromatic beam widths by whatever was passed
@@ -2132,11 +2025,7 @@ class synthesize_beam(beam_effects): # still fairly tailored to rectangular arra
             self.nu_obs=nu_obs.decompose()
 
             # compute the dirty image
-            if self.CST:
-                chan_gridded_uvplane,chan_uv_bin_edges,thetamax=self.calc_uv_coverage(Npix=N_grid_pix, tol=tol)
-            else:
-                xy_beam_width=enumerate(xy_beam_widths_desc)
-                chan_gridded_uvplane,chan_uv_bin_edges,thetamax=self.calc_uv_coverage(Npix=N_grid_pix, pbw_fidu_use=xy_beam_width, tol=tol)
+            chan_gridded_implane,chan_uv_bin_edges,thetamax=self.calc_uv_coverage(Npix=N_grid_pix, tol=tol)
             uv_bin_edges=chan_uv_bin_edges[0]
 
             # interpolate to store in stack
@@ -2146,9 +2035,14 @@ class synthesize_beam(beam_effects): # still fairly tailored to rectangular arra
                 interpolated_slice=chan_gridded_uvplane
                 d2u=self.d2u
             else: # chunk excision and mode interpolation in one step
-                interpolator=RBS(uv_bin_edges,uv_bin_edges, chan_gridded_uvplane)
-                interpolated_slice=interpolator(uv_bin_edges_0,uv_bin_edges_0)
-            box_uvz[:,:,i]=interpolated_slice
+                interpolator_Re=RBS(uv_bin_edges,uv_bin_edges, chan_gridded_uvplane.real)
+                interpolated_slice_Re=interpolator_Re(uv_bin_edges_0,uv_bin_edges_0)
+                interpolator_Im=RBS(uv_bin_edges,uv_bin_edges, chan_gridded_uvplane.imag)
+                interpolated_slice_Im=interpolator_Im(uv_bin_edges_0,uv_bin_edges_0)
+                interpolated_slice=interpolated_slice_Re+1j*interpolated_slice_Im
+            # slice_counterpart=np.rot90(np.rot90(interpolated_slice))
+            slice_counterpart=0
+            box_uvz[:,:,i]=interpolated_slice+slice_counterpart
             # box_uvz[:,:,i]=interpolated_slice*self.taper_grid
             if ((i%(self.N_chan//3))==0):
                 print("{:7.1f} pct complete".format(i/self.N_chan*100))
