@@ -2059,9 +2059,10 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                     
                     interpolator=RBS(self.CST_xy,self.CST_xy, image_ij)
                     image_ij_interpolated=interpolator(xy_use,xy_use)
-                    kernel=np.abs(fftshift(fftn(ifftshift(image_ij_interpolated*self.CST_dxdy),norm="forward"))) # FT to put in uv space
-                    
-                    kernel_padded=np.pad(kernel,((pad_lo,pad_hi),(pad_lo,pad_hi)),"edge")
+                    image_ij_interpolated_padded=np.pad(image_ij_interpolated,((pad_lo,pad_hi),(pad_lo,pad_hi)),"edge")
+                    kernel_padded=np.abs(fftshift(fftn(ifftshift(image_ij_interpolated_padded*self.CST_dxdy),norm="forward"))) # FT to put in uv space
+                    # kernel=np.abs(fftshift(fftn(ifftshift(image_ij_interpolated_padded*self.CST_dxdy),norm="forward"))) # FT to put in uv space
+                    # kernel_padded=np.pad(kernel,((pad_lo,pad_hi),(pad_lo,pad_hi)),"edge")
                     convolution_here=convolve(kernel_padded,gridded,mode="valid") # beam-smeared version of the uv-plane for this perturbation permutation
                     uvplane+=convolution_here
         else:
@@ -2101,7 +2102,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         # plt.colorbar(im,ax=axs[1])
         plt.figure()
         plt.imshow(uvplane.T,origin="lower")
-        plt.savefig("uvplane.png")
+        plt.savefig("uvplane.png",dpi=500)
         plt.close()
         return uvplane,uv_bin_edges,thetamax # this is the gridded uvplane
 
@@ -2113,6 +2114,8 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
         taper_1d=Blackman_Harris_safe_for_FFT(N_grid_pix) # centre-origin
         taper_x,taper_y=np.meshgrid(taper_1d,taper_1d, indexing="ij")
         self.taper_grid=np.sqrt(taper_x**2+taper_y**2)
+        self.taper_box=np.tile(self.taper_grid[:,:,None],(1,1,self.N_chan))
+        print("self.taper_box.shape=",self.taper_box.shape)
 
         box_uvz=np.zeros((N_grid_pix,N_grid_pix,self.N_chan),dtype="complex128")
         if not self.CST: # rescale chromatic beam widths by whatever was passed
@@ -2143,19 +2146,14 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                 interpolated_slice=chan_gridded_uvplane
                 d2u=self.d2u
             else: # chunk excision and mode interpolation in one step
-                # interpolator_Re=RBS(uv_bin_edges,uv_bin_edges, chan_gridded_uvplane.real)
-                # interpolated_slice_Re=interpolator_Re(uv_bin_edges_0,uv_bin_edges_0)
-                # interpolator_Im=RBS(uv_bin_edges,uv_bin_edges, chan_gridded_uvplane.imag)
-                # interpolated_slice_Im=interpolator_Im(uv_bin_edges_0,uv_bin_edges_0)
-                # interpolated_slice=interpolated_slice_Re+1j*interpolated_slice_Im
                 interpolator=RBS(uv_bin_edges,uv_bin_edges, chan_gridded_uvplane)
                 interpolated_slice=interpolator(uv_bin_edges_0,uv_bin_edges_0)
-            # box_uvz[:,:,i]=interpolated_slice
-            box_uvz[:,:,i]=interpolated_slice*self.taper_grid
+            box_uvz[:,:,i]=interpolated_slice
+            # box_uvz[:,:,i]=interpolated_slice*self.taper_grid
             if ((i%(self.N_chan//3))==0):
                 print("{:7.1f} pct complete".format(i/self.N_chan*100))
 
-        box_xyz=fftshift(irfftn(ifftshift(box_uvz*d2u, axes=(0,1)),
+        box_xyz=fftshift(irfftn(ifftshift(box_uvz*d2u, axes=(0,1))*self.taper_box,
                                axes=(0,1),s=(N_grid_pix,N_grid_pix),
                                norm="forward"), axes=(0,1)) # mixed coords before; all config space after
         box_xyz=box_xyz.real # real by construction (mathematically) and coding (irfftn), so stop carrying around the trivial imag part
