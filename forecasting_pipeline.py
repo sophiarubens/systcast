@@ -330,19 +330,19 @@ class beam_effects(object):
             self.PA_fidu_types_prefactors= PA_fidu_types_prefactors
             fwhm=primary_beam_aux 
 
-            fidu=per_antenna(mode=mode,pbw_fidu=fwhm,N_pert_types=0,
+            fidu=synthesize_beam(mode=mode,pbw_fidu=fwhm,N_pert_types=0,
                                 pbw_pert_frac=0.,
                                 N_timesteps=self.N_timesteps,
                                 N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                 N_fiducial_beam_types=1)
-            real=per_antenna(mode=mode,pbw_fidu=fwhm,N_pert_types=0,
+            real=synthesize_beam(mode=mode,pbw_fidu=fwhm,N_pert_types=0,
                                 pbw_pert_frac=0.,
                                 N_timesteps=self.N_timesteps,
                                 N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                 distribution=self.PA_distribution,
                                 N_fiducial_beam_types=PA_N_fidu_types,fidu_types_prefactors=PA_fidu_types_prefactors,
                                 per_channel_systematic=per_channel_systematic,per_chan_syst_facs=self.per_chan_syst_facs)
-            thgt=per_antenna(mode=mode,pbw_fidu=fwhm,N_pert_types=self.PA_N_pert_types,
+            thgt=synthesize_beam(mode=mode,pbw_fidu=fwhm,N_pert_types=self.PA_N_pert_types,
                                 pbw_pert_frac=self.primary_beam_unc,
                                 N_timesteps=self.N_timesteps,
                                 N_pbws_pert=N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
@@ -442,33 +442,33 @@ class beam_effects(object):
 
             CST_freqs=np.arange(CST_lo.value,CST_hi.value,CST_deltanu.value)*CST_deltanu.unit
             if heavy_beam_recalc: # recalc the per-antenna part of CST
-                fidu_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.N_timesteps,
+                fidu_synthesize_beam_ified=synthesize_beam(mode=mode,N_timesteps=self.N_timesteps,
                                                     N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                                     distribution="random",
                                                     sub_ensemble_of_CST_beams=fidu_box,
                                                     CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
-                fidu_per_antenna_ified.stack_to_box()
+                fidu_synthesize_beam_ified.stack_to_box()
                 print("finished per-antenna calculation for fidu CST beam")
-                fidu_box_per_antenna_ified=fidu_per_antenna_ified.box
-                PA_ified_xy_vec=fidu_per_antenna_ified.xy_vec
-                PA_ified_z_vec=fidu_per_antenna_ified.z_vec
-                syst_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.N_timesteps,
+                fidu_box_synthesize_beam_ified=fidu_synthesize_beam_ified.box
+                PA_ified_xy_vec=fidu_synthesize_beam_ified.xy_vec
+                PA_ified_z_vec=fidu_synthesize_beam_ified.z_vec
+                syst_synthesize_beam_ified=synthesize_beam(mode=mode,N_timesteps=self.N_timesteps,
                                                     N_pbws_pert=N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                                     distribution=PA_distribution,
                                                     sub_ensemble_of_CST_beams=[fidu_box,CST_syst_ensemble],
                                                     CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
-                syst_per_antenna_ified.stack_to_box()
+                syst_synthesize_beam_ified.stack_to_box()
                 print("finished per-antenna calculation for syst CST beam")
-                syst_box_per_antenna_ified=syst_per_antenna_ified.box
+                syst_box_synthesize_beam_ified=syst_synthesize_beam_ified.box
                 
-                np.save("fidu_box_PA_ified_"+ioname+".npy",fidu_box_per_antenna_ified)
-                np.save("syst_box_PA_ified_"+ioname+".npy",syst_box_per_antenna_ified)
+                np.save("fidu_box_PA_ified_"+ioname+".npy",fidu_box_synthesize_beam_ified)
+                np.save("syst_box_PA_ified_"+ioname+".npy",syst_box_synthesize_beam_ified)
                 np.save("xy_vec_PA_ified_"+ioname+".npy",PA_ified_xy_vec.value)
                 np.save("z_vec_PA_ified_"+ioname+".npy",PA_ified_z_vec.value)# xy_vec=real.xy_vec, z_vec=real.z_vec
                 print("saved PA-ification")
             else: 
-                fidu_box_per_antenna_ified=np.load("fidu_box_PA_ified_"+ioname+".npy")
-                syst_box_per_antenna_ified=np.load("syst_box_PA_ified_"+ioname+".npy")
+                fidu_box_synthesize_beam_ified=np.load("fidu_box_PA_ified_"+ioname+".npy")
+                syst_box_synthesize_beam_ified=np.load("syst_box_PA_ified_"+ioname+".npy")
                 PA_ified_xy_vec=np.load("xy_vec_PA_ified_"+ioname+".npy")*u.Mpc # by construction = not brittle
                 PA_ified_z_vec=np.load("z_vec_PA_ified_"+ioname+".npy")*u.Mpc
                 print("loaded PA-ification")
@@ -476,9 +476,9 @@ class beam_effects(object):
             
             PA_ified_pbm=(PA_ified_xy_vec.value,PA_ified_xy_vec.value,PA_ified_z_vec.value) # might need to re-unit-ify this more robustly later, but for now the main use is interpolation and I don't want to jam up scipy by putting units where they have no business being
 
-            self.primary_fidu=fidu_box_per_antenna_ified
-            self.primary_real=fidu_box_per_antenna_ified
-            self.primary_thgt=syst_box_per_antenna_ified
+            self.primary_fidu=fidu_box_synthesize_beam_ified
+            self.primary_real=fidu_box_synthesize_beam_ified
+            self.primary_thgt=syst_box_synthesize_beam_ified
 
         elif primary_beam_categ.lower()=="pa-cst": # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
             precalculated_xy_vec=self.Lsurv_box_xy*fftshift(fftfreq(self.Nvox_box_xy))
@@ -511,7 +511,7 @@ class beam_effects(object):
                 CST_z_vec=np.load("z_vec"+ioname_base_case+".npy")*u.Mpc # by construction = not brittle
             N_CST_z=len(CST_z_vec)
 
-            syst_boxes=np.zeros((N_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)) # this needs to be 4D to be forward-compatible with the new iteration strategy in per_antenna
+            syst_boxes=np.zeros((N_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)) # this needs to be 4D to be forward-compatible with the new iteration strategy in synthesize_beam
             if heavy_beam_recalc and not already_imported_CST: # only import the fiducial beam once
                 for i,CST_f_head_syst_i in enumerate(CST_f_head_syst):
                     syst=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
@@ -532,7 +532,7 @@ class beam_effects(object):
             primary_beam_modes=(precalculated_xy_vec.value,precalculated_xy_vec.value,CST_z_vec.value)
             self.primary_beam_modes=primary_beam_modes
 
-            CST_syst_ensemble=np.zeros((N_CST_types,N_pointing_errors_max+1,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)) # shape of CST_syst_ensemble is (N_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z) but the sub-ensembles passed to per_antenna have shapes  ////////replace
+            CST_syst_ensemble=np.zeros((N_CST_types,N_pointing_errors_max+1,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)) # shape of CST_syst_ensemble is (N_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z) but the sub-ensembles passed to synthesize_beam have shapes  ////////replace
             CST_syst_ensemble[:,0,:,:,:]=syst_boxes # situate the pointing error–free versions
 
             if type(pointing_errors[0])==float:
@@ -550,33 +550,33 @@ class beam_effects(object):
             
             CST_freqs=np.arange(CST_lo.value,CST_hi.value,CST_deltanu.value)*CST_deltanu.unit
             if heavy_beam_recalc: # recalc the per-antenna part of CST
-                fidu_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.N_timesteps,
+                fidu_synthesize_beam_ified=synthesize_beam(mode=mode,N_timesteps=self.N_timesteps,
                                                     N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                                     distribution="random",
                                                     sub_ensemble_of_CST_beams=fidu_box,
                                                     CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
-                fidu_per_antenna_ified.stack_to_box()
+                fidu_synthesize_beam_ified.stack_to_box()
                 print("finished per-antenna calculation for fidu CST beam")
-                fidu_box_per_antenna_ified=fidu_per_antenna_ified.box
-                PA_ified_xy_vec=fidu_per_antenna_ified.xy_vec
-                PA_ified_z_vec=fidu_per_antenna_ified.z_vec
-                syst_per_antenna_ified=per_antenna(mode=mode,N_timesteps=self.N_timesteps,
+                fidu_box_synthesize_beam_ified=fidu_synthesize_beam_ified.box
+                PA_ified_xy_vec=fidu_synthesize_beam_ified.xy_vec
+                PA_ified_z_vec=fidu_synthesize_beam_ified.z_vec
+                syst_synthesize_beam_ified=synthesize_beam(mode=mode,N_timesteps=self.N_timesteps,
                                                     N_pbws_pert=N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                                     distribution=PA_distribution,
                                                     sub_ensemble_of_CST_beams=[fidu_box,CST_syst_ensemble],
                                                     CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
-                syst_per_antenna_ified.stack_to_box()
+                syst_synthesize_beam_ified.stack_to_box()
                 print("finished per-antenna calculation for syst CST beam")
-                syst_box_per_antenna_ified=syst_per_antenna_ified.box
+                syst_box_synthesize_beam_ified=syst_synthesize_beam_ified.box
                 
-                np.save("fidu_box_PA_ified_"+ioname+".npy",fidu_box_per_antenna_ified)
-                np.save("syst_box_PA_ified_"+ioname+".npy",syst_box_per_antenna_ified)
+                np.save("fidu_box_PA_ified_"+ioname+".npy",fidu_box_synthesize_beam_ified)
+                np.save("syst_box_PA_ified_"+ioname+".npy",syst_box_synthesize_beam_ified)
                 np.save("xy_vec_PA_ified_"+ioname+".npy",PA_ified_xy_vec.value)
                 np.save("z_vec_PA_ified_"+ioname+".npy",PA_ified_z_vec.value)# xy_vec=real.xy_vec, z_vec=real.z_vec
                 print("saved PA-ification")
             else: 
-                fidu_box_per_antenna_ified=np.load("fidu_box_PA_ified_"+ioname+".npy")
-                syst_box_per_antenna_ified=np.load("syst_box_PA_ified_"+ioname+".npy")
+                fidu_box_synthesize_beam_ified=np.load("fidu_box_PA_ified_"+ioname+".npy")
+                syst_box_synthesize_beam_ified=np.load("syst_box_PA_ified_"+ioname+".npy")
                 PA_ified_xy_vec=np.load("xy_vec_PA_ified_"+ioname+".npy")*u.Mpc # by construction = not brittle
                 PA_ified_z_vec=np.load("z_vec_PA_ified_"+ioname+".npy")*u.Mpc
                 print("loaded PA-ification")
@@ -584,9 +584,9 @@ class beam_effects(object):
             
             PA_ified_pbm=(PA_ified_xy_vec.value,PA_ified_xy_vec.value,PA_ified_z_vec.value) # might need to re-unit-ify this more robustly later, but for now the main use is interpolation and I don't want to jam up scipy by putting units where they have no business being
 
-            self.primary_fidu=fidu_box_per_antenna_ified
-            self.primary_real=fidu_box_per_antenna_ified
-            self.primary_thgt=syst_box_per_antenna_ified
+            self.primary_fidu=fidu_box_synthesize_beam_ified
+            self.primary_real=fidu_box_synthesize_beam_ified
+            self.primary_thgt=syst_box_synthesize_beam_ified
         else:
             raise ValueError("unknown primary_beam_categ") # as far as primary power beam perturbations go, they can all pretty much be described as being applied PA, or in some externally-implemented custom way
 
@@ -1708,52 +1708,52 @@ def beam_type_distribution(N_NS,N_EW,N_types,distribution="random",frame_width=2
     if N_types>0:
         if distribution=="random":
             rng=np.random.default_rng()
-            per_antenna_types=rng.integers(0,N_types,size=(N_ant,))
+            synthesize_beam_types=rng.integers(0,N_types,size=(N_ant,))
         elif distribution=="corner":
             if N_types!=4:
                 raise ValueError("conflicting info") # in order to use corner mode, you need four fiducial beam types
-            per_antenna_types=np.zeros((N_NS,N_EW))
+            synthesize_beam_types=np.zeros((N_NS,N_EW))
             half_NS=N_NS//2
             half_EW=N_EW//2
-            per_antenna_types[:half_NS,half_EW:]=1
-            per_antenna_types[half_NS:,:half_EW]=2
-            per_antenna_types[half_NS:,half_EW:]=3 # the quarter of the array with no explicit overwriting keeps its idx=0 (as necessary)
+            synthesize_beam_types[:half_NS,half_EW:]=1
+            synthesize_beam_types[half_NS:,:half_EW]=2
+            synthesize_beam_types[half_NS:,half_EW:]=3 # the quarter of the array with no explicit overwriting keeps its idx=0 (as necessary)
         elif distribution=="diagonal":
             raise ValueError("not yet implemented")
         elif distribution=="column":
-            per_antenna_types=np.zeros((N_NS,N_EW))
+            synthesize_beam_types=np.zeros((N_NS,N_EW))
             for i in range(1,N_types):
-                per_antenna_types[:,i::N_types]=i
+                synthesize_beam_types[:,i::N_types]=i
         elif distribution=="frame":
-            per_antenna_types=np.zeros((N_NS,N_EW),dtype=np.int8)
+            synthesize_beam_types=np.zeros((N_NS,N_EW),dtype=np.int8)
             if N_types>1: # stricter threshold for this case based on where the random numbers come from
                 rng=np.random.default_rng()
-                sh=per_antenna_types.shape
-                sz=per_antenna_types.size
+                sh=synthesize_beam_types.shape
+                sz=synthesize_beam_types.size
                 sz_ind=np.arange(sz)
                 sz_ind_rectangular=sz_ind.reshape(sh)
                 indices_for_systs=~np.isin(sz_ind_rectangular, 
                                            sz_ind_rectangular[frame_width:-frame_width, 
                                                               frame_width:-frame_width])
-                per_antenna_types[indices_for_systs]=1
-                per_antenna_types[indices_for_systs]=rng.integers(1,high=N_types,
-                                                                  size=np.sum(per_antenna_types[indices_for_systs]))
+                synthesize_beam_types[indices_for_systs]=1
+                synthesize_beam_types[indices_for_systs]=rng.integers(1,high=N_types,
+                                                                  size=np.sum(synthesize_beam_types[indices_for_systs]))
                                                                 #   size=2*(N_NS+N_EW)-4)
         else:
             raise ValueError("beam distribution pattern not yet implemented")
         
-        per_antenna_types=np.reshape(per_antenna_types,(N_ant,),order="C")
+        synthesize_beam_types=np.reshape(synthesize_beam_types,(N_ant,),order="C")
     else:
-        per_antenna_types=np.zeros(N_ant)
+        synthesize_beam_types=np.zeros(N_ant)
 
-    return per_antenna_types
+    return synthesize_beam_types
 
 """
 this class helps compute numerical windowing boxes for brightness temp boxes resulting
 from primary beams that have the flexibility to differ on a per-antenna basis.
 """
 
-class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
+class synthesize_beam(beam_effects): # still fairly tailored to rectangular arrays
     def __init__(self,
                  mode:str="full",                                                  # run a simulation for full or pathfinder CHORD?
                  b_NS:float=b_NS,b_EW:float=b_EW,                                  # N-S and E-W baseline lengths (m)
@@ -1859,7 +1859,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
             self.N_CST_freqs=len(CST_freqs)
 
             if type(sub_ensemble_of_CST_beams) is not list: # can't use .ndim because it doesn't behave well for the inhomog arrays of the else
-                print("per_antenna received only a !fiducial! beam box")
+                print("synthesize_beam received only a !fiducial! beam box")
 
                 fidu_box=sub_ensemble_of_CST_beams
 
@@ -1868,7 +1868,7 @@ class per_antenna(beam_effects): # still fairly tailored to rectangular arrays
                 N_total_beam_types=1
                 self.N_total_beam_types=1
             else:
-                print("per_antenna received both !fiducial and systematic-laden! beam boxes")
+                print("synthesize_beam received both !fiducial and systematic-laden! beam boxes")
                 fidu_box,syst_boxes=sub_ensemble_of_CST_beams # should be unpackable into two arrays:
                 assert fidu_box.ndim==3 and syst_boxes.ndim==5 # one box and one "2D array of 3D boxes"
                 self.N_CST_types,self.N_max_pointing_errors,Nxy,_,Nz=syst_boxes.shape
@@ -2246,7 +2246,6 @@ class reconfigure_CST_beam(object):
         x=self.xis[i]*np.sin(theta)*np.cos(phi)
         y=self.xis[i]*np.sin(theta)*np.sin(phi)
         sky_xy_points=np.array([x,y]).T
-        print("extrema of sky xy points:",np.min(sky_xy_points),np.max(sky_xy_points))
         return sky_xy_points,linear_units_one_pol
     
     def gen_box_from_simulated_beams(self):
@@ -2278,7 +2277,7 @@ class CHORD_sense(object): # modified from a notebook helpfully shared by Debanj
         self,
         spacing:np.ndarray=[b_EW,b_NS], # N-S and E-W baselines (m)
         n_side:np.ndarray=[22,24],    # number of dishes per side of the array (N-S, E-W) directions
-        orientation=None,             # same comment about CHORD alignment as in the per_antenna documentation (expects rad!)
+        orientation=None,             # same comment about CHORD alignment as in the synthesize_beam documentation (expects rad!)
         center:np.ndarray=[0,0],      # where to put the axis origin of the antenna location x-y coordinates (if you leave the default in place, it'll make the zero point the physical centre of the array)
         
         freq_cen:float = 900.*u.MHz,                  # central frequency of the observation/survey
