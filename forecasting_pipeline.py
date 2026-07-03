@@ -1846,8 +1846,7 @@ class synthesize_beam(beam_effects): # still fairly tailored to rectangular arra
         self.ctr_chan_comov_dist=self.comoving_distances_channels[N_chan//2]
         self.surv_channels_MHz=surv_channels_MHz
 
-        # helper args specific to Gaussian or CST calculations
-        self.CST=False if sub_ensemble_of_CST_beams is None else True
+        # helper args
         self.CST_xy=CST_xy
         CST_Delta_xy=CST_xy[1]-CST_xy[0]
         CST_dxdy=(CST_Delta_xy)**2
@@ -1932,7 +1931,7 @@ class synthesize_beam(beam_effects): # still fairly tailored to rectangular arra
         self.uv_synth=uv_synth
         print("synthesized rotation")        
 
-    def calc_uv_coverage(self, Npix:int=1024, pbw_fidu_use:float=None,tol:float=img_bin_tol):
+    def calc_uv_slice(self, Npix:int=1024, pbw_fidu_use:float=None,tol:float=img_bin_tol):
         if pbw_fidu_use is None: # otherwise, use the one that was passed
             pbw_fidu_use=self.pbw_fidu
         all_ungridded_u=self.uv_synth[:,0,:]
@@ -1948,11 +1947,8 @@ class synthesize_beam(beam_effects): # still fairly tailored to rectangular arra
         uvbins=np.linspace(-uvmagmax,uvmagmax,Npix)
         d2u=uvbins[1]-uvbins[0]
         self.d2u=d2u
-        uubins,vvbins=np.meshgrid(uvbins,uvbins, indexing="ij")
-        uvplane=np.zeros((Npix,Npix),dtype="complex128") # 0.*uubins
         implane=np.zeros((Npix,Npix))
         uvbins_use=np.append(uvbins,uvbins[-1]+uvbins[1]-uvbins[0])
-        pad_lo,pad_hi=get_padding(Npix)
 
         for i in range(self.N_total_beam_types):
             type_i=self.pb_types[i]
@@ -1968,37 +1964,35 @@ class synthesize_beam(beam_effects): # still fairly tailored to rectangular arra
                 reshaped_u=np.reshape(u_here,N_here,order="C")
                 reshaped_v=np.reshape(v_here,N_here,order="C")
                 gridded_uv,_,_=np.histogram2d(reshaped_u,reshaped_v,bins=uvbins_use)
-                gridded_im=fftshift(irfftn(ifftshift(gridded_uv*self.d2u),norm="forward"))
+                comb=np.nonzero(gridded_uv)
+                gridded_uv[comb]/=gridded_uv[comb]
+                other_half=np.rot90(np.rot90(gridded_uv))
+                # no modification = option 0
+                # gridded_uv+=other_half # option 1
+                # gridded_uv=gridded_uv+1j*gridded_uv # option 2
+                # gridded_uv=gridded_uv+1j*other_half # option 3
+                # term=gridded_uv+1j*other_half
+                # gridded_uv=term+np.conj(term) # option 4
+                gridded_im=fftshift(irfftn(ifftshift(gridded_uv*self.d2u*self.taper_grid),
+                # gridded_im=fftshift(irfftn(ifftshift(1/gridded_uv*self.d2u),
+                                           norm="forward",s=(Npix,Npix)))
                 LoS_idx=np.argmin(np.abs(self.nu_obs-self.CST_freqs))
                 beam_i=self.all_boxes[type_i,:,:,LoS_idx] # [N_total_beam_types, Nxy, Nxy, Nz]
                 beam_j=self.all_boxes[type_j,:,:,LoS_idx]
-                assert np.all(beam_i>=0.), "image i beam slice should be entirely nonnegative"
-                assert np.all(beam_j>=0.), "image j beam slice should be entirely nonnegative"
+                assert np.all(beam_i>=0.), "beam i slice should be entirely nonnegative"
+                assert np.all(beam_j>=0.), "beam j slice should be entirely nonnegative"
                 beam_ij=np.sqrt(beam_i*beam_j) # geo mean of the beams of this baseline's two constituent antennas. still on initial CST grid
                 
                 interpolator=RBS(self.CST_xy,self.CST_xy, beam_ij)
                 beam_ij_interpolated=interpolator(xy_use,xy_use)
-                # beam_ij_interpolated_padded=np.pad(beam_ij_interpolated,((pad_lo,pad_hi),(pad_lo,pad_hi)),"edge")
-                # kernel=fftshift(fftn(ifftshift(beam_ij_interpolated_padded*self.CST_dxdy),norm="forward"))[pad_lo:Npix+pad_hi+1,pad_lo:Npix+pad_hi+1] # FT to put in uv space
-                # kernel=fftshift(fftn(ifftshift(beam_ij_interpolated*self.CST_dxdy),norm="forward")) # FT to put in uv space
-                # kernel_padded=np.pad(kernel,((pad_lo,pad_hi),(pad_lo,pad_hi)),"edge")
-                # convolution_here=convolve(kernel_padded,gridded_uv,mode="valid") # beam-smeared version of the uv-plane for this perturbation permutation
-                # uvplane+=convolution_here
-                implane+=gridded_im*beam_ij
+                implane+=gridded_im*beam_ij_interpolated
 
-        uv_bin_edges=[uvbins,uvbins]
-        # print("np.sum(not np.allclose(uvplane.imag,0)) =",np.sum(not np.allclose(uvplane.imag,0)))
-        # fig,axs=plt.subplots(1,2,layout="constrained")
-        # im=axs[0].imshow(uvplane.real.T,origin="lower")
-        # plt.colorbar(im,ax=axs[0])
-        # im=axs[1].imshow(uvplane.imag.T,origin="lower")
-        # plt.colorbar(im,ax=axs[1])
-        # plt.figure()
-        # plt.imshow(uvplane.T,origin="lower")
-        # plt.savefig("uvplane.png",dpi=500)
-        # plt.close()
-        # return uvplane,uv_bin_edges,thetamax # this is the gridded uvplane
-        return implane, im_bin_edges,thetamax
+        plt.figure()
+        plt.imshow(gridded_im.T)
+        plt.colorbar()
+        plt.savefig("gridded_im.png")
+        plt.close()
+        return implane*d2u
 
     def stack_to_box(self, tol:float=img_bin_tol):
         if (self.nu_ctr_MHz.value<(350/(1-self.evol_restriction_threshold/2)) or 
@@ -2011,12 +2005,6 @@ class synthesize_beam(beam_effects): # still fairly tailored to rectangular arra
         self.taper_box=np.tile(self.taper_grid[:,:,None],(1,1,self.N_chan))
 
         box_uvz=np.zeros((N_grid_pix,N_grid_pix,self.N_chan),dtype="complex128")
-        if not self.CST: # rescale chromatic beam widths by whatever was passed
-            xy_beam_widths=np.array((self.surv_beam_widths,self.surv_beam_widths)).T
-            ctr_chan_beam_width=(c/(self.nu_ctr_Hz*D))
-            xy_beam_widths[:,0]*=(self.pbw_fidu[0]/ctr_chan_beam_width)
-            xy_beam_widths[:,1]*=(self.pbw_fidu[1]/ctr_chan_beam_width)
-            xy_beam_widths_desc=np.flip(xy_beam_widths,axis=0)
 
         for i in range(self.N_chan): # rescale the uv-coverage to this channel's frequency
             self.uv_synth=self.uv_synth*self.lambda_obs/self.surv_wavelengths[i] # rescale according to observing frequency: multiply up by the prev lambda to cancel, then divide by the current/new lambda
@@ -2025,29 +2013,14 @@ class synthesize_beam(beam_effects): # still fairly tailored to rectangular arra
             self.nu_obs=nu_obs.decompose()
 
             # compute the dirty image
-            chan_gridded_implane,chan_uv_bin_edges,thetamax=self.calc_uv_coverage(Npix=N_grid_pix, tol=tol)
-            uv_bin_edges=chan_uv_bin_edges[0]
-
-            # interpolate to store in stack
-            if i==0:
-                uv_bin_edges_0=chan_uv_bin_edges[0]
-                theta_max_box=thetamax
-                interpolated_slice=chan_gridded_uvplane
-                d2u=self.d2u
-            else: # chunk excision and mode interpolation in one step
-                interpolator_Re=RBS(uv_bin_edges,uv_bin_edges, chan_gridded_uvplane.real)
-                interpolated_slice_Re=interpolator_Re(uv_bin_edges_0,uv_bin_edges_0)
-                interpolator_Im=RBS(uv_bin_edges,uv_bin_edges, chan_gridded_uvplane.imag)
-                interpolated_slice_Im=interpolator_Im(uv_bin_edges_0,uv_bin_edges_0)
-                interpolated_slice=interpolated_slice_Re+1j*interpolated_slice_Im
-            # slice_counterpart=np.rot90(np.rot90(interpolated_slice))
-            slice_counterpart=0
-            box_uvz[:,:,i]=interpolated_slice+slice_counterpart
-            # box_uvz[:,:,i]=interpolated_slice*self.taper_grid
+            chan_gridded_implane=self.calc_uv_slice(Npix=N_grid_pix, tol=tol)
+            
+            # box_uvz[:,:,i]=chan_gridded_implane # d2u is already folded in during slice assembly
+            box_uvz[:,:,i]=chan_gridded_implane*self.taper_grid # d2u is already folded in during slice assembly
             if ((i%(self.N_chan//3))==0):
                 print("{:7.1f} pct complete".format(i/self.N_chan*100))
 
-        box_xyz=fftshift(irfftn(ifftshift(box_uvz*d2u, axes=(0,1))*self.taper_box,
+        box_xyz=fftshift(irfftn(ifftshift(box_uvz, axes=(0,1))*self.taper_box,
                                axes=(0,1),s=(N_grid_pix,N_grid_pix),
                                norm="forward"), axes=(0,1)) # mixed coords before; all config space after
         box_xyz=box_xyz.real # real by construction (mathematically) and coding (irfftn), so stop carrying around the trivial imag part
@@ -2060,8 +2033,7 @@ class synthesize_beam(beam_effects): # still fairly tailored to rectangular arra
         self.box=box_xyz
 
         # generate a box of r-values (necessary for interpolation to survey modes in the manual beam mode of cosmo_stats as called by beam_effects)
-        thetas=np.linspace(-theta_max_box,theta_max_box,N_grid_pix)
-        xy_vec=self.ctr_chan_comov_dist*thetas # making the coeval approximation
+        xy_vec=self.CST_xy # making the coeval approximation
         z_vec=self.comoving_distances_channels-self.ctr_chan_comov_dist 
         self.xy_vec=xy_vec
         self.z_vec=z_vec
