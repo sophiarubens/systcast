@@ -1323,7 +1323,7 @@ class cosmo_stats(object):
             pad_lo_z, pad_hi_z =get_padding(self.Nvoxz)
             self.evaled_num_padded=np.pad(evaled_num,((pad_lo_xy,pad_hi_xy),(pad_lo_xy,pad_hi_xy),(pad_lo_z,pad_hi_z),),"edge")
             if (self.T_pristine is not None):
-                self.T_beam=convolve(self.evaled_num_padded,self.T_pristine,mode="valid")
+                self.T_beam=convolve(self.evaled_num_padded,self.T_pristine,mode="valid")*self.T_pristine.unit
         
         # strictness control for realization averaging
         self.frac_tol=frac_tol
@@ -1377,7 +1377,7 @@ class cosmo_stats(object):
             T_use=None
             if self.T_beam is None and self.T_pristine is not None:
                 # self.T_beam=self.T_pristine*self.evaled_num
-                self.T_beam=convolve(self.evaled_num_padded,self.T_pristine,mode="valid")
+                self.T_beam=convolve(self.evaled_num_padded,self.T_pristine,mode="valid")*self.T_pristine.unit
             T_use=self.T_beam
         elif T_use.lower()=="pristine":
             T_use=self.T_pristine
@@ -1446,7 +1446,7 @@ class cosmo_stats(object):
         self.T_pristine=T
         if self.synth_beam_num is not None:
             # self.T_beam=T*self.evaled_num
-            self.T_beam=convolve(self.evaled_num_padded,T,mode="valid")
+            self.T_beam=convolve(self.evaled_num_padded,T,mode="valid")*self.T_pristine.unit
 
     def power_Monte_Carlo(self,interfix:str=""): # since box generation is not deterministic
         self.MC_not_complete=True
