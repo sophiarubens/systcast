@@ -9,7 +9,7 @@ from scipy.integrate import quad
 from scipy.interpolate import RectBivariateSpline as RBS
 from scipy.interpolate import RegularGridInterpolator as RGI
 from scipy.interpolate import griddata as gd
-from scipy.signal import convolve
+# from scipy.signal import convolve
 from scipy.stats import binned_statistic_dd
 
 import camb
@@ -28,6 +28,7 @@ import pandas as pd
 from pathlib import Path
 import pygtc
 import time
+# import io
 
 set_workers(6)
 
@@ -86,7 +87,7 @@ def_offset=1.75*pi/180. # for this placeholder state where I build up the CHORD 
 def_pbw_pert_frac=1e-2
 def_evol_restriction_threshold=1./30. # HERA 1/15 was made up. turn this down for a computationally less intense substitute
 img_bin_tol=5 # ringing is remarkably insensitive to turning this down; you get really bad scale mismatch by turning it up... the real solution was the "need good resolution in both Fourier and configuration space" thing
-def_PA_N_grid_pix=256 # doesn't change the deltaxy; a lower number of pixels per side means eval will be faster
+def_PA_N_grid_pix=32 # doesn't change the deltaxy; a lower number of pixels per side means eval will be faster
 N_fid_beam_types=1
 integration_s=10*u.s # seconds
 hrs_per_night=8*u.hr # borrowed from Debanjan / 21cmSense
@@ -402,7 +403,7 @@ class beam_effects(object):
                 fidu=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
                                           beam_sim_directory=beam_sim_directory,f_head=CST_f_head_fidu,
                                           f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="fidu_box_"+ioname)
-                fidu.gen_box_from_simulated_beams()
+                fidu.construct_CST_box()
                 print("generated fidu beam box\n")
                 fidu_box=fidu.box
                 CST_z_vec=np.asarray(fidu.CST_z_vec)*u.Mpc # by construction = not brittle
@@ -411,7 +412,7 @@ class beam_effects(object):
                 syst=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
                                           beam_sim_directory=beam_sim_directory,f_head=CST_f_head_syst,
                                           f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="syst_box_"+ioname)
-                syst.gen_box_from_simulated_beams()
+                syst.construct_CST_box()
                 print("generated syst beam box\n")
                 syst_box=syst.box
 
@@ -432,7 +433,7 @@ class beam_effects(object):
             print("reconfigured/imported CST primary beams")
 
             N_CST_z=len(CST_z_vec)
-            CST_syst_ensemble=np.zeros((1,N_pointing_errors+1,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)) # shape of CST_syst_ensemble is ///////////
+            CST_syst_ensemble=np.zeros((1,N_pointing_errors+1,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z))
             CST_syst_ensemble[0,1,:,:,:]=syst_box
 
             if N_pointing_errors>0:
@@ -442,43 +443,43 @@ class beam_effects(object):
 
             CST_freqs=np.arange(CST_lo.value,CST_hi.value,CST_deltanu.value)*CST_deltanu.unit
             if heavy_beam_recalc: # recalc the per-antenna part of CST
-                fidu_synthesize_beam_ified=synthesize_beam(mode=mode,N_timesteps=self.N_timesteps,
+                fidu_synthesis=synthesize_beam(mode=mode,N_timesteps=self.N_timesteps,
                                                     N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                                     distribution="random",
                                                     sub_ensemble_of_CST_beams=fidu_box,
                                                     CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
-                fidu_synthesize_beam_ified.stack_to_box()
+                fidu_synthesis.stack_to_box()
                 print("finished per-antenna calculation for fidu CST beam")
-                fidu_box_synthesize_beam_ified=fidu_synthesize_beam_ified.box
-                PA_ified_xy_vec=fidu_synthesize_beam_ified.xy_vec
-                PA_ified_z_vec=fidu_synthesize_beam_ified.z_vec
-                syst_synthesize_beam_ified=synthesize_beam(mode=mode,N_timesteps=self.N_timesteps,
+                fidu_box_synthesized=fidu_synthesis.box
+                synthesized_xy_vec=fidu_synthesis.xy_vec
+                synthesized_z_vec=fidu_synthesis.z_vec
+                syst_synthesis=synthesize_beam(mode=mode,N_timesteps=self.N_timesteps,
                                                     N_pbws_pert=N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                                     distribution=PA_distribution,
                                                     sub_ensemble_of_CST_beams=[fidu_box,CST_syst_ensemble],
                                                     CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
-                syst_synthesize_beam_ified.stack_to_box()
+                syst_synthesis.stack_to_box()
                 print("finished per-antenna calculation for syst CST beam")
-                syst_box_synthesize_beam_ified=syst_synthesize_beam_ified.box
+                syst_box_synthesized=syst_synthesis.box
                 
-                np.save("fidu_box_PA_ified_"+ioname+".npy",fidu_box_synthesize_beam_ified)
-                np.save("syst_box_PA_ified_"+ioname+".npy",syst_box_synthesize_beam_ified)
-                np.save("xy_vec_PA_ified_"+ioname+".npy",PA_ified_xy_vec.value)
-                np.save("z_vec_PA_ified_"+ioname+".npy",PA_ified_z_vec.value)# xy_vec=real.xy_vec, z_vec=real.z_vec
+                np.save("fidu_box_synthesized_"+ioname+".npy",fidu_box_synthesized)
+                np.save("syst_box_synthesized_"+ioname+".npy",syst_box_synthesized)
+                np.save("xy_vec_synthesized_"+ioname+".npy",synthesized_xy_vec.value)
+                np.save("z_vec_synthesized_"+ioname+".npy",synthesized_z_vec.value)# xy_vec=real.xy_vec, z_vec=real.z_vec
                 print("saved PA-ification")
             else: 
-                fidu_box_synthesize_beam_ified=np.load("fidu_box_PA_ified_"+ioname+".npy")
-                syst_box_synthesize_beam_ified=np.load("syst_box_PA_ified_"+ioname+".npy")
-                PA_ified_xy_vec=np.load("xy_vec_PA_ified_"+ioname+".npy")*u.Mpc # by construction = not brittle
-                PA_ified_z_vec=np.load("z_vec_PA_ified_"+ioname+".npy")*u.Mpc
+                fidu_box_synthesized=np.load("fidu_box_synthesized_"+ioname+".npy")
+                syst_box_synthesized=np.load("syst_box_synthesized_"+ioname+".npy")
+                synthesized_xy_vec=np.load("xy_vec_synthesized_"+ioname+".npy")*u.Mpc # by construction = not brittle
+                synthesized_z_vec=np.load("z_vec_synthesized_"+ioname+".npy")*u.Mpc
                 print("loaded PA-ification")
             print("finished importing/constructing per-antenna–ified CST beams")
             
-            PA_ified_pbm=(PA_ified_xy_vec.value,PA_ified_xy_vec.value,PA_ified_z_vec.value) # might need to re-unit-ify this more robustly later, but for now the main use is interpolation and I don't want to jam up scipy by putting units where they have no business being
+            synthesized_pbm=(synthesized_xy_vec.value,synthesized_xy_vec.value,synthesized_z_vec.value) # might need to re-unit-ify this more robustly later, but for now the main use is interpolation and I don't want to jam up scipy by putting units where they have no business being
 
-            self.primary_fidu=fidu_box_synthesize_beam_ified
-            self.primary_real=fidu_box_synthesize_beam_ified
-            self.primary_thgt=syst_box_synthesize_beam_ified
+            self.primary_fidu=fidu_box_synthesized
+            self.primary_real=fidu_box_synthesized
+            self.primary_thgt=syst_box_synthesized
 
         elif primary_beam_categ.lower()=="pa-cst": # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
             precalculated_xy_vec=self.Lsurv_box_xy*fftshift(fftfreq(self.Nvox_box_xy))
@@ -497,7 +498,7 @@ class beam_effects(object):
                 fidu=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
                                           beam_sim_directory=beam_sim_directory,f_head="fiducial/",
                                           f_mid1=p1,f_mid2=p2,f_tail="_GHz.txt",box_outname="fidu_box_"+ioname)
-                fidu.gen_box_from_simulated_beams()
+                fidu.construct_CST_box()
                 print("generated fidu beam box\n")
                 fidu_box=fidu.box
                 CST_z_vec=np.asarray(fidu.CST_z_vec)*u.Mpc # by construction = not brittle
@@ -517,7 +518,7 @@ class beam_effects(object):
                     syst=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
                                               beam_sim_directory=beam_sim_directory,f_head=CST_f_head_syst_i,
                                               f_mid1=p1,f_mid2=p2,f_tail="_GHz.txt",box_outname="syst_box_"+ioname)
-                    syst.gen_box_from_simulated_beams()
+                    syst.construct_CST_box()
                     print("generated syst beam box\n")
                     syst_boxes[i,:,:,:]=syst.box
                 
@@ -529,6 +530,8 @@ class beam_effects(object):
                     syst_boxes[0,:,:,:]=fidu_box
             
             N_CST_z=len(CST_z_vec)
+            print("beam_effects.__init__: fidu_box.shape =",fidu_box.shape)
+            print("beam_effects.__init__: len(precalculated_xy_vec),len(CST_z_vec) =",len(precalculated_xy_vec),len(CST_z_vec))
             primary_beam_modes=(precalculated_xy_vec.value,precalculated_xy_vec.value,CST_z_vec.value)
             self.primary_beam_modes=primary_beam_modes
 
@@ -550,53 +553,54 @@ class beam_effects(object):
             
             CST_freqs=np.arange(CST_lo.value,CST_hi.value,CST_deltanu.value)*CST_deltanu.unit
             if heavy_beam_recalc: # recalc the per-antenna part of CST
-                fidu_synthesize_beam_ified=synthesize_beam(mode=mode,N_timesteps=self.N_timesteps,
+                fidu_synthesis=synthesize_beam(mode=mode,N_timesteps=self.N_timesteps,
                                                     N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                                     distribution="random",
                                                     sub_ensemble_of_CST_beams=fidu_box,
                                                     CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
-                fidu_synthesize_beam_ified.stack_to_box()
+                fidu_synthesis.stack_to_box()
                 print("finished per-antenna calculation for fidu CST beam")
-                fidu_box_synthesize_beam_ified=fidu_synthesize_beam_ified.box
-                PA_ified_xy_vec=fidu_synthesize_beam_ified.xy_vec
-                PA_ified_z_vec=fidu_synthesize_beam_ified.z_vec
-                syst_synthesize_beam_ified=synthesize_beam(mode=mode,N_timesteps=self.N_timesteps,
+                fidu_box_synthesized=fidu_synthesis.box
+                synthesized_xy_vec=fidu_synthesis.xy_vec
+                synthesized_z_vec=fidu_synthesis.z_vec
+                syst_synthesis=synthesize_beam(mode=mode,N_timesteps=self.N_timesteps,
                                                     N_pbws_pert=N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                                     distribution=PA_distribution,
                                                     sub_ensemble_of_CST_beams=[fidu_box,CST_syst_ensemble],
                                                     CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
-                syst_synthesize_beam_ified.stack_to_box()
+                syst_synthesis.stack_to_box()
                 print("finished per-antenna calculation for syst CST beam")
-                syst_box_synthesize_beam_ified=syst_synthesize_beam_ified.box
+                syst_box_synthesized=syst_synthesis.box
                 
-                np.save("fidu_box_PA_ified_"+ioname+".npy",fidu_box_synthesize_beam_ified)
-                np.save("syst_box_PA_ified_"+ioname+".npy",syst_box_synthesize_beam_ified)
-                np.save("xy_vec_PA_ified_"+ioname+".npy",PA_ified_xy_vec.value)
-                np.save("z_vec_PA_ified_"+ioname+".npy",PA_ified_z_vec.value)# xy_vec=real.xy_vec, z_vec=real.z_vec
+                np.save("fidu_box_synthesized_"+ioname+".npy",fidu_box_synthesized)
+                np.save("syst_box_synthesized_"+ioname+".npy",syst_box_synthesized)
+                np.save("xy_vec_synthesized_"+ioname+".npy",synthesized_xy_vec.value)
+                np.save("z_vec_synthesized_"+ioname+".npy",synthesized_z_vec.value)# xy_vec=real.xy_vec, z_vec=real.z_vec
                 print("saved PA-ification")
             else: 
-                fidu_box_synthesize_beam_ified=np.load("fidu_box_PA_ified_"+ioname+".npy")
-                syst_box_synthesize_beam_ified=np.load("syst_box_PA_ified_"+ioname+".npy")
-                PA_ified_xy_vec=np.load("xy_vec_PA_ified_"+ioname+".npy")*u.Mpc # by construction = not brittle
-                PA_ified_z_vec=np.load("z_vec_PA_ified_"+ioname+".npy")*u.Mpc
+                fidu_box_synthesized=np.load("fidu_box_synthesized_"+ioname+".npy")
+                syst_box_synthesized=np.load("syst_box_synthesized_"+ioname+".npy")
+                synthesized_xy_vec=np.load("xy_vec_synthesized_"+ioname+".npy")*u.Mpc # by construction = not brittle
+                synthesized_z_vec=np.load("z_vec_synthesized_"+ioname+".npy")*u.Mpc
                 print("loaded PA-ification")
             print("finished importing/constructing per-antenna–ified CST beams")
             
-            PA_ified_pbm=(PA_ified_xy_vec.value,PA_ified_xy_vec.value,PA_ified_z_vec.value) # might need to re-unit-ify this more robustly later, but for now the main use is interpolation and I don't want to jam up scipy by putting units where they have no business being
+            synthesized_pbm=(synthesized_xy_vec.value,synthesized_xy_vec.value,synthesized_z_vec.value) # might need to re-unit-ify this more robustly later, but for now the main use is interpolation and I don't want to jam up scipy by putting units where they have no business being
 
-            self.primary_fidu=fidu_box_synthesize_beam_ified
-            self.primary_real=fidu_box_synthesize_beam_ified
-            self.primary_thgt=syst_box_synthesize_beam_ified
+            self.primary_fidu=fidu_box_synthesized
+            self.primary_real=fidu_box_synthesized
+            self.primary_thgt=syst_box_synthesized
         else:
             raise ValueError("unknown primary_beam_categ") # as far as primary power beam perturbations go, they can all pretty much be described as being applied PA, or in some externally-implemented custom way
 
         if primary_beam_categ.lower()=="pa-cst":
-            self.pbm_for_cs=PA_ified_pbm
+            self.pbm_for_cs=synthesized_pbm
         else: 
             self.pbm_for_cs=primary_beam_modes
         self.primary_beam_type=primary_beam_type
         self.primary_beam_aux=primary_beam_aux
         self.primary_beam_unc=primary_beam_unc
+        print("beam_effects.__init__: fidu_box")
 
         # groundwork-informed forecasting considerations
         if N_CST_types==0:
@@ -777,6 +781,7 @@ class beam_effects(object):
             np.save("fg_power.npy",fg.P_unbinned.value)
             print("                           fg power calc complete")
 
+        print("beam_effects.calc_power_contamination: self.Nvox_box_xy =",self.Nvox_box_xy)
         co_fi_xx_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
@@ -1350,7 +1355,7 @@ class cosmo_stats(object):
                 self.fwhm_x,self.fwhm_y,self.r0=self.primary_beam_aux_num
                 evaled_primary_num=  self.primary_beam_num(self.xx_grid,self.yy_grid,self.fwhm_x,  self.fwhm_y,  self.r0)     
             elif (self.primary_beam_type_num=="manual"):
-                assert np.all(self.primary_beam_num>=0.)
+                # assert np.all(self.primary_beam_num>=0.)
                 try:    # to access this branch, the manual/ numerically sampled primary beam needs to be close enough to a numpy array that it has a shape and not, e.g. a callable
                     primary_beam_num.shape
                 except: # primary beam is a callable (or something else without a shape method), which is not in line with how this part of the code is supposed to work
@@ -1385,12 +1390,10 @@ class cosmo_stats(object):
                 if (z_want_hi>z_have_hi):
                     extrapolation_warning("high z",   z_want_hi,  z_have_hi)
                 to_eval_at=np.array([self.xx_grid.value,self.yy_grid.value,self.zz_grid.value]).T
+                print("cosmo_stats.__init__: self.xx_grid.shape, self.primary_beam_num.shape =",self.xx_grid.shape, self.primary_beam_num.shape)
                 evaled_primary_num=RGI(primary_beam_modes,self.primary_beam_num,
                                        bounds_error=False,fill_value=None)(to_eval_at).T
                 self.evaled_primary_num=evaled_primary_num
-
-                fracs=[0,1e-5,1/3,1/2,1]
-                Pnorm=LogNorm(vmin=1e-8,vmax=1)
             
             else:
                 raise ValueError("not yet implemented")
@@ -1406,7 +1409,7 @@ class cosmo_stats(object):
                 self.r0=r0*u.Mpc
                 evaled_primary_den=  self.primary_beam_den(self.xx_grid,self.yy_grid,self.fwhm_x,  self.fwhm_y,  self.r0)                
             elif (self.primary_beam_type_den=="manual"):
-                assert np.all(self.primary_beam_den>=0.)
+                # assert np.all(self.primary_beam_den>=0.)
                 try:    # to access this branch, the manual/ numerically sampled primary beam needs to be close enough to a numpy array that it has a shape and not, e.g. a callable... so, no danger of attribute errors
                     primary_beam_den.shape
                 except: # primary beam is a callable (or something else without a shape method), which is not in line with how this part of the code is supposed to work
@@ -1692,9 +1695,7 @@ class synthesize_beam(beam_effects): # still fairly tailored to rectangular arra
                  N_grid_pix:int=def_PA_N_grid_pix,                                 # number of pixels per side of the gridded uv plane
                  Delta_nu:float=CHORD_channel_width_MHz,                           # channel width in frequency (MHz)
                  distribution:str="random",                                        # distribution of per-antenna systematics. the options I've encoded for now are random, column, and corner, based on where the fiducial beam types are placed within the array
-                 fidu_types_prefactors=None,                                       # ** multiplicative prefactors by which the different fiducial beam types differ from the physics-informed fiducial beam width for a given frequency channel
                  per_channel_systematic=None,                                      # apply a systematic that corrupts the 1/lambda scaling of the beam width? options encoded so far are sporadic (multiply the beam widths for a contiguous chunk of frequency channels by a different multiplicative prefactor for the different fiducial beam types) and D3A-like (noise + too wide at low frequencies... inspired by early three-dish transit beam measurements)
-                 per_chan_syst_facs=None,                                          # the multiplicative prefactors for the sporadic per-antenna systematic (see above)
                  evol_restriction_threshold:float=def_evol_restriction_threshold,  # max \delta z/z you will tolerate for the survey of interest and still consider the box close enough to coeval
     
                  sub_ensemble_of_CST_beams=None,                                   # array-like with shape (N_CST_types, N_pointing_errors+1, N_CST_xy, N_CST_xy, N_CST_freqs)
@@ -1961,7 +1962,6 @@ class reconfigure_CST_beam(object):
                  f_mid1:str=")_[1]",f_mid2:str=")_[2]",               # middle of CST beam file names. should include something to distinguish the two polarizations (expected but not strictly enforced... although there's no other part of the file name reading that currently anticipates differences in polarization)
                  f_tail:str="_efield.txt",                            # end of CST beam file names
                  box_outname:str="placeholder",                       # what to call the config space box of CST-informed beam values that results from a complete use of this class
-                 mode:str="pathfinder",                               # which CHORD mode you're observing in: full or pathfinder (sets the sky plane scale to interpolate to)
                  Nxy:int=128,                                         # number of pixels per side of frequency slides (get one sky plane square per CST file)
                  multi_CST=True):                                     # set to False to go back to the file name construction order ok for the Jan-Apr 2026 CST
         self.beam_sim_directory=beam_sim_directory
@@ -1992,6 +1992,7 @@ class reconfigure_CST_beam(object):
 
         L_xy=comoving_middle
         xy_for_box=L_xy*fftshift(fftfreq(Nxy))
+        print("reconfigure_CST_beam.__init__: len(xy_for_box) =",len(xy_for_box))
         self.xy_for_box=xy_for_box
         np.save("xy_vec_for_box"+box_outname,xy_for_box.value)
         self.Nxy=Nxy
@@ -2007,7 +2008,13 @@ class reconfigure_CST_beam(object):
         self.freq_names=freq_names
 
     def translate_sim_beam_slice(self,CST_filename:str,i:int=0):
-        df = pd.read_table(CST_filename, skiprows=[0, 1,], sep="\s+", 
+        # print(CST_filename)
+        # with open(CST_filename) as fh:
+        #     lines=fh.readlines()[2:]  # skip header + dashed line
+        # data=io.StringIO("\n".join(l.strip() for l in lines))
+        # df=pd.read_csv(data, sep=r"\s+", header=None,
+        #                names=["theta", "phi", "AbsE", "AbsCr", "PhCr", "AbsCo", "PhCo", "AxRat"])
+        df = pd.read_table(CST_filename, skiprows=[0, 1], sep="\s+", engine="python", 
                            
                            # lots of fields in each CST sim, but only the first three are helpful for forming Stokes I E-field beams (precursor for the Stokes I power beams I form from two pols of a given simulation setup and frequency)
                            names=["theta", "phi",  # spherical coordinates, only valid locally, that specify which direction each beam value describes
@@ -2027,7 +2034,7 @@ class reconfigure_CST_beam(object):
         sky_xy_points=np.array([x,y]).T
         return sky_xy_points,linear_units_one_pol
     
-    def gen_box_from_simulated_beams(self):
+    def construct_CST_box(self):
         slice_grid_points=np.array([self.xx_grid,self.yy_grid]).T
         box=np.zeros((self.Nxy,self.Nxy,self.Nfreqs)) # hold interpolated beam slices
         for i in range (self.Nfreqs):
@@ -2050,6 +2057,7 @@ class reconfigure_CST_beam(object):
                 print("{:7.1f} pct complete".format(i/self.Nfreqs*100))
         np.save("CST_box_"+self.box_outname,box)
         self.box=box # centre-origin
+        print("reconfigure_CST_beam.construct_CST_box: box.shape=",box.shape)
 
 class CHORD_sense(object): # modified from a notebook helpfully shared by Debanjan Sarkar in April 2025
     def __init__(
