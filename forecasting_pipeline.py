@@ -386,12 +386,14 @@ class beam_effects(object):
             print("finished per-antenna calculation for syst CST beam")
             syst_box_synthesized=syst_synthesis.box
             weights_synthesized=syst_synthesis.weights
+            Ntypes=syst_synthesis.N_total_beam_types
             
             np.save("fidu_box_synthesized_"+ioname+".npy",fidu_box_synthesized)
             np.save("syst_box_synthesized_"+ioname+".npy",syst_box_synthesized)
             np.save("xy_vec_synthesized_"+ioname+".npy",synthesized_xy_vec.value)
             np.save("z_vec_synthesized_"+ioname+".npy",synthesized_z_vec.value)
             np.save("weights_synthesized_"+ioname+".npy",weights_synthesized)
+            # np.save("Ntypes_"+ioname+".npy",Ntypes)
             print("saved synthesized beam")
         else: 
             fidu_box_synthesized=np.load("fidu_box_synthesized_"+ioname+".npy")
@@ -399,14 +401,23 @@ class beam_effects(object):
             synthesized_xy_vec=np.load("xy_vec_synthesized_"+ioname+".npy")*u.Mpc # by construction = not brittle
             synthesized_z_vec=np.load("z_vec_synthesized_"+ioname+".npy")*u.Mpc
             weights_synthesized=np.load("weights_synthesized_"+ioname+".npy")
+            # Ntypes=np.load("Ntypes_"+ioname+".npy")
             print("loaded synthesized beam")
         print("finished importing/constructing per-antenna–ified CST beams")
         
         self.fi_eff_vol=np.sum(fidu_box*CST_d3r)
-        weighted_syst_primary=np.copy(syst_boxes)
-        for i,w in enumerate(weights_synthesized):
-            weighted_syst_primary[i,:,:,:]*=(w*weighted_syst_primary[i,:,:,:])
-        self.sy_eff_vol=np.sum(weighted_syst_primary*CST_d3r)
+        Ntypes=len(weights_synthesized) # this is super hacky and I need to streamline it
+        if Ntypes>1:
+            q=0
+            for i in range(N_CST_types):
+                for j in range(N_pointing_errors_max+1):
+                    syst_box_here=CST_syst_ensemble[i,j,:,:,:]
+                    if not np.allclose(syst_box_here,0):
+                        weighted_sum_syst_primary+=weights_synthesized[q]*syst_box_here
+                    q+=1
+            self.sy_eff_vol=np.sum(weighted_sum_syst_primary*CST_d3r)
+        else:
+            self.sy_eff_vol=np.copy(self.fi_eff_vol)
         
         synthesized_pbm=(synthesized_xy_vec.value,synthesized_xy_vec.value,synthesized_z_vec.value) # might need to re-unit-ify this more robustly later, but for now the main use is interpolation and I don't want to jam up scipy by putting units where they have no business being
 
@@ -712,7 +723,7 @@ class beam_effects(object):
                 self.N_per_realization= xx_fi_sy_fg.N_per_realization
                 self.kperp_for_cosmo=  xx_fi_sy_fg.kperpbins
                 self.kpar_for_cosmo=   xx_fi_sy_fg.kparbins
-            self.P_xx_fi_sy_fg=         xx_fi_sy_fg.P_binned *xx_fi_sy_fg.P_unit
+            self.P_xx_fi_sy_fg=         xx_fi_sy_fg.P_binned *xx_fi_sy_fg.power_unit
             print("        fidu beam + syst + fg power calc complete")
         if recalc_xx_fi_xx_fg:
             xx_fi_xx_fg.generate_P()
@@ -721,7 +732,7 @@ class beam_effects(object):
                 self.N_per_realization= xx_fi_xx_fg.N_per_realization
                 self.kperp_for_cosmo=  xx_fi_xx_fg.kperpbins
                 self.kpar_for_cosmo=   xx_fi_xx_fg.kparbins
-            self.P_xx_fi_xx_fg=         xx_fi_xx_fg.P_binned *xx_fi_xx_fg.P_unit
+            self.P_xx_fi_xx_fg=         xx_fi_xx_fg.P_binned *xx_fi_xx_fg.power_unit
             print("        fidu beam +      + fg power calc complete")
         if recalc_co_fi_xx_xx:
             co_fi_xx_xx.power_Monte_Carlo(interfix="co_fi_xx_xx")
@@ -966,6 +977,11 @@ class cosmo_stats(object):
                  wedge_cut:bool=False,nu_ctr=None,                                 # throw away info from k-modes inside the foreground wedge?; when using synchrotron foregrounds AND performing a wedge cut, the calling routine should specify the central frequency of the survey in question to have a physical anchor for the foregrounds. also need central freq for FoG
                  fg_box:np.ndarray=None):                                # layer synchrotron foregrounds on top of brightness temp realizations?; fg fields and modes computed by a calling routine
         
+        # units
+        self.temp_unit= T_pristine.unit if T_pristine is not None else u.mK
+        self.length_unit=  Lxy.unit
+        self.power_unit= self.temp_unit**2 *self.length_unit**3
+        
         # spectrum and box
         if (Lz is None): # cubic box
             self.Lz=Lxy
@@ -1133,7 +1149,7 @@ class cosmo_stats(object):
             self.coords_to_use=[self.kperpgrid3_flat.value,self.kpargrid3_flat.value]
 
         else: # calling them perp bins for class reasons but they are just sph
-            kmax_box=np.max([self.kmax_box_xy.value,self.kmax_box_z.value])*self.kmax_box_xy.unit # ignore the voxels outside the sphere that is contained by the box's larger axis but probably exceeds its smaller axis
+            kmax_box=np.max([self.kmax_box_xy.value,self.kmax_box_z.value])/self.length_unit # ignore the voxels outside the sphere that is contained by the box's larger axis but probably exceeds its smaller axis
             
             kperpbins=np.linspace(0,kmax_box, self.Nkperp+1)
             bw=kperpbins[1]-kperpbins[0]
@@ -1216,7 +1232,7 @@ class cosmo_stats(object):
                 self.evaled_num=evaled_num
 
                 fracs=[0,1e-5,1/3,1/2,1]
-                Pnorm=SymLogNorm(1e-3)
+                Pnorm=SymLogNorm(1e-2,vmin=-1,vmax=1)
                 fig,axs=plt.subplots(len(fracs),3,layout="constrained",figsize=(8,15))
                 axs[0,0].set_title("x index 0/"+str(self.Nvox-1))
                 axs[0,1].set_title("y index 0/"+str(self.Nvox-1))
@@ -1323,7 +1339,7 @@ class cosmo_stats(object):
             pad_lo_z, pad_hi_z =get_padding(self.Nvoxz)
             self.evaled_num_padded=np.pad(evaled_num,((pad_lo_xy,pad_hi_xy),(pad_lo_xy,pad_hi_xy),(pad_lo_z,pad_hi_z),),"edge")
             if (self.T_pristine is not None):
-                self.T_beam=convolve(self.evaled_num_padded,self.T_pristine,mode="valid")*self.T_pristine.unit
+                self.T_beam=convolve(self.evaled_num_padded,self.T_pristine.value,mode="valid")*self.temp_unit
         
         # strictness control for realization averaging
         self.frac_tol=frac_tol
@@ -1377,21 +1393,20 @@ class cosmo_stats(object):
             T_use=None
             if self.T_beam is None and self.T_pristine is not None:
                 # self.T_beam=self.T_pristine*self.evaled_num
-                self.T_beam=convolve(self.evaled_num_padded,self.T_pristine,mode="valid")*self.T_pristine.unit
+                self.T_beam=convolve(self.evaled_num_padded,self.T_pristine.value,mode="valid")*self.temp_unit
             T_use=self.T_beam
         elif T_use.lower()=="pristine":
             T_use=self.T_pristine
         else:
             raise ValueError("invalid state of box beam knowledge. try again with pristine or beam!")
         T_use=T_use.to(u.mK)
-        self.P_unit=u.mK**2 *self.d3r.unit
         
         T_tilde=fftshift( fftn( 
                                 ifftshift(T_use*self.taper_xyz_centre)*self.d3r,
                                 s=self.box_shape, axes=self.transform_axes, norm="backward"        
                               ) 
                         ) # centre-origin
-        modsq_T_tilde=np.abs(T_tilde)**2 *T_use.unit**2*self.d3r.unit**2
+        modsq_T_tilde=np.abs(T_tilde)**2 *self.temp_unit**2*self.length_unit**6
         P_unbinned=modsq_T_tilde/self.effective_volume # box-shaped, but calculated according to the power spectrum estimator equation
 
         self.P_unbinned=P_unbinned # centre-origin
@@ -1446,7 +1461,7 @@ class cosmo_stats(object):
         self.T_pristine=T
         if self.synth_beam_num is not None:
             # self.T_beam=T*self.evaled_num
-            self.T_beam=convolve(self.evaled_num_padded,T,mode="valid")*self.T_pristine.unit
+            self.T_beam=convolve(self.evaled_num_padded,T.value,mode="valid")*self.temp_unit
 
     def power_Monte_Carlo(self,interfix:str=""): # since box generation is not deterministic
         self.MC_not_complete=True
@@ -1469,7 +1484,7 @@ class cosmo_stats(object):
         self.P_unbinned_MC_complete=P_unbinned_MC_complete
         self.bin_power(power_to_bin=P_unbinned_MC_complete)
         P_binned_MC_complete=self.P_binned
-        self.P_binned_MC_complete=P_binned_MC_complete*self.P_unbinned_running_sum.unit
+        self.P_binned_MC_complete=P_binned_MC_complete*self.power_unit
 
         self.N_per_realization=self.N_cumul/self.N_realizations
 
