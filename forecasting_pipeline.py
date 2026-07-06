@@ -1394,6 +1394,85 @@ class cosmo_stats(object):
                 evaled_primary_num=RGI(primary_beam_modes,self.primary_beam_num,
                                        bounds_error=False,fill_value=None)(to_eval_at).T
                 self.evaled_primary_num=evaled_primary_num
+
+                fracs=[0,1e-5,1/3,1/2,1]
+                Pnorm=LogNorm(vmin=1e-8,vmax=1)
+                fig,axs=plt.subplots(len(fracs),3,layout="constrained",figsize=(8,15))
+                axs[0,0].set_title("x index 0/"+str(self.Nvox-1))
+                axs[0,1].set_title("y index 0/"+str(self.Nvox-1))
+                axs[0,2].set_title("z index 0/"+str(self.Nvoxz -1)+"\nslice std="+str(np.round(np.std(self.primary_beam_num),3)))
+                sh0,_,sh2=self.primary_beam_num.shape
+                for i,frac in enumerate(fracs):
+                    xy_idx=int(frac*sh0)
+                    z_idx=int(frac*sh2)
+                    if frac==1:
+                        xy_idx-=1
+                        z_idx-=1
+                    elif frac==1e-5:
+                        xy_idx=1
+                        z_idx=1
+                    if i>0:
+                        axs[i,0].set_title(str(xy_idx)+"/"+str(sh0-1))
+                        axs[i,1].set_title(str(xy_idx)+"/"+str(sh0-1))
+                        axs[i,2].set_title(str(z_idx )+"/"+str(sh2 -1)+"\nslice std="+str(np.round(np.std(self.primary_beam_num[:,:,z_idx]),3)))
+
+                    sl0=self.primary_beam_num[xy_idx,:,:]
+                    img=axs[i,0].imshow(sl0.T,origin="lower",norm=Pnorm)
+                    plt.colorbar(img,ax=axs[i,0])
+                    axs[i,0].set_xlabel("y idx")
+                    axs[i,0].set_ylabel("z idx")
+
+                    sl1=self.primary_beam_num[:,xy_idx,:]
+                    img=axs[i,1].imshow(sl1.T,origin="lower",norm=Pnorm)
+                    plt.colorbar(img,ax=axs[i,1])
+                    axs[i,1].set_xlabel("x idx")
+                    axs[i,1].set_ylabel("z idx")
+
+                    sl2=self.primary_beam_num[:,:,z_idx]
+                    img=axs[i,2].imshow(sl2.T,origin="lower",norm=Pnorm)
+                    plt.colorbar(img,ax=axs[i,2])
+                    axs[i,2].set_xlabel("x idx")
+                    axs[i,2].set_ylabel("y idx")
+                plt.savefig("beam_box_pre__interpolation.png", dpi=500)
+                plt.close()
+
+                fig,axs=plt.subplots(len(fracs),3,layout="constrained",figsize=(8,15))
+                axs[0,0].set_title("x index 0/"+str(self.Nvox-1))
+                axs[0,1].set_title("y index 0/"+str(self.Nvox-1))
+                axs[0,2].set_title("z index 0/"+str(self.Nvoxz -1)+"\nslice std="+str(np.round(np.std(evaled_primary_num),3)))
+                for i,frac in enumerate(fracs):
+                    xy_idx=int(frac*self.Nvox)
+                    z_idx=int(frac*self.Nvoxz)
+                    if frac==1:
+                        xy_idx-=1
+                        z_idx-=1
+                    elif frac==1e-5:
+                        xy_idx=1
+                        z_idx=1
+                    if i>0:
+                        axs[i,0].set_title(str(xy_idx)+"/"+str(self.Nvox-1))
+                        axs[i,1].set_title(str(xy_idx)+"/"+str(self.Nvox-1))
+                        axs[i,2].set_title(str(z_idx )+"/"+str(self.Nvoxz -1)+"\nslice std="+str(np.round(np.std(evaled_primary_num[:,:,z_idx]),3)))
+
+                    sl0=evaled_primary_num[xy_idx,:,:]
+                    img=axs[i,0].imshow(sl0.T,origin="lower",norm=Pnorm)
+                    plt.colorbar(img,ax=axs[i,0])
+                    axs[i,0].set_xlabel("y idx")
+                    axs[i,0].set_ylabel("z idx")
+
+                    sl1=evaled_primary_num[:,xy_idx,:]
+                    img=axs[i,1].imshow(sl1.T,origin="lower",norm=Pnorm)
+                    plt.colorbar(img,ax=axs[i,1])
+                    axs[i,1].set_xlabel("x idx")
+                    axs[i,1].set_ylabel("z idx")
+
+                    sl2=evaled_primary_num[:,:,z_idx]
+                    img=axs[i,2].imshow(sl2.T,origin="lower",norm=Pnorm)
+                    plt.colorbar(img,ax=axs[i,2])
+                    axs[i,2].set_xlabel("x idx")
+                    axs[i,2].set_ylabel("y idx")
+                plt.savefig("beam_box_post_interpolation.png", dpi=500)
+                plt.close()
             
             else:
                 raise ValueError("not yet implemented")
@@ -1680,7 +1759,7 @@ this class helps compute numerical windowing boxes for brightness temp boxes res
 from primary beams that have the flexibility to differ on a per-antenna basis.
 """
 
-class synthesize_beam(beam_effects): # still fairly tailored to rectangular arrays
+class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
     def __init__(self,
                  mode:str="full",                                                  # run a simulation for full or pathfinder CHORD?
                  b_NS:float=b_NS,b_EW:float=b_EW,                                  # N-S and E-W baseline lengths (m)
@@ -1867,7 +1946,7 @@ class synthesize_beam(beam_effects): # still fairly tailored to rectangular arra
         uvmagmin=2*uvmagmax/Npix
         thetamax=1/uvmagmin # these are 1/-convention Fourier duals, not 2pi/-convention Fourier duals
         self.thetamax=thetamax
-        xy_use=self.ctr_chan_comov_dist*np.linspace(-thetamax//2,thetamax//2,Npix)
+        xy_image=self.ctr_chan_comov_dist*np.linspace(-thetamax//2,thetamax//2,Npix)
 
         uvbins=np.linspace(-uvmagmax,uvmagmax,Npix)
         d2u=uvbins[1]-uvbins[0]
@@ -1902,48 +1981,30 @@ class synthesize_beam(beam_effects): # still fairly tailored to rectangular arra
                     print("warning! {:5d} voxels < 0 in product of beams".format(np.sum(product<0)))
                 beam_ij=np.sqrt(product) # geo mean of the beams of this baseline's two constituent antennas. still on initial CST grid
                 
-                interpolator=RBS(self.CST_xy,self.CST_xy, beam_ij)
-                beam_ij_interpolated=interpolator(xy_use,xy_use)
+                interpolator=RBS(xy_image,xy_image, beam_ij)
+                beam_ij_interpolated=interpolator(self.CST_xy,self.CST_xy)
                 implane+=gridded_im*beam_ij_interpolated
 
-        # plt.figure()
-        # plt.imshow(gridded_im.T,cmap="RdBu",norm=TwoSlopeNorm(0.))
-        # plt.colorbar()
-        # plt.savefig("gridded_im.png")
-        # plt.close()
-        return implane*d2u
+        return implane
 
     def stack_to_box(self, tol:float=img_bin_tol):
         if (self.nu_ctr_MHz.value<(350/(1-self.evol_restriction_threshold/2)) or 
             self.nu_ctr_MHz>(nu_HI_z0/(1+self.evol_restriction_threshold/2))):
             raise ValueError("{:6.2f} is out of bounds".format(self.nu_ctr_MHz))
         N_grid_pix=self.N_grid_pix
-        taper_1d=Blackman_Harris_safe_for_FFT(N_grid_pix) # centre-origin
-        taper_x,taper_y=np.meshgrid(taper_1d,taper_1d, indexing="ij")
-        self.taper_grid=np.sqrt(taper_x**2+taper_y**2)
-        self.taper_box=np.tile(self.taper_grid[:,:,None],(1,1,self.N_chan))
 
         box_xyz=np.zeros((N_grid_pix,N_grid_pix,self.N_chan))
-
         for i in range(self.N_chan): # rescale the uv-coverage to this channel's frequency
             self.uv_synth=self.uv_synth*self.lambda_obs/self.surv_wavelengths[i] # rescale according to observing frequency: multiply up by the prev lambda to cancel, then divide by the current/new lambda
             self.lambda_obs=self.surv_wavelengths[i] # update the observing frequency for next time
             nu_obs=c/self.lambda_obs
             self.nu_obs=nu_obs.decompose()
 
-            # compute the dirty image
-            chan_gridded_implane=self.calc_uv_slice(Npix=N_grid_pix, tol=tol)
+            chan_gridded_implane=self.calc_uv_slice(Npix=N_grid_pix, tol=tol) # compute this channel's synthesized beam
             
-            # box_uvz[:,:,i]=chan_gridded_implane # d2u is already folded in during slice assembly
-            box_xyz[:,:,i]=chan_gridded_implane
+            box_xyz[:,:,i]=chan_gridded_implane/np.max(chan_gridded_implane) # peak-normalize in configuration space
             if ((i%(self.N_chan//3))==0):
                 print("{:7.1f} pct complete".format(i/self.N_chan*100))
-
-        for i in range(self.N_chan): # the correct generalization is per-channel normalization
-            slice_i=box_xyz[:,:,i]
-            norm_i=np.max(slice_i)
-            if norm_i>0:
-                box_xyz[:,:,i]=slice_i/norm_i # peak-normalize in configuration space
         self.box=box_xyz
 
         # generate a box of r-values (necessary for interpolation to survey modes in the manual beam mode of cosmo_stats as called by beam_effects)
