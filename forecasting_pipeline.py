@@ -87,7 +87,7 @@ def_offset=1.75*pi/180. # for this placeholder state where I build up the CHORD 
 def_pbw_pert_frac=1e-2
 def_evol_restriction_threshold=1./30. # HERA 1/15 was made up. turn this down for a computationally less intense substitute
 img_bin_tol=5 # ringing is remarkably insensitive to turning this down; you get really bad scale mismatch by turning it up... the real solution was the "need good resolution in both Fourier and configuration space" thing
-def_PA_N_grid_pix=32 # doesn't change the deltaxy; a lower number of pixels per side means eval will be faster
+def_PA_N_grid_pix=128 # doesn't change the deltaxy; a lower number of pixels per side means eval will be faster
 N_fid_beam_types=1
 integration_s=10*u.s # seconds
 hrs_per_night=8*u.hr # borrowed from Debanjan / 21cmSense
@@ -306,7 +306,7 @@ class beam_effects(object):
         p1="pol1/f_"
         p2="pol2/f_"
         if heavy_beam_recalc and not already_imported_fidu_CST:
-            fidu=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
+            fidu=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=def_PA_N_grid_pix,
                                         beam_sim_directory=beam_sim_directory,f_head="fiducial/",
                                         f_mid1=p1,f_mid2=p2,f_tail="_GHz.txt",box_outname="fidu_box_"+ioname)
             fidu.construct_CST_box()
@@ -326,7 +326,7 @@ class beam_effects(object):
         syst_boxes=np.zeros((N_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)) # this needs to be 4D to be forward-compatible with the new iteration strategy in synthesize_beam
         if heavy_beam_recalc and not already_imported_CST: # only import the fiducial beam once
             for i,CST_f_head_syst_i in enumerate(CST_f_head_syst):
-                syst=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=self.Nvox_box_xy,
+                syst=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=def_PA_N_grid_pix,
                                             beam_sim_directory=beam_sim_directory,f_head=CST_f_head_syst_i,
                                             f_mid1=p1,f_mid2=p2,f_tail="_GHz.txt",box_outname="syst_box_"+ioname)
                 syst.construct_CST_box()
@@ -403,7 +403,8 @@ class beam_effects(object):
             print("loaded synthesized beam")
         print("finished importing/constructing per-antenna–ified CST beams")
         
-        self.fi_eff_vol=np.sum(fidu_box*CST_d3r)
+        CST_phys_vol=np.sum(CST_d3r*np.ones_like(fidu_box))
+        self.fi_eff_vol_multiplier=np.sum(fidu_box*CST_d3r)/CST_phys_vol
         weighted_sum_syst_primary=np.zeros_like(fidu_box)
         Ntypes=len(weights_synthesized) # this is super hacky and I need to streamline it
         if Ntypes>1:
@@ -414,10 +415,10 @@ class beam_effects(object):
                     if not np.allclose(syst_box_here,0):
                         weighted_sum_syst_primary+=weights_synthesized[q]*syst_box_here
                     q+=1
-            self.sy_eff_vol=np.sum(weighted_sum_syst_primary*CST_d3r)
+            self.sy_eff_vol_multiplier=np.sum(weighted_sum_syst_primary*CST_d3r)/CST_phys_vol
         else:
-            self.sy_eff_vol=np.copy(self.fi_eff_vol)
-        print("self.fi_eff_vol,self.sy_eff_vol =",self.fi_eff_vol,self.sy_eff_vol)
+            self.sy_eff_vol_multiplier=np.copy(self.fi_eff_vol_multiplier)
+        print("self.fi_eff_vol_multiplier,self.sy_eff_vol_multiplier =",self.fi_eff_vol_multiplier,self.sy_eff_vol_multiplier)
         
         synthesized_pbm=(synthesized_xy_vec.value,synthesized_xy_vec.value,synthesized_z_vec.value) # might need to re-unit-ify this more robustly later, but for now the main use is interpolation and I don't want to jam up scipy by putting units where they have no business being
 
@@ -545,6 +546,7 @@ class beam_effects(object):
                        P_fid=self.P_flat,k_fid=self.k_for_flat,
                        Nvox=self.Nvox_box_xy,Nvoxz=1,
                        seed=self.seed, nu_ctr=self.nu_ctr) 
+        print("initialized fg cosmo_stats instance (white noise slice for one FG ingredient)")
         fg.generate_GRF()
         white_noise_slice=fg.T_pristine
         
@@ -604,28 +606,30 @@ class beam_effects(object):
         co_fi_xx_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                                effective_volume=self.fi_eff_vol,
+                                effective_volume_multiplier=self.fi_eff_vol_multiplier,
                                 synth_beam_num=self.fidu,beam_type_num="manual",
                                 synth_beam_den=self.fidu,beam_type_den="manual",
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 beam_modes=self.pbm_for_cs,
                                 LoS_taper=self.LoS_taper,image_taper=self.image_taper,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
+        print("initialized co_fi_xx_fg cosmo_stats instance")
         self.kperpbins_internal=co_fi_xx_fg.kperpbins
         self.kparbins_internal=co_fi_xx_fg.kparbins
         co_fi_sy_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                                 P_fid=P_cosmo,k_fid=self.ksph,
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                                effective_volume=self.sy_eff_vol,
+                                effective_volume_multiplier=self.sy_eff_vol_multiplier,
                                 synth_beam_num=self.thgt,beam_type_num="manual",
                                 synth_beam_den=self.thgt,beam_type_den="manual",
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
                                 beam_modes=self.pbm_for_cs,
                                 LoS_taper=self.LoS_taper,image_taper=self.image_taper,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
+        print("initialized co_fi_sy_fg cosmo_stats instance")
         xx_fi_sy_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                                effective_volume=self.sy_eff_vol,
+                                effective_volume_multiplier=self.sy_eff_vol_multiplier,
                                 T_pristine=fg_box,
                                 synth_beam_num=self.thgt,beam_type_num="manual",
                                 synth_beam_den=self.thgt,beam_type_den="manual",
@@ -633,9 +637,10 @@ class beam_effects(object):
                                 beam_modes=self.pbm_for_cs,
                                 LoS_taper=self.LoS_taper,image_taper=self.image_taper,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
+        print("initialized xx_fi_sy_fg cosmo_stats instance")
         xx_fi_xx_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                                effective_volume=self.fi_eff_vol,
+                                effective_volume_multiplier=self.fi_eff_vol_multiplier,
                                 T_pristine=fg_box,
                                 synth_beam_num=self.fidu,beam_type_num="manual",
                                 synth_beam_den=self.fidu,beam_type_den="manual",
@@ -643,32 +648,36 @@ class beam_effects(object):
                                 beam_modes=self.pbm_for_cs,
                                 LoS_taper=self.LoS_taper,image_taper=self.image_taper,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
+        print("initialized xx_fi_xx_fg cosmo_stats instance")
         co_fi_xx_xx=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                                effective_volume=self.fi_eff_vol,
+                                effective_volume_multiplier=self.fi_eff_vol_multiplier,
                                 synth_beam_num=self.fidu,beam_type_num="manual",
                                 synth_beam_den=self.fidu,beam_type_den="manual",
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 beam_modes=self.pbm_for_cs,
                                 LoS_taper=self.LoS_taper,image_taper=self.image_taper,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=None)
+        print("initialized co_fi_xx_xx cosmo_stats instance")
         co_fi_sy_xx=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                                effective_volume=self.sy_eff_vol,
+                                effective_volume_multiplier=self.sy_eff_vol_multiplier,
                                 synth_beam_num=self.thgt,beam_type_num="manual",
                                 synth_beam_den=self.thgt,beam_type_den="manual",
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 beam_modes=self.pbm_for_cs,
                                 LoS_taper=self.LoS_taper,image_taper=self.image_taper,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=None)
+        print("initialized co_fi_sy_xx cosmo_stats instance")
         co_xx_xx_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 LoS_taper=self.LoS_taper,image_taper=self.image_taper,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
+        print("initialized co_xx_xx_fg cosmo_stats instance")
 
         recalc_co_fi_xx_fg=False
         recalc_co_fi_sy_fg=False
@@ -765,6 +774,7 @@ class beam_effects(object):
                                     Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                                     LoS_taper=self.LoS_taper,image_taper=self.image_taper,
                                     frac_tol=self.frac_tol_conv,seed=self.seed,nu_ctr=self.nu_ctr)
+            print("initialized CO_XX_XX_XX cosmo_stats instance")
             COSMOTEST.power_Monte_Carlo(interfix="CO_XX_XX_XX_") # extra underscore is because numpy is fine with case-sensitive file names but MacOS is not :(
             self.P_CO_XX_XX_XX=COSMOTEST.P_binned_MC_complete
 
@@ -961,7 +971,7 @@ class cosmo_stats(object):
                  k_fid:np.ndarray=None,                                                      # Fourier space points where the fiducial power spectrum is sampled
                  Nvox:int=None,Nvoxz:int=None,                                               # number of voxels in the x/y or z directions
                  synth_beam_num:np.ndarray=None,     synth_beam_den:np.ndarray=None,     # numerator/denominator (of power spectrum estimator) version of the beam (box of values evaluated in config space)
-                 effective_volume=None,
+                 effective_volume_multiplier=None,
                  beam_aux_num:np.ndarray=None, beam_aux_den:np.ndarray=None, # numerator/denominator version of helpful quantities that go along with the beam (characteristic widths for a per-antenna Gaussian beam; x/y and z vectors for a CST beam)
                  beam_type_num:str="Gaussian", beam_type_den:str="Gaussian", # USED TO BE Airy/Gaussian for achromatic uniform-across-array beams. CURRENTLY can only be Gaussian, but SOON will be generalized to admit per-antenna CST beams
                  Nkperp:int=0,Nkpar:int=0,                                                  # number of k-bins in the sky plane and line of sight directions
@@ -1179,13 +1189,14 @@ class cosmo_stats(object):
         # beam
         evaled_num=None
         evaled_den=None
-        if effective_volume is None:
+        if effective_volume_multiplier is None:
             if synth_beam_num is not None:
                 raise ValueError("not enough info")
             else:
                 self.effective_volume=physical_volume
         else:
-            self.effective_volume=effective_volume
+            self.effective_volume=effective_volume_multiplier*physical_volume
+        print("cosmo_stats.__init__: self.effective_volume =",self.effective_volume)
         self.synth_beam_num=synth_beam_num
         self.beam_aux_num=beam_aux_num
         self.beam_type_num=beam_type_num
@@ -1342,7 +1353,7 @@ class cosmo_stats(object):
             self.taper_for_convolution=np.tile(taper_for_convolution, (Nxy_padded,Nxy_padded,1))
             self.evaled_num_padded=evaled_num_padded*self.taper_for_convolution
             if (self.T_pristine is not None):
-                print("cosmo_stats.__init__: self.T_pristine is not None -> forming self.T_beam")
+                # print("cosmo_stats.__init__: self.T_pristine is not None -> forming self.T_beam")
                 self.T_beam=convolve(self.evaled_num_padded,self.T_pristine.value,mode="valid")*self.temp_unit
         
         # strictness control for realization averaging
@@ -1406,10 +1417,10 @@ class cosmo_stats(object):
         else:
             raise ValueError("invalid state of box beam knowledge. try again with pristine or beam!")
         T_use=T_use.to(u.mK)
-        if self.T_beam is not None:
-            print("cosmo_stats.generate_P: np.allclose(T_use,self.T_beam) ?",np.allclose(T_use.value,self.T_beam.value))
-        else: 
-            print("cosmo_stats.generate_P: fell back on self.T_pristine since self.T_beam is None")
+        # if self.T_beam is not None:
+            # print("cosmo_stats.generate_P: np.allclose(T_use,self.T_beam) ?",np.allclose(T_use.value,self.T_beam.value))
+        # else: 
+            # print("cosmo_stats.generate_P: fell back on self.T_pristine since self.T_beam is None")
         
         T_tilde=fftshift( fftn( 
                                 ifftshift(T_use*self.taper_xyz_centre)*self.d3r,
@@ -1470,7 +1481,7 @@ class cosmo_stats(object):
         
         self.T_pristine=T
         if self.synth_beam_num is not None:
-            print("cosmo_stats.generate_GRF: self.synth_beam_num is not None -> forming self.T_beam")
+            # print("cosmo_stats.generate_GRF: self.synth_beam_num is not None -> forming self.T_beam")
             self.T_beam=convolve(self.evaled_num_padded,T.value,mode="valid")*self.temp_unit
 
     def power_Monte_Carlo(self,interfix:str=""): # since box generation is not deterministic
@@ -1497,8 +1508,8 @@ class cosmo_stats(object):
         self.P_binned_MC_complete=P_binned_MC_complete*self.power_unit
 
         self.N_per_realization=self.N_cumul/self.N_realizations
-        if self.evaled_num_padded is not None: 
-            print("self.evaled_num_padded.shape, self.T_pristine.shape, self.T_beam.shape =",self.evaled_num_padded.shape, self.T_pristine.shape, self.T_beam.shape)
+        # if self.evaled_num_padded is not None: 
+            # print("self.evaled_num_padded.shape, self.T_pristine.shape, self.T_beam.shape =",self.evaled_num_padded.shape, self.T_pristine.shape, self.T_beam.shape)
 
     def interpolate_P(self,use_P_fid:bool=False):
         if use_P_fid:
@@ -1729,6 +1740,47 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
             self.all_boxes=all_boxes
         self.pb_types,self.weights=beam_type_distribution(N_NS,N_EW,N_total_beam_types, distribution=self.distribution)
 
+        fracs=[0,1e-5,1/3,1/2,1]
+        Pnorm=LogNorm(vmax=1)
+        sh0,_,sh2=fidu_box.shape
+        fig,axs=plt.subplots(len(fracs),3,layout="constrained",figsize=(8,15))
+        axs[0,0].set_title("x index 0/"+str(sh0-1))
+        axs[0,1].set_title("y index 0/"+str(sh0-1))
+        axs[0,2].set_title("z index 0/"+str(sh0-1)+"\nslice std="+str(np.round(np.std(fidu_box),3)))
+        for i,frac in enumerate(fracs):
+            xy_idx=int(frac*sh0)
+            z_idx=int(frac*sh2)
+            if frac==1:
+                xy_idx-=1
+                z_idx-=1
+            elif frac==1e-5:
+                xy_idx=1
+                z_idx=1
+            if i>0:
+                axs[i,0].set_title(str(xy_idx)+"/"+str(sh0-1))
+                axs[i,1].set_title(str(xy_idx)+"/"+str(sh0-1))
+                axs[i,2].set_title(str(z_idx )+"/"+str(sh2 -1)+"\nslice std="+str(np.round(np.std(fidu_box[:,:,z_idx]),3)))
+
+            sl0=fidu_box[xy_idx,:,:]
+            img=axs[i,0].imshow(sl0.T,origin="lower",norm=Pnorm)
+            plt.colorbar(img,ax=axs[i,0])
+            axs[i,0].set_xlabel("y idx")
+            axs[i,0].set_ylabel("z idx")
+
+            sl1=fidu_box[:,xy_idx,:]
+            img=axs[i,1].imshow(sl1.T,origin="lower",norm=Pnorm)
+            plt.colorbar(img,ax=axs[i,1])
+            axs[i,1].set_xlabel("x idx")
+            axs[i,1].set_ylabel("z idx")
+
+            sl2=fidu_box[:,:,z_idx]
+            img=axs[i,2].imshow(sl2.T,origin="lower",norm=Pnorm)
+            plt.colorbar(img,ax=axs[i,2])
+            axs[i,2].set_xlabel("x idx")
+            axs[i,2].set_ylabel("y idx")
+        plt.savefig("fidu_box_unprocessed.png", dpi=500)
+        plt.close()
+
         # ungridded instantaneous uv-coverage (baselines in xyz)
         # second use of the loop: iterate over baselines to make arrays of beam type indices     
         uvw_inst=np.zeros((N_bl,3))
@@ -1788,6 +1840,7 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         self.d2u=d2u
         implane=np.zeros((Npix,Npix))
         uvbins_use=np.append(uvbins,uvbins[-1]+uvbins[1]-uvbins[0])
+        print("self.all_boxes.shape, uvbins_use.shape =",self.all_boxes.shape, uvbins_use.shape)
 
         for i in range(self.N_total_beam_types):
             type_i=self.pb_types[i]
@@ -1811,15 +1864,17 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
                 beam_i=self.all_boxes[type_i,:,:,LoS_idx] # [N_total_beam_types, Nxy, Nxy, Nz]
                 beam_j=self.all_boxes[type_j,:,:,LoS_idx]
                 product=beam_i*beam_j
-                N_negative_voxels=np.sum(product<0)
-                if N_negative_voxels>0:
-                    print("warning! {:5d} voxels < 0 in product of beams".format(np.sum(product<0)))
                 beam_ij=np.sqrt(product) # geo mean of the beams of this baseline's two constituent antennas. still on initial CST grid
                 
                 interpolator=RBS(xy_image,xy_image, beam_ij)
                 beam_ij_interpolated=interpolator(self.CST_xy,self.CST_xy)
                 implane+=gridded_im*beam_ij_interpolated
 
+        plt.figure()
+        plt.imshow(gridded_uv.T,origin="lower")
+        plt.colorbar()
+        plt.savefig("single_slice_gridded_uv.png")
+        plt.close()
         return implane
 
     def stack_to_box(self, tol:float=img_bin_tol):
@@ -1841,6 +1896,8 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
             if ((i%(self.N_chan//3))==0):
                 print("{:7.1f} pct complete".format(i/self.N_chan*100))
         self.box=box_xyz
+
+        
 
         # generate a box of r-values (necessary for interpolation to survey modes in the manual beam mode of cosmo_stats as called by beam_effects)
         xy_vec=self.CST_xy # making the coeval approximation
