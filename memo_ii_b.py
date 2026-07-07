@@ -17,20 +17,20 @@ systnames= [ "+0.0+0.0+0.5", "+0.0+0.0+1.0", "+0.0+0.0+1.5",     # local. commen
 all_syst_dirs=[sn+"_deg/" for sn in systnames]
 
 N_systs_use=len(systnames) # exhaustive case
-N_systs_use=1 # pared-down case for debugging. as of June 1st: verifying box numerics, so nothing beyond 1 has a stable/self-consistent local eval
+N_systs_use=2 # pared-down case for debugging. as of June 1st: verifying box numerics, so nothing beyond 1 has a stable/self-consistent local eval
 
 # configure pointing errors
 base_pointing_error=[1.2,-0.7,0.4]
 base_seed=5920185708
 meta_rng=np.random.default_rng(base_seed-1)
-N_ptg_errs_per_CST=meta_rng.integers(low=0,high=6, size=N_systs_use,endpoint=False)
+N_ptg_errs_per_CST=meta_rng.integers(low=0,high=3, size=N_systs_use,endpoint=False)
 pointingerrs=[pointing_family(base_pointing_error,Ni,seed=base_seed+i) for i,Ni in enumerate(N_ptg_errs_per_CST)]
 with open("ptg_err.json", "w") as f:
    json.dump(pointingerrs, f, indent=2, default=str)
 
 # re-simulate / re-plot
-power_comparison_plots(redo_window_calc=True, redo_box_calc=True, alr_imp_CST=True,
-                       mode="pathfinder", nu_ctr=600.*u.MHz, frac_tol_conv=0.05, which_power="Delta2",
-                       categ="PA-CST", PA_dist="frame", pointing_errors=pointingerrs[:N_systs_use],
+power_comparison_plots(redo_window_calc=True, redo_box_calc=True, # reimports CST if it needs to
+                       mode="pathfinder", nu_ctr=600.*u.MHz, frac_tol_conv=0.25, which_power="P",
+                       antenna_dist="frame", pointing_errors=pointingerrs[:N_systs_use],
                        CST_lo=0.58*u.GHz,CST_hi=0.62*u.GHz,CST_deltanu=2e-4*u.GHz,
                        beam_sim_directory=CST_dir, CST_f_head_fidu=fiduname, CST_f_head_syst=all_syst_dirs[:N_systs_use])
