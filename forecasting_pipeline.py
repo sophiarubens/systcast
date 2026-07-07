@@ -87,7 +87,7 @@ def_offset=1.75*pi/180. # for this placeholder state where I build up the CHORD 
 def_pbw_pert_frac=1e-2
 def_evol_restriction_threshold=1./30. # HERA 1/15 was made up. turn this down for a computationally less intense substitute
 img_bin_tol=5 # ringing is remarkably insensitive to turning this down; you get really bad scale mismatch by turning it up... the real solution was the "need good resolution in both Fourier and configuration space" thing
-def_PA_N_grid_pix=128 # doesn't change the deltaxy; a lower number of pixels per side means eval will be faster
+def_PA_N_grid_pix=256
 N_fid_beam_types=1
 integration_s=10*u.s # seconds
 hrs_per_night=8*u.hr # borrowed from Debanjan / 21cmSense
@@ -221,7 +221,6 @@ class beam_effects(object):
 
                  # CONVENIENCE
                  heavy_beam_recalc:bool=True,                   # save time by not repeating per-antenna calculations?
-                 already_imported_CST=False,
                  ):   
                 
         # forecasting considerations
@@ -303,6 +302,7 @@ class beam_effects(object):
         N_pointing_errors_max=np.max(N_pointing_errors)
             
         already_imported_fidu_CST=Path("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy").is_file()
+        already_imported_syst_CST=Path("syst_boxes_"+ioname+".npy").is_file()
         p1="pol1/f_"
         p2="pol2/f_"
         if heavy_beam_recalc and not already_imported_fidu_CST:
@@ -324,7 +324,7 @@ class beam_effects(object):
         N_CST_z=len(CST_z_vec)
 
         syst_boxes=np.zeros((N_CST_types,def_PA_N_grid_pix,def_PA_N_grid_pix,N_CST_z)) # this needs to be 4D to be forward-compatible with the new iteration strategy in synthesize_beam
-        if heavy_beam_recalc and not already_imported_CST: # only import the fiducial beam once
+        if heavy_beam_recalc and not already_imported_syst_CST: # only import the fiducial beam once
             for i,CST_f_head_syst_i in enumerate(CST_f_head_syst):
                 syst=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=def_PA_N_grid_pix,
                                             beam_sim_directory=beam_sim_directory,f_head=CST_f_head_syst_i,
@@ -1840,7 +1840,7 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         self.d2u=d2u
         implane=np.zeros((Npix,Npix))
         uvbins_use=np.append(uvbins,uvbins[-1]+uvbins[1]-uvbins[0])
-        print("self.all_boxes.shape, uvbins_use.shape =",self.all_boxes.shape, uvbins_use.shape)
+        # print("self.all_boxes.shape, uvbins_use.shape =",self.all_boxes.shape, uvbins_use.shape)
 
         for i in range(self.N_total_beam_types):
             type_i=self.pb_types[i]
@@ -2329,7 +2329,7 @@ def pointing_family(original_pointing,N,seed=270426):
     rescaled_pointings=unscaled_pointings/unscaled_norms*orig_norm
     return rescaled_pointings
 
-def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False, alr_imp_CST=False,
+def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False,
               mode:str="pathfinder", nu_ctr:float=800, epsxy:float=0.1,
               frac_tol_conv=0.1, N_sph=1024,
               N_pbws_pert=0, antenna_dist="random", 
@@ -2488,7 +2488,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                     LoS_taper=True,image_taper=False,        
 
                                     # CONVENIENCE
-                                    heavy_beam_recalc=redo_box_calc, already_imported_CST=alr_imp_CST                                                  
+                                    heavy_beam_recalc=redo_box_calc                                                 
                                     
                                     )
         
