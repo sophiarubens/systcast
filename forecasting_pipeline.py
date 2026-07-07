@@ -393,7 +393,6 @@ class beam_effects(object):
             np.save("xy_vec_synthesized_"+ioname+".npy",synthesized_xy_vec.value)
             np.save("z_vec_synthesized_"+ioname+".npy",synthesized_z_vec.value)
             np.save("weights_synthesized_"+ioname+".npy",weights_synthesized)
-            # np.save("Ntypes_"+ioname+".npy",Ntypes)
             print("saved synthesized beam")
         else: 
             fidu_box_synthesized=np.load("fidu_box_synthesized_"+ioname+".npy")
@@ -401,11 +400,11 @@ class beam_effects(object):
             synthesized_xy_vec=np.load("xy_vec_synthesized_"+ioname+".npy")*u.Mpc # by construction = not brittle
             synthesized_z_vec=np.load("z_vec_synthesized_"+ioname+".npy")*u.Mpc
             weights_synthesized=np.load("weights_synthesized_"+ioname+".npy")
-            # Ntypes=np.load("Ntypes_"+ioname+".npy")
             print("loaded synthesized beam")
         print("finished importing/constructing per-antenna–ified CST beams")
         
         self.fi_eff_vol=np.sum(fidu_box*CST_d3r)
+        weighted_sum_syst_primary=np.zeros_like(fidu_box)
         Ntypes=len(weights_synthesized) # this is super hacky and I need to streamline it
         if Ntypes>1:
             q=0
@@ -418,6 +417,7 @@ class beam_effects(object):
             self.sy_eff_vol=np.sum(weighted_sum_syst_primary*CST_d3r)
         else:
             self.sy_eff_vol=np.copy(self.fi_eff_vol)
+        print("self.fi_eff_vol,self.sy_eff_vol =",self.fi_eff_vol,self.sy_eff_vol)
         
         synthesized_pbm=(synthesized_xy_vec.value,synthesized_xy_vec.value,synthesized_z_vec.value) # might need to re-unit-ify this more robustly later, but for now the main use is interpolation and I don't want to jam up scipy by putting units where they have no business being
 
@@ -1319,7 +1319,6 @@ class cosmo_stats(object):
         self.beam_modes=beam_modes # fi and sy assumed to be sampled at the same modes, if relevant and not None
         if (self.synth_beam_den is not None): # non-identity PERTURBED beam
             if (self.beam_type_den=="manual"):
-                # assert np.all(self.synth_beam_den>=0.)
                 try:    # to access this branch, the manual/ numerically sampled beam needs to be close enough to a numpy array that it has a shape and not, e.g. a callable... so, no danger of attribute errors
                     synth_beam_den.shape
                 except: # beam is a callable (or something else without a shape method), which is not in line with how this part of the code is supposed to work
@@ -1581,7 +1580,7 @@ def beam_type_distribution(N_NS,N_EW,N_types,distribution="random",frame_width=2
     else:
         synthesized_beam_types=np.zeros(N_ant)
 
-    weights=np.bincount(synthesized_beam_types)
+    weights=np.bincount(synthesized_beam_types)/N_ant
     return synthesized_beam_types,weights
 
 """
