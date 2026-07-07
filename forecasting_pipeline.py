@@ -1226,7 +1226,6 @@ class cosmo_stats(object):
                 if (z_want_hi>z_have_hi):
                     extrapolation_warning("high z",   z_want_hi,  z_have_hi)
                 to_eval_at=np.array([self.xx_grid.value,self.yy_grid.value,self.zz_grid.value]).T
-                print("cosmo_stats.__init__: self.xx_grid.shape, self.synth_beam_num.shape =",self.xx_grid.shape, self.synth_beam_num.shape)
                 evaled_num=RGI(beam_modes,self.synth_beam_num,
                                        bounds_error=False,fill_value=None)(to_eval_at).T
                 self.evaled_num=evaled_num
@@ -1333,11 +1332,17 @@ class cosmo_stats(object):
         self.evaled_num=evaled_num
         
 
+        self.evaled_num_padded=None
         if evaled_num is not None:
             pad_lo_xy,pad_hi_xy=get_padding(self.Nvox )
             pad_lo_z, pad_hi_z =get_padding(self.Nvoxz)
-            self.evaled_num_padded=np.pad(evaled_num,((pad_lo_xy,pad_hi_xy),(pad_lo_xy,pad_hi_xy),(pad_lo_z,pad_hi_z),),"edge")
+            evaled_num_padded=np.pad(evaled_num,((pad_lo_xy,pad_hi_xy),(pad_lo_xy,pad_hi_xy),(pad_lo_z,pad_hi_z),),"edge")
+            taper_for_convolution=Blackman_Harris_safe_for_FFT(2*self.Nvoxz-1)
+            Nxy_padded=2*self.Nvox-1
+            self.taper_for_convolution=np.tile(taper_for_convolution, (Nxy_padded,Nxy_padded,1))
+            self.evaled_num_padded=evaled_num_padded*self.taper_for_convolution
             if (self.T_pristine is not None):
+                print("cosmo_stats.__init__: self.T_pristine is not None -> forming self.T_beam")
                 self.T_beam=convolve(self.evaled_num_padded,self.T_pristine.value,mode="valid")*self.temp_unit
         
         # strictness control for realization averaging
@@ -1390,15 +1395,21 @@ class cosmo_stats(object):
                 T_use="beam"
         if (T_use.lower()=="beam"):
             T_use=None
-            if self.T_beam is None and self.T_pristine is not None:
-                # self.T_beam=self.T_pristine*self.evaled_num
-                self.T_beam=convolve(self.evaled_num_padded,self.T_pristine.value,mode="valid")*self.temp_unit
+            if self.T_beam is None:
+                if self.T_pristine is None:
+                    raise ValueError("not enough info")
+                else:
+                    self.T_beam=convolve(self.evaled_num_padded,self.T_pristine.value,mode="valid")*self.temp_unit
             T_use=self.T_beam
         elif T_use.lower()=="pristine":
             T_use=self.T_pristine
         else:
             raise ValueError("invalid state of box beam knowledge. try again with pristine or beam!")
         T_use=T_use.to(u.mK)
+        if self.T_beam is not None:
+            print("cosmo_stats.generate_P: np.allclose(T_use,self.T_beam) ?",np.allclose(T_use.value,self.T_beam.value))
+        else: 
+            print("cosmo_stats.generate_P: fell back on self.T_pristine since self.T_beam is None")
         
         T_tilde=fftshift( fftn( 
                                 ifftshift(T_use*self.taper_xyz_centre)*self.d3r,
@@ -1453,13 +1464,13 @@ class cosmo_stats(object):
                           axes=self.transform_axes,
                           norm="forward"))/self.iftnorm
 
-        T*=u.mK # centre_origin
+        T*=self.temp_unit # centre_origin
         if self.fg_box is not None:
             T+=self.fg_box
         
         self.T_pristine=T
         if self.synth_beam_num is not None:
-            # self.T_beam=T*self.evaled_num
+            print("cosmo_stats.generate_GRF: self.synth_beam_num is not None -> forming self.T_beam")
             self.T_beam=convolve(self.evaled_num_padded,T.value,mode="valid")*self.temp_unit
 
     def power_Monte_Carlo(self,interfix:str=""): # since box generation is not deterministic
@@ -1486,6 +1497,8 @@ class cosmo_stats(object):
         self.P_binned_MC_complete=P_binned_MC_complete*self.power_unit
 
         self.N_per_realization=self.N_cumul/self.N_realizations
+        if self.evaled_num_padded is not None: 
+            print("self.evaled_num_padded.shape, self.T_pristine.shape, self.T_beam.shape =",self.evaled_num_padded.shape, self.T_pristine.shape, self.T_beam.shape)
 
     def interpolate_P(self,use_P_fid:bool=False):
         if use_P_fid:
