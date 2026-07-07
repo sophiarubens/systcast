@@ -293,7 +293,7 @@ class beam_effects(object):
         self.fgfreqs=np.asarray([self.nu_lo.value,self.nu_hi.value])*self.nu_ctr.unit
 
         self.N_timesteps=           def_N_timesteps
-        precalculated_xy_vec=self.Lsurv_box_xy*fftshift(fftfreq(self.Nvox_box_xy))
+        precalculated_xy_vec=self.Lsurv_box_xy*fftshift(fftfreq(def_PA_N_grid_pix))
         N_CST_types=len(CST_f_head_syst)
 
         if np.all(pointing_errors==[[0.,0.,0.]]):
@@ -323,7 +323,7 @@ class beam_effects(object):
             CST_z_vec=np.load("z_vec"+ioname_base_case+".npy")*u.Mpc # by construction = not brittle
         N_CST_z=len(CST_z_vec)
 
-        syst_boxes=np.zeros((N_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)) # this needs to be 4D to be forward-compatible with the new iteration strategy in synthesize_beam
+        syst_boxes=np.zeros((N_CST_types,def_PA_N_grid_pix,def_PA_N_grid_pix,N_CST_z)) # this needs to be 4D to be forward-compatible with the new iteration strategy in synthesize_beam
         if heavy_beam_recalc and not already_imported_CST: # only import the fiducial beam once
             for i,CST_f_head_syst_i in enumerate(CST_f_head_syst):
                 syst=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=def_PA_N_grid_pix,
@@ -349,7 +349,7 @@ class beam_effects(object):
         CST_dz=CST_z_vec[1]-CST_z_vec[0]
         CST_d3r=CST_dxy**2*CST_dz
 
-        CST_syst_ensemble=np.zeros((N_CST_types,N_pointing_errors_max+1,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z)) # shape of CST_syst_ensemble is (N_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z) but the sub-ensembles passed to synthesize_beam have shapes  ////////replace
+        CST_syst_ensemble=np.zeros((N_CST_types,N_pointing_errors_max+1,def_PA_N_grid_pix,def_PA_N_grid_pix,N_CST_z)) # shape of CST_syst_ensemble is (N_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z) but the sub-ensembles passed to synthesize_beam have shapes  ////////replace
         CST_syst_ensemble[:,0,:,:,:]=syst_boxes # situate the pointing error–free versions
 
         if type(pointing_errors[0])==float:
