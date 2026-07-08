@@ -605,8 +605,8 @@ class beam_effects(object):
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                                 effective_primary_beam_for_effective_volume=self.fi_eff_primary_box, eff_pri_domain=self.beam_modes,
-                                synth_beam_num=self.fidu,beam_type_num="manual",
-                                synth_beam_den=self.fidu,beam_type_den="manual",
+                                synth_beam_num=self.fidu,
+                                synth_beam_den=self.fidu,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 beam_modes=self.pbm_for_cs,
                                 LoS_taper=self.LoS_taper,image_taper=self.image_taper,
@@ -618,8 +618,8 @@ class beam_effects(object):
                                 P_fid=P_cosmo,k_fid=self.ksph,
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                                 effective_primary_beam_for_effective_volume=self.sy_eff_primary_box, eff_pri_domain=self.beam_modes,
-                                synth_beam_num=self.thgt,beam_type_num="manual",
-                                synth_beam_den=self.thgt,beam_type_den="manual",
+                                synth_beam_num=self.thgt,
+                                synth_beam_den=self.thgt,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
                                 beam_modes=self.pbm_for_cs,
                                 LoS_taper=self.LoS_taper,image_taper=self.image_taper,
@@ -629,8 +629,8 @@ class beam_effects(object):
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                                 effective_primary_beam_for_effective_volume=self.sy_eff_primary_box, eff_pri_domain=self.beam_modes,
                                 T_pristine=fg_box,
-                                synth_beam_num=self.thgt,beam_type_num="manual",
-                                synth_beam_den=self.thgt,beam_type_den="manual",
+                                synth_beam_num=self.thgt,
+                                synth_beam_den=self.thgt,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
                                 beam_modes=self.pbm_for_cs,
                                 LoS_taper=self.LoS_taper,image_taper=self.image_taper,
@@ -640,8 +640,8 @@ class beam_effects(object):
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                                 effective_primary_beam_for_effective_volume=self.fi_eff_primary_box, eff_pri_domain=self.beam_modes,
                                 T_pristine=fg_box,
-                                synth_beam_num=self.fidu,beam_type_num="manual",
-                                synth_beam_den=self.fidu,beam_type_den="manual",
+                                synth_beam_num=self.fidu,
+                                synth_beam_den=self.fidu,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
                                 beam_modes=self.pbm_for_cs,
                                 LoS_taper=self.LoS_taper,image_taper=self.image_taper,
@@ -651,8 +651,8 @@ class beam_effects(object):
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                                 effective_primary_beam_for_effective_volume=self.fi_eff_primary_box, eff_pri_domain=self.beam_modes,
-                                synth_beam_num=self.fidu,beam_type_num="manual",
-                                synth_beam_den=self.fidu,beam_type_den="manual",
+                                synth_beam_num=self.fidu,
+                                synth_beam_den=self.fidu,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 beam_modes=self.pbm_for_cs,
                                 LoS_taper=self.LoS_taper,image_taper=self.image_taper,
@@ -662,8 +662,8 @@ class beam_effects(object):
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                                 effective_primary_beam_for_effective_volume=self.sy_eff_primary_box, eff_pri_domain=self.beam_modes,
-                                synth_beam_num=self.thgt,beam_type_num="manual",
-                                synth_beam_den=self.thgt,beam_type_den="manual",
+                                synth_beam_num=self.thgt,
+                                synth_beam_den=self.thgt,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 beam_modes=self.pbm_for_cs,
                                 LoS_taper=self.LoS_taper,image_taper=self.image_taper,
@@ -971,7 +971,6 @@ class cosmo_stats(object):
                  synth_beam_num:np.ndarray=None,     synth_beam_den:np.ndarray=None,     # numerator/denominator (of power spectrum estimator) version of the beam (box of values evaluated in config space)
                  effective_primary_beam_for_effective_volume=None, eff_pri_domain=None,
                  beam_aux_num:np.ndarray=None, beam_aux_den:np.ndarray=None, # numerator/denominator version of helpful quantities that go along with the beam (characteristic widths for a per-antenna Gaussian beam; x/y and z vectors for a CST beam)
-                 beam_type_num:str="Gaussian", beam_type_den:str="Gaussian", # USED TO BE Airy/Gaussian for achromatic uniform-across-array beams. CURRENTLY can only be Gaussian, but SOON will be generalized to admit per-antenna CST beams
                  Nkperp:int=0,Nkpar:int=0,                                                  # number of k-bins in the sky plane and line of sight directions
                  binning_mode:str="lin",                                                     # bin linearly or logarithmically
                  bin_each_realization:bool=False,                                            # bin each realization of the Monte Carlo? (with the current implementation there's no typical use case where this would be necessary, but the option is there)
@@ -1200,144 +1199,137 @@ class cosmo_stats(object):
         print("cosmo_stats.__init__: self.effective_volume =",self.effective_volume)
         self.synth_beam_num=synth_beam_num
         self.beam_aux_num=beam_aux_num
-        self.beam_type_num=beam_type_num
         self.beam_modes=beam_modes # fi and sy beams assumed to be sampled at the same modes, if these are passed
         if (self.synth_beam_num is not None): # non-identity FIDUCIAL beam
-            if (self.beam_type_num=="manual"):
-                try:    # to access this branch, the manual/ numerically sampled beam needs to be close enough to a numpy array that it has a shape and not, e.g. a callable
-                    synth_beam_num.shape
-                except: # beam is a callable (or something else without a shape method), which is not in line with how this part of the code is supposed to work
-                    raise ValueError("conflicting info") 
-                if self.beam_modes is None:
-                    raise ValueError("not enough info")
+            try:    # to access this branch, the manual/ numerically sampled beam needs to be close enough to a numpy array that it has a shape and not, e.g. a callable
+                synth_beam_num.shape
+            except: # beam is a callable (or something else without a shape method), which is not in line with how this part of the code is supposed to work
+                raise ValueError("conflicting info") 
+            if self.beam_modes is None:
+                raise ValueError("not enough info")
 
-                x_beam,y_beam,z_beam=beam_modes
-                x_beam*=u.Mpc
-                y_beam*=u.Mpc
-                z_beam*=u.Mpc
-                x_have_lo=x_beam[0]
-                x_have_hi=x_beam[-1]
-                y_have_lo=y_beam[0]
-                y_have_hi=y_beam[-1]
-                z_have_lo=z_beam[0]
-                z_have_hi=z_beam[-1]
-                xy_want_lo=self.xy_vec_for_box[0]
-                xy_want_hi=self.xy_vec_for_box[-1]
-                z_want_lo=self.z_vec_for_box[0]
-                z_want_hi=self.z_vec_for_box[-1]
-                if (xy_want_lo<x_have_lo):
-                    extrapolation_warning("low x",   xy_want_lo,  x_have_lo)
-                if (xy_want_hi>x_have_hi):
-                    extrapolation_warning("high x",   xy_want_hi,  x_have_hi)
-                if (xy_want_lo<y_have_lo):
-                    extrapolation_warning("low y",   xy_want_lo,  y_have_lo)
-                if (xy_want_hi>y_have_hi):
-                    extrapolation_warning("high y",   xy_want_hi,  y_have_hi)
-                if (z_want_lo<z_have_lo):
-                    extrapolation_warning("low z",   z_want_lo,  z_have_lo)
-                if (z_want_hi>z_have_hi):
-                    extrapolation_warning("high z",   z_want_hi,  z_have_hi)
-                evaled_num=RGI(beam_modes,self.synth_beam_num,
-                                       bounds_error=False,fill_value=None)(self.to_eval_at).T
-                self.evaled_num=evaled_num
+            x_beam,y_beam,z_beam=beam_modes
+            x_beam*=u.Mpc
+            y_beam*=u.Mpc
+            z_beam*=u.Mpc
+            x_have_lo=x_beam[0]
+            x_have_hi=x_beam[-1]
+            y_have_lo=y_beam[0]
+            y_have_hi=y_beam[-1]
+            z_have_lo=z_beam[0]
+            z_have_hi=z_beam[-1]
+            xy_want_lo=self.xy_vec_for_box[0]
+            xy_want_hi=self.xy_vec_for_box[-1]
+            z_want_lo=self.z_vec_for_box[0]
+            z_want_hi=self.z_vec_for_box[-1]
+            if (xy_want_lo<x_have_lo):
+                extrapolation_warning("low x",   xy_want_lo,  x_have_lo)
+            if (xy_want_hi>x_have_hi):
+                extrapolation_warning("high x",   xy_want_hi,  x_have_hi)
+            if (xy_want_lo<y_have_lo):
+                extrapolation_warning("low y",   xy_want_lo,  y_have_lo)
+            if (xy_want_hi>y_have_hi):
+                extrapolation_warning("high y",   xy_want_hi,  y_have_hi)
+            if (z_want_lo<z_have_lo):
+                extrapolation_warning("low z",   z_want_lo,  z_have_lo)
+            if (z_want_hi>z_have_hi):
+                extrapolation_warning("high z",   z_want_hi,  z_have_hi)
+            evaled_num=RGI(beam_modes,self.synth_beam_num,
+                                    bounds_error=False,fill_value=None)(self.to_eval_at).T
+            self.evaled_num=evaled_num
 
-                fracs=[0,1e-5,1/3,1/2,1]
-                Pnorm=SymLogNorm(1e-2,vmin=-1,vmax=1)
-                fig,axs=plt.subplots(len(fracs),3,layout="constrained",figsize=(8,15))
-                axs[0,0].set_title("x index 0/"+str(self.Nvox-1))
-                axs[0,1].set_title("y index 0/"+str(self.Nvox-1))
-                axs[0,2].set_title("z index 0/"+str(self.Nvoxz -1)+"\nslice std="+str(np.round(np.std(self.synth_beam_num),3)))
-                sh0,_,sh2=self.synth_beam_num.shape
-                for i,frac in enumerate(fracs):
-                    xy_idx=int(frac*sh0)
-                    z_idx=int(frac*sh2)
-                    if frac==1:
-                        xy_idx-=1
-                        z_idx-=1
-                    elif frac==1e-5:
-                        xy_idx=1
-                        z_idx=1
-                    if i>0:
-                        axs[i,0].set_title(str(xy_idx)+"/"+str(sh0-1))
-                        axs[i,1].set_title(str(xy_idx)+"/"+str(sh0-1))
-                        axs[i,2].set_title(str(z_idx )+"/"+str(sh2 -1)+"\nslice std="+str(np.round(np.std(self.synth_beam_num[:,:,z_idx]),3)))
+            fracs=[0,1e-5,1/3,1/2,1]
+            Pnorm=SymLogNorm(1e-2,vmin=-1,vmax=1)
+            fig,axs=plt.subplots(len(fracs),3,layout="constrained",figsize=(8,15))
+            axs[0,0].set_title("x index 0/"+str(self.Nvox-1))
+            axs[0,1].set_title("y index 0/"+str(self.Nvox-1))
+            axs[0,2].set_title("z index 0/"+str(self.Nvoxz -1)+"\nslice std="+str(np.round(np.std(self.synth_beam_num),3)))
+            sh0,_,sh2=self.synth_beam_num.shape
+            for i,frac in enumerate(fracs):
+                xy_idx=int(frac*sh0)
+                z_idx=int(frac*sh2)
+                if frac==1:
+                    xy_idx-=1
+                    z_idx-=1
+                elif frac==1e-5:
+                    xy_idx=1
+                    z_idx=1
+                if i>0:
+                    axs[i,0].set_title(str(xy_idx)+"/"+str(sh0-1))
+                    axs[i,1].set_title(str(xy_idx)+"/"+str(sh0-1))
+                    axs[i,2].set_title(str(z_idx )+"/"+str(sh2 -1)+"\nslice std="+str(np.round(np.std(self.synth_beam_num[:,:,z_idx]),3)))
 
-                    sl0=self.synth_beam_num[xy_idx,:,:]
-                    img=axs[i,0].imshow(sl0.T,origin="lower",norm=Pnorm)
-                    plt.colorbar(img,ax=axs[i,0])
-                    axs[i,0].set_xlabel("y idx")
-                    axs[i,0].set_ylabel("z idx")
+                sl0=self.synth_beam_num[xy_idx,:,:]
+                img=axs[i,0].imshow(sl0.T,origin="lower",norm=Pnorm)
+                plt.colorbar(img,ax=axs[i,0])
+                axs[i,0].set_xlabel("y idx")
+                axs[i,0].set_ylabel("z idx")
 
-                    sl1=self.synth_beam_num[:,xy_idx,:]
-                    img=axs[i,1].imshow(sl1.T,origin="lower",norm=Pnorm)
-                    plt.colorbar(img,ax=axs[i,1])
-                    axs[i,1].set_xlabel("x idx")
-                    axs[i,1].set_ylabel("z idx")
+                sl1=self.synth_beam_num[:,xy_idx,:]
+                img=axs[i,1].imshow(sl1.T,origin="lower",norm=Pnorm)
+                plt.colorbar(img,ax=axs[i,1])
+                axs[i,1].set_xlabel("x idx")
+                axs[i,1].set_ylabel("z idx")
 
-                    sl2=self.synth_beam_num[:,:,z_idx]
-                    img=axs[i,2].imshow(sl2.T,origin="lower",norm=Pnorm)
-                    plt.colorbar(img,ax=axs[i,2])
-                    axs[i,2].set_xlabel("x idx")
-                    axs[i,2].set_ylabel("y idx")
-                plt.savefig("beam_box_pre__interpolation.png", dpi=500)
-                plt.close()
+                sl2=self.synth_beam_num[:,:,z_idx]
+                img=axs[i,2].imshow(sl2.T,origin="lower",norm=Pnorm)
+                plt.colorbar(img,ax=axs[i,2])
+                axs[i,2].set_xlabel("x idx")
+                axs[i,2].set_ylabel("y idx")
+            plt.savefig("beam_box_pre__interpolation.png", dpi=500)
+            plt.close()
 
-                fig,axs=plt.subplots(len(fracs),3,layout="constrained",figsize=(8,15))
-                axs[0,0].set_title("x index 0/"+str(self.Nvox-1))
-                axs[0,1].set_title("y index 0/"+str(self.Nvox-1))
-                axs[0,2].set_title("z index 0/"+str(self.Nvoxz -1)+"\nslice std="+str(np.round(np.std(evaled_num),3)))
-                for i,frac in enumerate(fracs):
-                    xy_idx=int(frac*self.Nvox)
-                    z_idx=int(frac*self.Nvoxz)
-                    if frac==1:
-                        xy_idx-=1
-                        z_idx-=1
-                    elif frac==1e-5:
-                        xy_idx=1
-                        z_idx=1
-                    if i>0:
-                        axs[i,0].set_title(str(xy_idx)+"/"+str(self.Nvox-1))
-                        axs[i,1].set_title(str(xy_idx)+"/"+str(self.Nvox-1))
-                        axs[i,2].set_title(str(z_idx )+"/"+str(self.Nvoxz -1)+"\nslice std="+str(np.round(np.std(evaled_num[:,:,z_idx]),3)))
+            fig,axs=plt.subplots(len(fracs),3,layout="constrained",figsize=(8,15))
+            axs[0,0].set_title("x index 0/"+str(self.Nvox-1))
+            axs[0,1].set_title("y index 0/"+str(self.Nvox-1))
+            axs[0,2].set_title("z index 0/"+str(self.Nvoxz -1)+"\nslice std="+str(np.round(np.std(evaled_num),3)))
+            for i,frac in enumerate(fracs):
+                xy_idx=int(frac*self.Nvox)
+                z_idx=int(frac*self.Nvoxz)
+                if frac==1:
+                    xy_idx-=1
+                    z_idx-=1
+                elif frac==1e-5:
+                    xy_idx=1
+                    z_idx=1
+                if i>0:
+                    axs[i,0].set_title(str(xy_idx)+"/"+str(self.Nvox-1))
+                    axs[i,1].set_title(str(xy_idx)+"/"+str(self.Nvox-1))
+                    axs[i,2].set_title(str(z_idx )+"/"+str(self.Nvoxz -1)+"\nslice std="+str(np.round(np.std(evaled_num[:,:,z_idx]),3)))
 
-                    sl0=evaled_num[xy_idx,:,:]
-                    img=axs[i,0].imshow(sl0.T,origin="lower",norm=Pnorm)
-                    plt.colorbar(img,ax=axs[i,0])
-                    axs[i,0].set_xlabel("y idx")
-                    axs[i,0].set_ylabel("z idx")
+                sl0=evaled_num[xy_idx,:,:]
+                img=axs[i,0].imshow(sl0.T,origin="lower",norm=Pnorm)
+                plt.colorbar(img,ax=axs[i,0])
+                axs[i,0].set_xlabel("y idx")
+                axs[i,0].set_ylabel("z idx")
 
-                    sl1=evaled_num[:,xy_idx,:]
-                    img=axs[i,1].imshow(sl1.T,origin="lower",norm=Pnorm)
-                    plt.colorbar(img,ax=axs[i,1])
-                    axs[i,1].set_xlabel("x idx")
-                    axs[i,1].set_ylabel("z idx")
+                sl1=evaled_num[:,xy_idx,:]
+                img=axs[i,1].imshow(sl1.T,origin="lower",norm=Pnorm)
+                plt.colorbar(img,ax=axs[i,1])
+                axs[i,1].set_xlabel("x idx")
+                axs[i,1].set_ylabel("z idx")
 
-                    sl2=evaled_num[:,:,z_idx]
-                    img=axs[i,2].imshow(sl2.T,origin="lower",norm=Pnorm)
-                    plt.colorbar(img,ax=axs[i,2])
-                    axs[i,2].set_xlabel("x idx")
-                    axs[i,2].set_ylabel("y idx")
-                plt.savefig("beam_box_post_interpolation.png", dpi=500)
-                plt.close()
-            
-            else:
-                raise ValueError("not yet implemented")
+                sl2=evaled_num[:,:,z_idx]
+                img=axs[i,2].imshow(sl2.T,origin="lower",norm=Pnorm)
+                plt.colorbar(img,ax=axs[i,2])
+                axs[i,2].set_xlabel("x idx")
+                axs[i,2].set_ylabel("y idx")
+            plt.savefig("beam_box_post_interpolation.png", dpi=500)
+            plt.close()
         
         self.synth_beam_den=synth_beam_den
         self.beam_aux_den=beam_aux_den
-        self.beam_type_den=beam_type_den
         self.beam_modes=beam_modes # fi and sy assumed to be sampled at the same modes, if relevant and not None
         if (self.synth_beam_den is not None): # non-identity PERTURBED beam
-            if (self.beam_type_den=="manual"):
-                try:    # to access this branch, the manual/ numerically sampled beam needs to be close enough to a numpy array that it has a shape and not, e.g. a callable... so, no danger of attribute errors
-                    synth_beam_den.shape
-                except: # beam is a callable (or something else without a shape method), which is not in line with how this part of the code is supposed to work
-                    raise ValueError("conflicting info") 
-                if self.beam_modes is None:
-                    raise ValueError("not enough info")
+            try:    # to access this branch, the manual/ numerically sampled beam needs to be close enough to a numpy array that it has a shape and not, e.g. a callable... so, no danger of attribute errors
+                synth_beam_den.shape
+            except: # beam is a callable (or something else without a shape method), which is not in line with how this part of the code is supposed to work
+                raise ValueError("conflicting info") 
+            if self.beam_modes is None:
+                raise ValueError("not enough info")
 
-                evaled_den=RGI(beam_modes,self.synth_beam_den,
-                                       bounds_error=False,fill_value=None)(self.to_eval_at).T
+            evaled_den=RGI(beam_modes,self.synth_beam_den,
+                                    bounds_error=False,fill_value=None)(self.to_eval_at).T
 
         self.evaled_den=evaled_den
         self.evaled_num=evaled_num
