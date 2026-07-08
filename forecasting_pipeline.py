@@ -403,8 +403,7 @@ class beam_effects(object):
             print("loaded synthesized beam")
         print("finished importing/constructing per-antenna–ified CST beams")
         
-        CST_phys_vol=np.sum(CST_d3r*np.ones_like(fidu_box))
-        self.fi_eff_vol_multiplier=np.sum(fidu_box**2*CST_d3r)/CST_phys_vol
+        self.fi_eff_primary_box=fidu_box
         weighted_sum_syst_primary=np.zeros_like(fidu_box)
         Ntypes=len(weights_synthesized) # this is super hacky and I need to streamline it
         if Ntypes>1:
@@ -415,10 +414,9 @@ class beam_effects(object):
                     if not np.allclose(syst_box_here,0):
                         weighted_sum_syst_primary+=weights_synthesized[q]*syst_box_here
                     q+=1
-            self.sy_eff_vol_multiplier=np.sum(weighted_sum_syst_primary*CST_d3r)/CST_phys_vol
+            self.sy_eff_primary_box=weighted_sum_syst_primary
         else:
-            self.sy_eff_vol_multiplier=np.copy(self.fi_eff_vol_multiplier)
-        print("self.fi_eff_vol_multiplier,self.sy_eff_vol_multiplier =",self.fi_eff_vol_multiplier,self.sy_eff_vol_multiplier)
+            self.sy_eff_primary_box=np.copy(self.fi_eff_primary_box)
         
         synthesized_pbm=(synthesized_xy_vec.value,synthesized_xy_vec.value,synthesized_z_vec.value) # might need to re-unit-ify this more robustly later, but for now the main use is interpolation and I don't want to jam up scipy by putting units where they have no business being
 
@@ -594,7 +592,7 @@ class beam_effects(object):
             self.fg_box=fg_box # centre-origin
 
             fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
-                           LoS_taper=self.LoS_taper,
+                           LoS_taper=self.LoS_taper,image_taper=self.image_taper,
                            T_pristine=fg_box)
             fg.generate_P()
             fg.bin_power()
@@ -606,7 +604,7 @@ class beam_effects(object):
         co_fi_xx_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                                effective_volume_multiplier=self.fi_eff_vol_multiplier,
+                                effective_primary_beam_for_effective_volume=self.fi_eff_primary_box, eff_pri_domain=self.beam_modes,
                                 synth_beam_num=self.fidu,beam_type_num="manual",
                                 synth_beam_den=self.fidu,beam_type_den="manual",
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
@@ -619,7 +617,7 @@ class beam_effects(object):
         co_fi_sy_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                                 P_fid=P_cosmo,k_fid=self.ksph,
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                                effective_volume_multiplier=self.sy_eff_vol_multiplier,
+                                effective_primary_beam_for_effective_volume=self.sy_eff_primary_box, eff_pri_domain=self.beam_modes,
                                 synth_beam_num=self.thgt,beam_type_num="manual",
                                 synth_beam_den=self.thgt,beam_type_den="manual",
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
@@ -629,7 +627,7 @@ class beam_effects(object):
         print("initialized co_fi_sy_fg cosmo_stats instance")
         xx_fi_sy_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                                effective_volume_multiplier=self.sy_eff_vol_multiplier,
+                                effective_primary_beam_for_effective_volume=self.sy_eff_primary_box, eff_pri_domain=self.beam_modes,
                                 T_pristine=fg_box,
                                 synth_beam_num=self.thgt,beam_type_num="manual",
                                 synth_beam_den=self.thgt,beam_type_den="manual",
@@ -640,7 +638,7 @@ class beam_effects(object):
         print("initialized xx_fi_sy_fg cosmo_stats instance")
         xx_fi_xx_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                                effective_volume_multiplier=self.fi_eff_vol_multiplier,
+                                effective_primary_beam_for_effective_volume=self.fi_eff_primary_box, eff_pri_domain=self.beam_modes,
                                 T_pristine=fg_box,
                                 synth_beam_num=self.fidu,beam_type_num="manual",
                                 synth_beam_den=self.fidu,beam_type_den="manual",
@@ -652,7 +650,7 @@ class beam_effects(object):
         co_fi_xx_xx=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                                effective_volume_multiplier=self.fi_eff_vol_multiplier,
+                                effective_primary_beam_for_effective_volume=self.fi_eff_primary_box, eff_pri_domain=self.beam_modes,
                                 synth_beam_num=self.fidu,beam_type_num="manual",
                                 synth_beam_den=self.fidu,beam_type_den="manual",
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
@@ -663,7 +661,7 @@ class beam_effects(object):
         co_fi_sy_xx=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                                effective_volume_multiplier=self.sy_eff_vol_multiplier,
+                                effective_primary_beam_for_effective_volume=self.sy_eff_primary_box, eff_pri_domain=self.beam_modes,
                                 synth_beam_num=self.thgt,beam_type_num="manual",
                                 synth_beam_den=self.thgt,beam_type_den="manual",
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
@@ -971,7 +969,7 @@ class cosmo_stats(object):
                  k_fid:np.ndarray=None,                                                      # Fourier space points where the fiducial power spectrum is sampled
                  Nvox:int=None,Nvoxz:int=None,                                               # number of voxels in the x/y or z directions
                  synth_beam_num:np.ndarray=None,     synth_beam_den:np.ndarray=None,     # numerator/denominator (of power spectrum estimator) version of the beam (box of values evaluated in config space)
-                 effective_volume_multiplier=None,
+                 effective_primary_beam_for_effective_volume=None, eff_pri_domain=None,
                  beam_aux_num:np.ndarray=None, beam_aux_den:np.ndarray=None, # numerator/denominator version of helpful quantities that go along with the beam (characteristic widths for a per-antenna Gaussian beam; x/y and z vectors for a CST beam)
                  beam_type_num:str="Gaussian", beam_type_den:str="Gaussian", # USED TO BE Airy/Gaussian for achromatic uniform-across-array beams. CURRENTLY can only be Gaussian, but SOON will be generalized to admit per-antenna CST beams
                  Nkperp:int=0,Nkpar:int=0,                                                  # number of k-bins in the sky plane and line of sight directions
@@ -980,7 +978,7 @@ class cosmo_stats(object):
                  frac_tol:float=0.1,                                                         # fractional tolerance in cosmic variance of the Monte Carlo ensemble -> used to calculate the number of realizations
                  kperpbins_interp:np.ndarray=None,kparbins_interp:np.ndarray=None,           # bins where you want to know about the power spectrum (if you're interested in interpolating to some binning scheme other than what you get from chopping up the box)
                  P_MC_complete:np.ndarray=None,                                                # converged Monte Carlo power spectrum
-                 kind:str="cubic",avoid_extrapolation:bool=False,                            # conditioning choices for interpolation: degree of interpolation; whether or not to avoid extrapolation
+                 avoid_extrapolation:bool=False,                            # whether or not to avoid extrapolation
                  seed=None,                                            # Monte Carlo realization logistics: whether or not to subtract the monopole moment when you generate boxes (the option is mostly there if you're interested in off-label uses of this code to compute power spectra from fields that are not cosmological overdensity fields); RNG seed for predictable ensemble behaviour
                  beam_modes:np.ndarray=None,                                         # when using a discretely sampled beam not sampled internally using a callable, it is necessary to provide knowledge of the modes at which it was sampled
                  LoS_taper=False,image_taper=False,                                         # apodize along the sky plane or line-of-sight directions to suppress ringing originating from features that cut off sharply?
@@ -1070,6 +1068,7 @@ class cosmo_stats(object):
         self.xx_grid,self.yy_grid,self.zz_grid=np.meshgrid(self.xy_vec_for_box,
                                                            self.xy_vec_for_box,
                                                            self.z_vec_for_box, indexing="ij")      # box-shaped Cartesian coords CENTRE-ORIGIN
+        self.to_eval_at=np.array([self.xx_grid.value,self.yy_grid.value,self.zz_grid.value]).T
 
         # Fourier space
         self.Deltakxy=twopi/self.Lxy                                        # voxel side length
@@ -1119,7 +1118,6 @@ class cosmo_stats(object):
 
         # if P_fid was passed, establish its values on the k grid (helpful when generating a box)
         self.k_fid=k_fid
-        self.kind=kind
         self.avoid_extrapolation=avoid_extrapolation
         if (self.P_fid is not None and self.k_fid is not None):
             if (len(self.P_fid.shape)==1): # truly 1d fiducial power spec (by this point, even CAMB-like shapes have been reshuffled)
@@ -1189,13 +1187,16 @@ class cosmo_stats(object):
         # beam
         evaled_num=None
         evaled_den=None
-        if effective_volume_multiplier is None:
+        if effective_primary_beam_for_effective_volume is None:
             if synth_beam_num is not None:
                 raise ValueError("not enough info")
             else:
                 self.effective_volume=physical_volume
         else:
-            self.effective_volume=effective_volume_multiplier*physical_volume
+            interpolator=RGI((eff_pri_domain),effective_primary_beam_for_effective_volume,
+                             bounds_error=avoid_extrapolation,fill_value=None)
+            eff_pri_this_domain=interpolator(self.to_eval_at).T # the constituent self.ii_grid are centre-origin, as intended
+            self.effective_volume=np.sum((eff_pri_this_domain*self.taper_xyz_centre)**2*self.d3r)
         print("cosmo_stats.__init__: self.effective_volume =",self.effective_volume)
         self.synth_beam_num=synth_beam_num
         self.beam_aux_num=beam_aux_num
@@ -1236,9 +1237,8 @@ class cosmo_stats(object):
                     extrapolation_warning("low z",   z_want_lo,  z_have_lo)
                 if (z_want_hi>z_have_hi):
                     extrapolation_warning("high z",   z_want_hi,  z_have_hi)
-                to_eval_at=np.array([self.xx_grid.value,self.yy_grid.value,self.zz_grid.value]).T
                 evaled_num=RGI(beam_modes,self.synth_beam_num,
-                                       bounds_error=False,fill_value=None)(to_eval_at).T
+                                       bounds_error=False,fill_value=None)(self.to_eval_at).T
                 self.evaled_num=evaled_num
 
                 fracs=[0,1e-5,1/3,1/2,1]
