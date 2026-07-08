@@ -1314,6 +1314,7 @@ class cosmo_stats(object):
 
         self.evaled_num_padded=None
         if evaled_num is not None:
+            assert(not np.all(np.isclose(evaled_num,0))), "synthesized beam should not be identically vanishing"
             pad_lo_xy,pad_hi_xy=get_padding(self.Nvox )
             pad_lo_z, pad_hi_z =get_padding(self.Nvoxz)
             evaled_num_padded=np.pad(evaled_num,((pad_lo_xy,pad_hi_xy),(pad_lo_xy,pad_hi_xy),(pad_lo_z,pad_hi_z),),"edge")
