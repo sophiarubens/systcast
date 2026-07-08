@@ -414,7 +414,7 @@ class beam_effects(object):
             fidu_box_synthesized=fidu_synthesis.box
             synthesized_xy_vec=fidu_synthesis.xy_vec
             synthesized_z_vec=fidu_synthesis.z_vec
-            syst_synthesis=synthesize_beam(array_verison=array_version,N_timesteps=self.N_timesteps,
+            syst_synthesis=synthesize_beam(array_version=array_version,N_timesteps=self.N_timesteps,
                                                 N_pbws_pert=N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
                                                 distribution=antenna_distribution,
                                                 sub_ensemble_of_CST_beams=[fidu_box,CST_syst_ensemble],
@@ -579,7 +579,6 @@ class beam_effects(object):
                        P_fid=self.P_flat,k_fid=self.k_for_flat,
                        Nvox=self.Nvox_box_xy,Nvoxz=1,
                        seed=self.seed, nu_ctr=self.nu_ctr) 
-        print("initialized fg cosmo_stats instance (white noise slice for one FG ingredient)")
         fg.generate_GRF()
         white_noise_slice=fg.T_pristine
         
@@ -645,7 +644,6 @@ class beam_effects(object):
                                 beam_domain=self.pbm_for_cs,
                                 LoS_taper=self.LoS_taper,image_taper=self.image_taper,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
-        print("initialized co_fi_xx_fg cosmo_stats instance")
         self.kperpbins_internal=co_fi_xx_fg.kperpbins
         self.kparbins_internal=co_fi_xx_fg.kparbins
         co_fi_sy_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
@@ -657,7 +655,6 @@ class beam_effects(object):
                                 beam_domain=self.pbm_for_cs,
                                 LoS_taper=self.LoS_taper,image_taper=self.image_taper,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
-        print("initialized co_fi_sy_fg cosmo_stats instance")
         xx_fi_sy_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                                 effective_primary_beam_for_effective_volume=self.sy_eff_primary_box, eff_pri_domain=self.beam_domain,
@@ -667,7 +664,6 @@ class beam_effects(object):
                                 beam_domain=self.pbm_for_cs,
                                 LoS_taper=self.LoS_taper,image_taper=self.image_taper,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
-        print("initialized xx_fi_sy_fg cosmo_stats instance")
         xx_fi_xx_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                                 effective_primary_beam_for_effective_volume=self.fi_eff_primary_box, eff_pri_domain=self.beam_domain,
@@ -677,7 +673,6 @@ class beam_effects(object):
                                 beam_domain=self.pbm_for_cs,
                                 LoS_taper=self.LoS_taper,image_taper=self.image_taper,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
-        print("initialized xx_fi_xx_fg cosmo_stats instance")
         co_fi_xx_xx=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
@@ -687,7 +682,6 @@ class beam_effects(object):
                                 beam_domain=self.pbm_for_cs,
                                 LoS_taper=self.LoS_taper,image_taper=self.image_taper,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=None)
-        print("initialized co_fi_xx_xx cosmo_stats instance")
         co_fi_sy_xx=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
@@ -697,14 +691,12 @@ class beam_effects(object):
                                 beam_domain=self.pbm_for_cs,
                                 LoS_taper=self.LoS_taper,image_taper=self.image_taper,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=None)
-        print("initialized co_fi_sy_xx cosmo_stats instance")
         co_xx_xx_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 LoS_taper=self.LoS_taper,image_taper=self.image_taper,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
-        print("initialized co_xx_xx_fg cosmo_stats instance")
 
         recalc_co_fi_xx_fg=False
         recalc_co_fi_sy_fg=False
@@ -794,18 +786,14 @@ class beam_effects(object):
                 self.kpar_for_cosmo=   co_xx_xx_fg.kparbins
             self.P_co_xx_xx_fg= co_xx_xx_fg.P_binned_MC_complete
             print("cosmo +                    fg MC         complete")
-        TEST=True
-        if TEST:
-            COSMOTEST=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
-                                    P_fid=P_cosmo,k_fid=self.ksph, 
-                                    Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
-                                    LoS_taper=self.LoS_taper,image_taper=self.image_taper,
-                                    frac_tol=self.frac_tol_conv,seed=self.seed,nu_ctr=self.nu_ctr)
-            print("initialized CO_XX_XX_XX cosmo_stats instance")
-            COSMOTEST.power_Monte_Carlo(interfix="CO_XX_XX_XX_") # extra underscore is because numpy is fine with case-sensitive file names but MacOS is not :(
-            self.P_CO_XX_XX_XX=COSMOTEST.P_binned_MC_complete
-
-            print("COSMO                         MC         COMPLETE")
+        COSMOTEST=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
+                              P_fid=P_cosmo,k_fid=self.ksph, 
+                              Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
+                              LoS_taper=self.LoS_taper,image_taper=self.image_taper,
+                              frac_tol=self.frac_tol_conv,seed=self.seed,nu_ctr=self.nu_ctr)
+        COSMOTEST.power_Monte_Carlo(interfix="CO_XX_XX_XX_") # extra underscore is because numpy is fine with case-sensitive file names but MacOS is not :(
+        self.P_CO_XX_XX_XX=COSMOTEST.P_binned_MC_complete
+        print("COSMO                         MC         COMPLETE")
 
         _,_,P_co_xx_xx_xx=self.unbin_to_Pcyl(self.pars_set_cosmo, 
                                              kperp_to_use=self.kperp_for_cosmo[:-1]+0.5*(self.kperp_for_cosmo[1]-self.kperp_for_cosmo[0]), 
@@ -1269,10 +1257,10 @@ class cosmo_stats(object):
 
             synth_beam_norm=SymLogNorm(1e-2,vmin=-1,vmax=1)
             comprehensive_slice_figure(self.synth_beam, 
-                                       norm=synth_beam_norm,
+                                    #    norm=synth_beam_norm,
                                        name="beam_box_pre__interpolation.png")
             comprehensive_slice_figure(evaled_num,
-                                       norm=synth_beam_norm,
+                                    #    norm=synth_beam_norm,
                                        name="beam_box_post_interpolation.png")
         
         self.beam_domain=beam_domain
@@ -1353,10 +1341,6 @@ class cosmo_stats(object):
         else:
             raise ValueError("invalid state of box beam knowledge. try again with pristine or beam!")
         T_use=T_use.to(u.mK)
-        # if self.T_beam is not None:
-            # print("cosmo_stats.generate_P: np.allclose(T_use,self.T_beam) ?",np.allclose(T_use.value,self.T_beam.value))
-        # else: 
-            # print("cosmo_stats.generate_P: fell back on self.T_pristine since self.T_beam is None")
         
         T_tilde=fftshift( fftn( 
                                 ifftshift(T_use*self.taper_xyz_centre)*self.d3r,
@@ -1634,27 +1618,27 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         # helper args
         self.CST_xy=CST_xy
         CST_Delta_xy=CST_xy[1]-CST_xy[0]
-        CST_dxdy=(CST_Delta_xy)**2
-        self.CST_dxdy=CST_dxdy
-        self.uvbins_CST=fftshift(fftfreq(len(CST_xy),d=CST_Delta_xy))
+        N_CST_xy=len(CST_xy)
+        self.uvbins_CST=fftshift(fftfreq(N_CST_xy,d=CST_Delta_xy))
         self.CST_freqs=CST_freqs
-        self.N_CST_xy=len(CST_xy)
+        self.N_CST_xy=N_CST_xy
         self.N_CST_freqs=len(CST_freqs)
+
+        taper_1d_centre=Blackman_Harris_safe_for_FFT(N_CST_xy)
+        taper_xx,taper_yy=np.meshgrid(taper_1d_centre,taper_1d_centre,indexing="ij")
+        self.taper_slice=taper_xx*taper_yy
 
         if type(sub_ensemble_of_CST_beams) is not list: # can't use .ndim because it doesn't behave well for the inhomog arrays of the else
             print("synthesize_beam received only a !fiducial! beam box")
-
             fidu_box=sub_ensemble_of_CST_beams
-
             self.all_boxes=np.expand_dims(sub_ensemble_of_CST_beams,axis=0)
-
             N_total_beam_types=1
             self.N_total_beam_types=1
         else:
             print("synthesize_beam received both !fiducial and systematic-laden! beam boxes")
             fidu_box,syst_boxes=sub_ensemble_of_CST_beams # should be unpackable into two arrays:
             assert fidu_box.ndim==3 and syst_boxes.ndim==5 # one box and one "2D array of 3D boxes"
-            self.N_CST_types,self.N_max_pointing_errors,Nxy,_,Nz=syst_boxes.shape
+            self.N_CST_types,self.N_max_pointing_errors,_,_,_=syst_boxes.shape
 
             # figure out the actual number of beam types and store the beam types as a list of boxes, not 2D array of boxes + standalone box
             N_pointing_errors_per_CST_case=np.zeros(self.N_CST_types,dtype=int)
@@ -1712,8 +1696,8 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         uv_synth=np.zeros((2*N_bl,2,self.N_timesteps))
         for i,theta in enumerate(thetas): # thetas are the rotation synthesis angles (converted from hr. angles using 15 deg/hr rotation rate)
             accumulate_rotation=np.array([[ np.cos(theta),np.sin(theta),0],
-                                        [-np.sin(theta),np.cos(theta),0],
-                                        [ 0,            0,            1]])
+                                          [-np.sin(theta),np.cos(theta),0],
+                                          [ 0,            0,            1]])
             uvw_rotated=uvw_inst@accumulate_rotation
             uvw_projected=uvw_rotated@project_to_dec.T
             uv_synth[:,:,i]=uvw_projected/self.lambda_obs
@@ -1726,7 +1710,7 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         all_ungridded_u=self.uv_synth[:,0,:]
         all_ungridded_v=self.uv_synth[:,1,:]
         uvmagmax=np.max([np.max(np.abs(all_ungridded_u)),
-                             np.max(np.abs(all_ungridded_v))])
+                         np.max(np.abs(all_ungridded_v))])
 
         uvmagmin=2*uvmagmax/Npix
         thetamax=1/uvmagmin # these are 1/-convention Fourier duals, not 2pi/-convention Fourier duals
@@ -1738,7 +1722,6 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         self.d2u=d2u
         implane=np.zeros((Npix,Npix))
         uvbins_use=np.append(uvbins,uvbins[-1]+uvbins[1]-uvbins[0])
-        # print("self.all_boxes.shape, uvbins_use.shape =",self.all_boxes.shape, uvbins_use.shape)
 
         for i in range(self.N_total_beam_types):
             type_i=self.pb_types[i]
@@ -1756,7 +1739,7 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
                 gridded_uv,_,_=np.histogram2d(reshaped_u,reshaped_v,bins=uvbins_use)
                 comb=np.nonzero(gridded_uv)
                 gridded_uv[comb]/=gridded_uv[comb]
-                gridded_im=fftshift(irfftn(ifftshift(gridded_uv*self.d2u), # irfftn silently discarding imag part of symmetry slices of the last transformed axis is not a problem here because the uv slices in question are entirely real-valued
+                gridded_im=fftshift(irfftn(ifftshift(gridded_uv*self.taper_slice*self.d2u), # irfftn silently discarding imag part of symmetry slices of the last transformed axis is not a problem here because the uv slices in question are entirely real-valued
                                            norm="forward",s=(Npix,Npix)))
                 LoS_idx=np.argmin(np.abs(self.nu_obs-self.CST_freqs))
                 beam_i=self.all_boxes[type_i,:,:,LoS_idx] # [N_total_beam_types, Nxy, Nxy, Nz]
@@ -2699,7 +2682,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                                 rel_map,
                                                 True]
     
-    co_fi_sy_xx__minus__co_fi_xx_xx_params=   ["( cosmo + fidu beam + syst ) - ( cosmo + fidu beam)",
+    co_fi_sy_xx__minus__co_fi_xx_xx_params=   ["( cosmo + fidu beam + syst ) - ( cosmo + fidu beam )",
                                                 relative_units,
                                                "cosmo_fidu_syst__minus__cosmo_fidu",
                                                 None,
