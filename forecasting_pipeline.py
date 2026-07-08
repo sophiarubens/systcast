@@ -345,7 +345,7 @@ class beam_effects(object):
         print("beam_effects.__init__: len(precalculated_xy_vec),len(CST_z_vec) =",len(precalculated_xy_vec),len(CST_z_vec))
         beam_modes=(precalculated_xy_vec.value,precalculated_xy_vec.value,CST_z_vec.value)
         self.beam_modes=beam_modes
-        CST_dxy=self.Lsurv_box_xy/self.Nvox_box_xy
+        CST_dxy=self.Lsurv_box_xy/def_PA_N_grid_pix
         CST_dz=CST_z_vec[1]-CST_z_vec[0]
         CST_d3r=CST_dxy**2*CST_dz
 
@@ -404,7 +404,7 @@ class beam_effects(object):
         print("finished importing/constructing per-antenna–ified CST beams")
         
         CST_phys_vol=np.sum(CST_d3r*np.ones_like(fidu_box))
-        self.fi_eff_vol_multiplier=np.sum(fidu_box*CST_d3r)/CST_phys_vol
+        self.fi_eff_vol_multiplier=np.sum(fidu_box**2*CST_d3r)/CST_phys_vol
         weighted_sum_syst_primary=np.zeros_like(fidu_box)
         Ntypes=len(weights_synthesized) # this is super hacky and I need to streamline it
         if Ntypes>1:
