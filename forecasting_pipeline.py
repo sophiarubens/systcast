@@ -160,6 +160,55 @@ def Blackman_Harris_safe_for_FFT(N): # !!centre-origin!! apodization function
       +a2*np.cos(4.*pi*n/N) \
       -a3*np.cos(6.*pi*n/N)
     return w
+def comprehensive_slice_figure(box,                     # 3D box to plot slices of
+                               norm=None,               # norm of the colour scale
+                               name="placeholder.png",  # name of the output figure
+                               dpi=500,                 # resolution of the output figure
+                               fracs=[0,1e-5,1/3,1/2,1] # fractions along each axis at which to slice the box
+                               ):
+    box_shape=box.shape
+    assert len(box_shape)==3, "this plotting function requires a 3D box"
+    Nx,Ny,Nz=box_shape
+    _,axs=plt.subplots(len(fracs),3,layout="constrained",figsize=(8,15))
+    axs[0,0].set_title("x index 0/"+str(Nx-1))
+    axs[0,1].set_title("y index 0/"+str(Ny-1))
+    axs[0,2].set_title("z index 0/"+str(Nz-1)+"\nslice std="+str(np.round(np.std(box),3)))
+    for i,frac in enumerate(fracs):
+        x_idx=int(frac*Nx)
+        y_idx=int(frac*Ny)
+        z_idx=int(frac*Nz)
+        if frac==1:
+            x_idx-=1
+            y_idx-=1
+            z_idx-=1
+        elif frac==1e-5:
+            x_idx=1
+            y_idx=1
+            z_idx=1
+        if i>0:
+            axs[i,0].set_title(str(x_idx)+"/"+str(Nx-1))
+            axs[i,1].set_title(str(y_idx)+"/"+str(Ny-1))
+            axs[i,2].set_title(str(z_idx )+"/"+str(Nz-1)+"\nslice std="+str(np.round(np.std(box[:,:,z_idx]),3)))
+
+        sl0=box[x_idx,:,:]
+        img=axs[i,0].imshow(sl0.T,origin="lower",norm=norm)
+        plt.colorbar(img,ax=axs[i,0])
+        axs[i,0].set_xlabel("y idx")
+        axs[i,0].set_ylabel("z idx")
+
+        sl1=box[:,y_idx,:]
+        img=axs[i,1].imshow(sl1.T,origin="lower",norm=norm)
+        plt.colorbar(img,ax=axs[i,1])
+        axs[i,1].set_xlabel("x idx")
+        axs[i,1].set_ylabel("z idx")
+
+        sl2=box[:,:,z_idx]
+        img=axs[i,2].imshow(sl2.T,origin="lower",norm=norm)
+        plt.colorbar(img,ax=axs[i,2])
+        axs[i,2].set_xlabel("x idx")
+        axs[i,2].set_ylabel("y idx")
+    plt.savefig(name, dpi=dpi)
+    plt.close()
 
 # main computations
 """
@@ -341,13 +390,8 @@ class beam_effects(object):
                 syst_boxes[0,:,:,:]=fidu_box
         
         N_CST_z=len(CST_z_vec)
-        print("beam_effects.__init__: fidu_box.shape =",fidu_box.shape)
-        print("beam_effects.__init__: len(precalculated_xy_vec),len(CST_z_vec) =",len(precalculated_xy_vec),len(CST_z_vec))
         beam_modes=(precalculated_xy_vec.value,precalculated_xy_vec.value,CST_z_vec.value)
         self.beam_modes=beam_modes
-        CST_dxy=self.Lsurv_box_xy/def_PA_N_grid_pix
-        CST_dz=CST_z_vec[1]-CST_z_vec[0]
-        CST_d3r=CST_dxy**2*CST_dz
 
         CST_syst_ensemble=np.zeros((N_CST_types,N_pointing_errors_max+1,def_PA_N_grid_pix,def_PA_N_grid_pix,N_CST_z)) # shape of CST_syst_ensemble is (N_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z) but the sub-ensembles passed to synthesize_beam have shapes  ////////replace
         CST_syst_ensemble[:,0,:,:,:]=syst_boxes # situate the pointing error–free versions
@@ -425,7 +469,6 @@ class beam_effects(object):
         self.thgt=syst_box_synthesized
 
         self.pbm_for_cs=synthesized_pbm
-        print("beam_effects.__init__: fidu_box")
 
         # groundwork-informed forecasting considerations
         self.P_fid_for_cont_pwr=P_fid_for_cont_pwr
@@ -1195,8 +1238,13 @@ class cosmo_stats(object):
             interpolator=RGI((eff_pri_domain),effective_primary_beam_for_effective_volume,
                              bounds_error=avoid_extrapolation,fill_value=None)
             eff_pri_this_domain=interpolator(self.to_eval_at).T # the constituent self.ii_grid are centre-origin, as intended
+            comprehensive_slice_figure(effective_primary_beam_for_effective_volume,
+                                       norm=LogNorm(vmax=1),
+                                       name="effective_primary.png")
+            comprehensive_slice_figure(eff_pri_this_domain,
+                                       norm=LogNorm(vmax=1),
+                                       name="effective_primary_interpolated.png")
             self.effective_volume=np.sum((eff_pri_this_domain*self.taper_xyz_centre)**2*self.d3r)
-        print("cosmo_stats.__init__: self.effective_volume =",self.effective_volume)
         self.synth_beam_num=synth_beam_num
         self.beam_aux_num=beam_aux_num
         self.beam_modes=beam_modes # fi and sy beams assumed to be sampled at the same modes, if these are passed
@@ -1238,84 +1286,13 @@ class cosmo_stats(object):
                                     bounds_error=False,fill_value=None)(self.to_eval_at).T
             self.evaled_num=evaled_num
 
-            fracs=[0,1e-5,1/3,1/2,1]
-            Pnorm=SymLogNorm(1e-2,vmin=-1,vmax=1)
-            fig,axs=plt.subplots(len(fracs),3,layout="constrained",figsize=(8,15))
-            axs[0,0].set_title("x index 0/"+str(self.Nvox-1))
-            axs[0,1].set_title("y index 0/"+str(self.Nvox-1))
-            axs[0,2].set_title("z index 0/"+str(self.Nvoxz -1)+"\nslice std="+str(np.round(np.std(self.synth_beam_num),3)))
-            sh0,_,sh2=self.synth_beam_num.shape
-            for i,frac in enumerate(fracs):
-                xy_idx=int(frac*sh0)
-                z_idx=int(frac*sh2)
-                if frac==1:
-                    xy_idx-=1
-                    z_idx-=1
-                elif frac==1e-5:
-                    xy_idx=1
-                    z_idx=1
-                if i>0:
-                    axs[i,0].set_title(str(xy_idx)+"/"+str(sh0-1))
-                    axs[i,1].set_title(str(xy_idx)+"/"+str(sh0-1))
-                    axs[i,2].set_title(str(z_idx )+"/"+str(sh2 -1)+"\nslice std="+str(np.round(np.std(self.synth_beam_num[:,:,z_idx]),3)))
-
-                sl0=self.synth_beam_num[xy_idx,:,:]
-                img=axs[i,0].imshow(sl0.T,origin="lower",norm=Pnorm)
-                plt.colorbar(img,ax=axs[i,0])
-                axs[i,0].set_xlabel("y idx")
-                axs[i,0].set_ylabel("z idx")
-
-                sl1=self.synth_beam_num[:,xy_idx,:]
-                img=axs[i,1].imshow(sl1.T,origin="lower",norm=Pnorm)
-                plt.colorbar(img,ax=axs[i,1])
-                axs[i,1].set_xlabel("x idx")
-                axs[i,1].set_ylabel("z idx")
-
-                sl2=self.synth_beam_num[:,:,z_idx]
-                img=axs[i,2].imshow(sl2.T,origin="lower",norm=Pnorm)
-                plt.colorbar(img,ax=axs[i,2])
-                axs[i,2].set_xlabel("x idx")
-                axs[i,2].set_ylabel("y idx")
-            plt.savefig("beam_box_pre__interpolation.png", dpi=500)
-            plt.close()
-
-            fig,axs=plt.subplots(len(fracs),3,layout="constrained",figsize=(8,15))
-            axs[0,0].set_title("x index 0/"+str(self.Nvox-1))
-            axs[0,1].set_title("y index 0/"+str(self.Nvox-1))
-            axs[0,2].set_title("z index 0/"+str(self.Nvoxz -1)+"\nslice std="+str(np.round(np.std(evaled_num),3)))
-            for i,frac in enumerate(fracs):
-                xy_idx=int(frac*self.Nvox)
-                z_idx=int(frac*self.Nvoxz)
-                if frac==1:
-                    xy_idx-=1
-                    z_idx-=1
-                elif frac==1e-5:
-                    xy_idx=1
-                    z_idx=1
-                if i>0:
-                    axs[i,0].set_title(str(xy_idx)+"/"+str(self.Nvox-1))
-                    axs[i,1].set_title(str(xy_idx)+"/"+str(self.Nvox-1))
-                    axs[i,2].set_title(str(z_idx )+"/"+str(self.Nvoxz -1)+"\nslice std="+str(np.round(np.std(evaled_num[:,:,z_idx]),3)))
-
-                sl0=evaled_num[xy_idx,:,:]
-                img=axs[i,0].imshow(sl0.T,origin="lower",norm=Pnorm)
-                plt.colorbar(img,ax=axs[i,0])
-                axs[i,0].set_xlabel("y idx")
-                axs[i,0].set_ylabel("z idx")
-
-                sl1=evaled_num[:,xy_idx,:]
-                img=axs[i,1].imshow(sl1.T,origin="lower",norm=Pnorm)
-                plt.colorbar(img,ax=axs[i,1])
-                axs[i,1].set_xlabel("x idx")
-                axs[i,1].set_ylabel("z idx")
-
-                sl2=evaled_num[:,:,z_idx]
-                img=axs[i,2].imshow(sl2.T,origin="lower",norm=Pnorm)
-                plt.colorbar(img,ax=axs[i,2])
-                axs[i,2].set_xlabel("x idx")
-                axs[i,2].set_ylabel("y idx")
-            plt.savefig("beam_box_post_interpolation.png", dpi=500)
-            plt.close()
+            synth_beam_norm=SymLogNorm(1e-2,vmin=-1,vmax=1)
+            comprehensive_slice_figure(self.synth_beam_num, 
+                                       norm=synth_beam_norm,
+                                       name="beam_box_pre__interpolation.png")
+            comprehensive_slice_figure(evaled_num,
+                                       norm=synth_beam_norm,
+                                       name="beam_box_post_interpolation.png")
         
         self.synth_beam_den=synth_beam_den
         self.beam_aux_den=beam_aux_den
@@ -1345,7 +1322,6 @@ class cosmo_stats(object):
             self.taper_for_convolution=np.tile(taper_for_convolution, (Nxy_padded,Nxy_padded,1))
             self.evaled_num_padded=evaled_num_padded*self.taper_for_convolution
             if (self.T_pristine is not None):
-                # print("cosmo_stats.__init__: self.T_pristine is not None -> forming self.T_beam")
                 self.T_beam=convolve(self.evaled_num_padded,self.T_pristine.value,mode="valid")*self.temp_unit
         
         # strictness control for realization averaging
@@ -1732,46 +1708,9 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
             self.all_boxes=all_boxes
         self.pb_types,self.weights=beam_type_distribution(N_NS,N_EW,N_total_beam_types, distribution=self.distribution)
 
-        fracs=[0,1e-5,1/3,1/2,1]
-        Pnorm=LogNorm(vmax=1)
-        sh0,_,sh2=fidu_box.shape
-        fig,axs=plt.subplots(len(fracs),3,layout="constrained",figsize=(8,15))
-        axs[0,0].set_title("x index 0/"+str(sh0-1))
-        axs[0,1].set_title("y index 0/"+str(sh0-1))
-        axs[0,2].set_title("z index 0/"+str(sh0-1)+"\nslice std="+str(np.round(np.std(fidu_box),3)))
-        for i,frac in enumerate(fracs):
-            xy_idx=int(frac*sh0)
-            z_idx=int(frac*sh2)
-            if frac==1:
-                xy_idx-=1
-                z_idx-=1
-            elif frac==1e-5:
-                xy_idx=1
-                z_idx=1
-            if i>0:
-                axs[i,0].set_title(str(xy_idx)+"/"+str(sh0-1))
-                axs[i,1].set_title(str(xy_idx)+"/"+str(sh0-1))
-                axs[i,2].set_title(str(z_idx )+"/"+str(sh2 -1)+"\nslice std="+str(np.round(np.std(fidu_box[:,:,z_idx]),3)))
-
-            sl0=fidu_box[xy_idx,:,:]
-            img=axs[i,0].imshow(sl0.T,origin="lower",norm=Pnorm)
-            plt.colorbar(img,ax=axs[i,0])
-            axs[i,0].set_xlabel("y idx")
-            axs[i,0].set_ylabel("z idx")
-
-            sl1=fidu_box[:,xy_idx,:]
-            img=axs[i,1].imshow(sl1.T,origin="lower",norm=Pnorm)
-            plt.colorbar(img,ax=axs[i,1])
-            axs[i,1].set_xlabel("x idx")
-            axs[i,1].set_ylabel("z idx")
-
-            sl2=fidu_box[:,:,z_idx]
-            img=axs[i,2].imshow(sl2.T,origin="lower",norm=Pnorm)
-            plt.colorbar(img,ax=axs[i,2])
-            axs[i,2].set_xlabel("x idx")
-            axs[i,2].set_ylabel("y idx")
-        plt.savefig("fidu_box_unprocessed.png", dpi=500)
-        plt.close()
+        comprehensive_slice_figure(fidu_box,
+                                   norm=LogNorm(vmax=1),
+                                   name="fidu_box_unprocessed.png")
 
         # ungridded instantaneous uv-coverage (baselines in xyz)
         # second use of the loop: iterate over baselines to make arrays of beam type indices     
@@ -1850,7 +1789,7 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
                 gridded_uv,_,_=np.histogram2d(reshaped_u,reshaped_v,bins=uvbins_use)
                 comb=np.nonzero(gridded_uv)
                 gridded_uv[comb]/=gridded_uv[comb]
-                gridded_im=fftshift(irfftn(ifftshift(gridded_uv*self.d2u),
+                gridded_im=fftshift(irfftn(ifftshift(gridded_uv*self.d2u), # irfftn silently discarding imag part of symmetry slices of the last transformed axis is not a problem here because the uv slices in question are entirely real-valued
                                            norm="forward",s=(Npix,Npix)))
                 LoS_idx=np.argmin(np.abs(self.nu_obs-self.CST_freqs))
                 beam_i=self.all_boxes[type_i,:,:,LoS_idx] # [N_total_beam_types, Nxy, Nxy, Nz]
