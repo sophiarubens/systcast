@@ -233,14 +233,14 @@ class beam_effects(object):
                  array_version:str="full",          # full or pathfinder CHORD?
 
                  # beam config
-                 CST_lo=None,CST_hi=None,                                               # low and high frequencies of the CST simulation band (GHz !!!!!!!!!!not MHz)
-                 CST_deltanu=None,                                                      # frequency spacing of CST simulations (MHz)
-                 beam_sim_directory=None,                                               # directory to import CST simulations from 
-                 beam_domain:np.ndarray=None,                                           # config space pts at which a pre–discretely sampled beam is known
-                 f_mid1:str=")_[1]",f_mid2:str=")_[2]",                                 # middle part of CST file names... should include something distinguish the two polarizations (not enforced)
-                 f_tail:str="_efield.txt",                                              # trailing part of CST file names 
-                 CST_f_head_fidu:str="farfield_(f=",CST_f_head_syst:str="farfield_(f=", # start of CST file names for different beam types (see Memo I for terminology description)
-                 pointing_errors=[0.,0.,0.],                                            # subject the real and thgt beams to pointing errors 
+                 CST_lo=None,CST_hi=None,                                     # low and high frequencies of the CST simulation band (GHz !!!!!!!!!!not MHz)
+                 CST_deltanu=None,                                            # frequency spacing of CST simulations (MHz)
+                 beam_sim_directory=None,                                     # directory to import CST simulations from 
+                 beam_domain:np.ndarray=None,                                 # config space pts at which a pre–discretely sampled beam is known
+                 f_mid1:str="pol1/f_",f_mid2:str="pol1/f_",                   # middle part of CST file names... should include something distinguish the two polarizations (not enforced)
+                 f_tail:str="_GHz.txt",                                       # trailing part of CST file names 
+                 CST_f_head_fidu:str="fiducial/",CST_f_head_syst:str="syst/", # start of CST file names for different beam types (see Memo I for terminology description)
+                 pointing_errors=[0.,0.,0.],                                  # subject the real and thgt beams to pointing errors 
 
                  # FORECASTING
                  pars_set_cosmo:np.ndarray=pars_fidu,          # cosmo params to condition CAMB calls
@@ -347,12 +347,10 @@ class beam_effects(object):
             
         already_imported_fidu_CST=Path("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy").is_file()
         already_imported_syst_CST=Path("syst_boxes_"+ioname+".npy").is_file()
-        p1="pol1/f_"
-        p2="pol2/f_"
         if heavy_beam_recalc and not already_imported_fidu_CST:
             fidu=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=def_PA_N_grid_pix,
-                                        beam_sim_directory=beam_sim_directory,f_head="fiducial/",
-                                        f_mid1=p1,f_mid2=p2,f_tail="_GHz.txt",box_outname="fidu_box_"+ioname)
+                                        beam_sim_directory=beam_sim_directory,f_head=CST_f_head_fidu,
+                                        f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="fidu_box_"+ioname)
             fidu.construct_CST_box()
             print("generated fidu beam box\n")
             fidu_box=fidu.box
@@ -372,7 +370,7 @@ class beam_effects(object):
             for i,CST_f_head_syst_i in enumerate(CST_f_head_syst):
                 syst=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=def_PA_N_grid_pix,
                                             beam_sim_directory=beam_sim_directory,f_head=CST_f_head_syst_i,
-                                            f_mid1=p1,f_mid2=p2,f_tail="_GHz.txt",box_outname="syst_box_"+ioname)
+                                            f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="syst_box_"+ioname)
                 syst.construct_CST_box()
                 print("generated syst beam box\n")
                 syst_boxes[i,:,:,:]=syst.box
