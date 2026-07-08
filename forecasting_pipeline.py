@@ -649,7 +649,6 @@ class beam_effects(object):
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                                 effective_primary_beam_for_effective_volume=self.fi_eff_primary_box, eff_pri_domain=self.beam_modes,
                                 synth_beam_num=self.fidu,
-                                synth_beam_den=self.fidu,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 beam_modes=self.pbm_for_cs,
                                 LoS_taper=self.LoS_taper,image_taper=self.image_taper,
@@ -662,7 +661,6 @@ class beam_effects(object):
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                                 effective_primary_beam_for_effective_volume=self.sy_eff_primary_box, eff_pri_domain=self.beam_modes,
                                 synth_beam_num=self.thgt,
-                                synth_beam_den=self.thgt,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
                                 beam_modes=self.pbm_for_cs,
                                 LoS_taper=self.LoS_taper,image_taper=self.image_taper,
@@ -673,7 +671,6 @@ class beam_effects(object):
                                 effective_primary_beam_for_effective_volume=self.sy_eff_primary_box, eff_pri_domain=self.beam_modes,
                                 T_pristine=fg_box,
                                 synth_beam_num=self.thgt,
-                                synth_beam_den=self.thgt,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
                                 beam_modes=self.pbm_for_cs,
                                 LoS_taper=self.LoS_taper,image_taper=self.image_taper,
@@ -684,7 +681,6 @@ class beam_effects(object):
                                 effective_primary_beam_for_effective_volume=self.fi_eff_primary_box, eff_pri_domain=self.beam_modes,
                                 T_pristine=fg_box,
                                 synth_beam_num=self.fidu,
-                                synth_beam_den=self.fidu,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
                                 beam_modes=self.pbm_for_cs,
                                 LoS_taper=self.LoS_taper,image_taper=self.image_taper,
@@ -695,7 +691,6 @@ class beam_effects(object):
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                                 effective_primary_beam_for_effective_volume=self.fi_eff_primary_box, eff_pri_domain=self.beam_modes,
                                 synth_beam_num=self.fidu,
-                                synth_beam_den=self.fidu,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 beam_modes=self.pbm_for_cs,
                                 LoS_taper=self.LoS_taper,image_taper=self.image_taper,
@@ -706,7 +701,6 @@ class beam_effects(object):
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
                                 effective_primary_beam_for_effective_volume=self.sy_eff_primary_box, eff_pri_domain=self.beam_modes,
                                 synth_beam_num=self.thgt,
-                                synth_beam_den=self.thgt,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 beam_modes=self.pbm_for_cs,
                                 LoS_taper=self.LoS_taper,image_taper=self.image_taper,
@@ -1011,9 +1005,8 @@ class cosmo_stats(object):
                  P_fid:np.ndarray=None,                                                      # power spectrum you want to window. probably comes from cosmo (like CAMB) or is flat (for a reference calculation)
                  k_fid:np.ndarray=None,                                                      # Fourier space points where the fiducial power spectrum is sampled
                  Nvox:int=None,Nvoxz:int=None,                                               # number of voxels in the x/y or z directions
-                 synth_beam_num:np.ndarray=None,     synth_beam_den:np.ndarray=None,     # numerator/denominator (of power spectrum estimator) version of the beam (box of values evaluated in config space)
+                 synth_beam_num:np.ndarray=None,     # version of the beam (box of values evaluated in config space)
                  effective_primary_beam_for_effective_volume=None, eff_pri_domain=None,
-                 beam_aux_num:np.ndarray=None, beam_aux_den:np.ndarray=None, # numerator/denominator version of helpful quantities that go along with the beam (characteristic widths for a per-antenna Gaussian beam; x/y and z vectors for a CST beam)
                  Nkperp:int=0,Nkpar:int=0,                                                  # number of k-bins in the sky plane and line of sight directions
                  binning_mode:str="lin",                                                     # bin linearly or logarithmically
                  bin_each_realization:bool=False,                                            # bin each realization of the Monte Carlo? (with the current implementation there's no typical use case where this would be necessary, but the option is there)
@@ -1086,8 +1079,6 @@ class cosmo_stats(object):
                 if (Pfiddims==2):
                     if synth_beam_num is None: # trying to do a minimalistic instantiation where I merely provide a fiducial power spectrum and interpolate it
                         self.fid_Nkperp,self.fid_Nkpar=Pfidshape
-                        if synth_beam_den is not None: 
-                            raise ValueError("conflicting info") # numerator beam needs to be the fiducial one; doesn't make sense to claim you have a perturbed but not fiducial pb
                     else:
                         try: # see if the power spec is a CAMB-esque (1,npts) array
                             self.P_fid=np.reshape(P_fid,(Pfidshape[-1],),order="C") # make the CAMB MPS shape amenable to the calcs internal to this class
@@ -1228,7 +1219,6 @@ class cosmo_stats(object):
 
         # beam
         evaled_num=None
-        evaled_den=None
         if effective_primary_beam_for_effective_volume is None:
             if synth_beam_num is not None:
                 raise ValueError("not enough info")
@@ -1246,7 +1236,6 @@ class cosmo_stats(object):
                                        name="effective_primary_interpolated.png")
             self.effective_volume=np.sum((eff_pri_this_domain*self.taper_xyz_centre)**2*self.d3r)
         self.synth_beam_num=synth_beam_num
-        self.beam_aux_num=beam_aux_num
         self.beam_modes=beam_modes # fi and sy beams assumed to be sampled at the same modes, if these are passed
         if (self.synth_beam_num is not None): # non-identity FIDUCIAL beam
             try:    # to access this branch, the manual/ numerically sampled beam needs to be close enough to a numpy array that it has a shape and not, e.g. a callable
@@ -1294,21 +1283,8 @@ class cosmo_stats(object):
                                        norm=synth_beam_norm,
                                        name="beam_box_post_interpolation.png")
         
-        self.synth_beam_den=synth_beam_den
-        self.beam_aux_den=beam_aux_den
         self.beam_modes=beam_modes # fi and sy assumed to be sampled at the same modes, if relevant and not None
-        if (self.synth_beam_den is not None): # non-identity PERTURBED beam
-            try:    # to access this branch, the manual/ numerically sampled beam needs to be close enough to a numpy array that it has a shape and not, e.g. a callable... so, no danger of attribute errors
-                synth_beam_den.shape
-            except: # beam is a callable (or something else without a shape method), which is not in line with how this part of the code is supposed to work
-                raise ValueError("conflicting info") 
-            if self.beam_modes is None:
-                raise ValueError("not enough info")
 
-            evaled_den=RGI(beam_modes,self.synth_beam_den,
-                                    bounds_error=False,fill_value=None)(self.to_eval_at).T
-
-        self.evaled_den=evaled_den
         self.evaled_num=evaled_num
         
 
