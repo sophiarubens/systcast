@@ -1191,7 +1191,7 @@ class cosmo_stats(object):
             if synth_beam_num is not None:
                 raise ValueError("not enough info")
             else:
-                self.effective_volume=physical_volume
+                self.effective_volume=np.sum(self.taper_xyz_centre**2*self.d3r)
         else:
             interpolator=RGI((eff_pri_domain),effective_primary_beam_for_effective_volume,
                              bounds_error=avoid_extrapolation,fill_value=None)
@@ -1337,7 +1337,7 @@ class cosmo_stats(object):
                     raise ValueError("not enough info")
 
                 evaled_den=RGI(beam_modes,self.synth_beam_den,
-                                       bounds_error=False,fill_value=None)(np.array([self.xx_grid.value,self.yy_grid.value,self.zz_grid.value]).T).T
+                                       bounds_error=False,fill_value=None)(self.to_eval_at).T
 
         self.evaled_den=evaled_den
         self.evaled_num=evaled_num
