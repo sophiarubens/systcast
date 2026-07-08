@@ -1827,7 +1827,7 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
             pbw_fidu_use=self.pbw_fidu
         all_ungridded_u=self.uv_synth[:,0,:]
         all_ungridded_v=self.uv_synth[:,1,:]
-        uvmagmax=tol*np.max([np.max(np.abs(all_ungridded_u)),
+        uvmagmax=np.max([np.max(np.abs(all_ungridded_u)),
                              np.max(np.abs(all_ungridded_v))])
 
         uvmagmin=2*uvmagmax/Npix
@@ -1892,7 +1892,8 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
 
             chan_gridded_implane=self.calc_uv_slice(Npix=N_grid_pix, tol=tol) # compute this channel's synthesized beam
             
-            box_xyz[:,:,i]=chan_gridded_implane/np.max(chan_gridded_implane) # peak-normalize in configuration space
+            # box_xyz[:,:,i]=chan_gridded_implane/np.max(chan_gridded_implane) # peak-normalize in configuration space
+            box_xyz[:,:,i]=chan_gridded_implane
             if ((i%(self.N_chan//3))==0):
                 print("{:7.1f} pct complete".format(i/self.N_chan*100))
         self.box=box_xyz
