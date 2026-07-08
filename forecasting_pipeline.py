@@ -1546,7 +1546,8 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
                  distribution:str="random",                                        # distribution of per-antenna systematics. the options I've encoded for now are random, column, and corner, based on where the fiducial beam types are placed within the array
                  per_channel_systematic=None,                                      # apply a systematic that corrupts the 1/lambda scaling of the beam width? options encoded so far are sporadic (multiply the beam widths for a contiguous chunk of frequency channels by a different multiplicative prefactor for the different fiducial beam types) and D3A-like (noise + too wide at low frequencies... inspired by early three-dish transit beam measurements)
                  evol_restriction_threshold:float=def_evol_restriction_threshold,  # max \delta z/z you will tolerate for the survey of interest and still consider the box close enough to coeval
-    
+                 weighting="uniform",
+
                  sub_ensemble_of_CST_beams=None,                                   # array-like with shape (N_CST_types, N_pointing_errors+1, N_CST_xy, N_CST_xy, N_CST_freqs)
                  CST_xy=None,CST_freqs=None                                        # domain of each CST box in the ensemble. this domain is currently assumed to be the same for each box (not very rigorous/robust, but in practice, if you're running a simulation for a given survey frequency, it would be fairly pathological/ unintuitive/ anti–Occam's razor to get these boxes from CST slices at different frequencies. I guess the practical guidance/takeaway here is that my initial implementation will not support getting different boxes from different CST box resolutions)
                  ): 
@@ -1624,9 +1625,11 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         self.N_CST_xy=N_CST_xy
         self.N_CST_freqs=len(CST_freqs)
 
+        # beam synthesis numerics
         taper_1d_centre=Blackman_Harris_safe_for_FFT(N_CST_xy)
         taper_xx,taper_yy=np.meshgrid(taper_1d_centre,taper_1d_centre,indexing="ij")
         self.taper_slice=taper_xx*taper_yy
+        self.weighting=weighting
 
         if type(sub_ensemble_of_CST_beams) is not list: # can't use .ndim because it doesn't behave well for the inhomog arrays of the else
             print("synthesize_beam received only a !fiducial! beam box")
@@ -1736,9 +1739,10 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
                 N_here=N_bl_here*N_hr_angles_here
                 reshaped_u=np.reshape(u_here,N_here,order="C")
                 reshaped_v=np.reshape(v_here,N_here,order="C")
-                gridded_uv,_,_=np.histogram2d(reshaped_u,reshaped_v,bins=uvbins_use)
+                gridded_uv,_,_=np.histogram2d(reshaped_u,reshaped_v,bins=uvbins_use) # natural weighting
                 comb=np.nonzero(gridded_uv)
-                gridded_uv[comb]/=gridded_uv[comb]
+                if self.weighting=="uniform":
+                    gridded_uv[comb]=1/gridded_uv[comb]
                 gridded_im=fftshift(irfftn(ifftshift(gridded_uv*self.taper_slice*self.d2u), # irfftn silently discarding imag part of symmetry slices of the last transformed axis is not a problem here because the uv slices in question are entirely real-valued
                                            norm="forward",s=(Npix,Npix)))
                 LoS_idx=np.argmin(np.abs(self.nu_obs-self.CST_freqs))
@@ -1771,8 +1775,7 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
             nu_obs=c/self.lambda_obs
             self.nu_obs=nu_obs.decompose()
 
-            chan_gridded_implane=self.calc_uv_slice(Npix=N_grid_pix, tol=tol) # compute this channel's synthesized beam
-            
+            chan_gridded_implane=self.calc_uv_slice(Npix=N_grid_pix, tol=tol) # compute this channel's synthesized beam            
             # box_xyz[:,:,i]=chan_gridded_implane/np.max(chan_gridded_implane) # peak-normalize in configuration space
             box_xyz[:,:,i]=chan_gridded_implane
             if ((i%(self.N_chan//3))==0):
@@ -1843,12 +1846,6 @@ class reconfigure_CST_beam(object):
         self.freq_names=freq_names
 
     def translate_sim_beam_slice(self,CST_filename:str,i:int=0):
-        # print(CST_filename)
-        # with open(CST_filename) as fh:
-        #     lines=fh.readlines()[2:]  # skip header + dashed line
-        # data=io.StringIO("\n".join(l.strip() for l in lines))
-        # df=pd.read_csv(data, sep=r"\s+", header=None,
-        #                names=["theta", "phi", "AbsE", "AbsCr", "PhCr", "AbsCo", "PhCo", "AxRat"])
         df = pd.read_table(CST_filename, skiprows=[0, 1], sep="\s+", engine="python", 
                            
                            # lots of fields in each CST sim, but only the first three are helpful for forming Stokes I E-field beams (precursor for the Stokes I power beams I form from two pols of a given simulation setup and frequency)
@@ -2691,7 +2688,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
 
     ensemble_of_plot_params=[xx_fi_sy_fg_params,                    co_fi_xx_fg_params,     co_fi_sy_fg_params,                       
                              Presidual_params,                      Pratio_params,          xx_xx_xx_fg_params,     
-                             isoratio_params,                       co_xx_xx_xx_params,     co_fi_xx_xx_params,    co_fi_sy_xx_params, 
+                             isoratio_params,                       co_xx_xx_xx_params,     co_fi_xx_xx_params,   co_fi_sy_xx_params, 
                              co_xx_xx_fg_params,                    xx_fi_xx_fg_params,     P_CO_XX_XX_XX_params, co_xx_xx_fg_lin_params, 
                              co_fi_xx_fg_lin_params,                co_fi_sy_fg_lin_params, co__divby__fg_params, co_fi_sy_fg__divby__P_co_fi_xx_fg_params, 
                              co_fi_sy_xx__minus__co_fi_xx_xx_params]
