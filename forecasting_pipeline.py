@@ -160,11 +160,12 @@ def Blackman_Harris_safe_for_FFT(N): # !!centre-origin!! apodization function
       +a2*np.cos(4.*pi*n/N) \
       -a3*np.cos(6.*pi*n/N)
     return w
-def comprehensive_slice_figure(box,                     # 3D box to plot slices of
-                               norm=None,               # norm of the colour scale
-                               name="placeholder.png",  # name of the output figure
-                               dpi=500,                 # resolution of the output figure
-                               fracs=[0,1e-5,1/3,1/2,1] # fractions along each axis at which to slice the box
+def comprehensive_slice_figure(box,                      # 3D box to plot slices of
+                               norm=None,                # norm of the colour scale
+                               name="placeholder.png",   # name of the output figure
+                               dpi=500,                  # resolution of the output figure
+                               fracs=[0,1e-5,1/3,1/2,1], # fractions along each axis at which to slice the box
+                               cmap=None
                                ):
     box_shape=box.shape
     assert len(box_shape)==3, "this plotting function requires a 3D box"
@@ -172,7 +173,7 @@ def comprehensive_slice_figure(box,                     # 3D box to plot slices 
     _,axs=plt.subplots(len(fracs),3,layout="constrained",figsize=(8,15))
     axs[0,0].set_title("x index 0/"+str(Nx-1))
     axs[0,1].set_title("y index 0/"+str(Ny-1))
-    axs[0,2].set_title("z index 0/"+str(Nz-1)+"\nslice std="+str(np.round(np.std(box),3)))
+    axs[0,2].set_title("z index 0/"+str(Nz-1))
     for i,frac in enumerate(fracs):
         x_idx=int(frac*Nx)
         y_idx=int(frac*Ny)
@@ -188,22 +189,22 @@ def comprehensive_slice_figure(box,                     # 3D box to plot slices 
         if i>0:
             axs[i,0].set_title(str(x_idx)+"/"+str(Nx-1))
             axs[i,1].set_title(str(y_idx)+"/"+str(Ny-1))
-            axs[i,2].set_title(str(z_idx )+"/"+str(Nz-1)+"\nslice std="+str(np.round(np.std(box[:,:,z_idx]),3)))
+            axs[i,2].set_title(str(z_idx )+"/"+str(Nz-1))
 
         sl0=box[x_idx,:,:]
-        img=axs[i,0].imshow(sl0.T,origin="lower",norm=norm)
+        img=axs[i,0].imshow(sl0.T,origin="lower",norm=norm,cmap=cmap)
         plt.colorbar(img,ax=axs[i,0])
         axs[i,0].set_xlabel("y idx")
         axs[i,0].set_ylabel("z idx")
 
         sl1=box[:,y_idx,:]
-        img=axs[i,1].imshow(sl1.T,origin="lower",norm=norm)
+        img=axs[i,1].imshow(sl1.T,origin="lower",norm=norm,cmap=cmap)
         plt.colorbar(img,ax=axs[i,1])
         axs[i,1].set_xlabel("x idx")
         axs[i,1].set_ylabel("z idx")
 
         sl2=box[:,:,z_idx]
-        img=axs[i,2].imshow(sl2.T,origin="lower",norm=norm)
+        img=axs[i,2].imshow(sl2.T,origin="lower",norm=norm,cmap=cmap)
         plt.colorbar(img,ax=axs[i,2])
         axs[i,2].set_xlabel("x idx")
         axs[i,2].set_ylabel("y idx")
@@ -578,25 +579,32 @@ class beam_effects(object):
         fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Deltabox_z,
                        P_fid=self.P_flat,k_fid=self.k_for_flat,
                        Nvox=self.Nvox_box_xy,Nvoxz=1,
-                       seed=self.seed, nu_ctr=self.nu_ctr) 
+                       seed=rngseed,nu_ctr=self.nu_ctr) 
         fg.generate_GRF()
-        white_noise_slice=fg.T_pristine
-        
+        white_noise_slice=fg.T_pristine.to(Tref.unit).value
+        # print("white noise slice temp units:",fg.T_pristine.unit)
+        # print("np.mean(white_noise_slice), np.std(white_noise_slice) =",np.mean(white_noise_slice), np.std(white_noise_slice)) # -2.0599841277224584e-18 0.20017005259588688
+
         # bookkeeping to prep for power law
         freqs_in_ref_unit=self.freqs_for_fg.to(nuref.unit)   
         fg_box_this_ingredient=np.zeros((self.Nvox_box_xy,self.Nvox_box_xy,self.Nvox_box_z))
-        rng=np.random.default_rng(rngseed)
+        rng=np.random.default_rng(rngseed+1)
+        # print("initialized slice_of_alphas RNG with seed",rngseed)
         freq_ratios=freqs_in_ref_unit/nuref
         slice_of_alphas=rng.normal(loc=alpha, scale=sigma_alpha, size=(self.Nvox_box_xy,self.Nvox_box_xy))
 
         # apply LoS power law renormalization to each slice  
+        # print("MANUALLY OVERRIDING FOREGROUND STATISTICS")
         for i,freq_ratio_i in enumerate(freq_ratios):
             fg_slice = Tref.value*freq_ratio_i**slice_of_alphas *white_noise_slice
+            # fg_slice-=np.mean(fg_slice)
             fg_box_this_ingredient[:,:,i]=fg_slice
+        # print("check last slice: Tref.value, freq_ratio_i, np.mean(slice_of_alphas) =",Tref.value, freq_ratio_i, np.mean(slice_of_alphas)) # nothing super alarming here for the synchrotron test case: 335.4 3.933333333333333 -2.7989298861610825
+        # print("check last slice: np.mean(fg_slice), np.std(fg_slice) =",np.mean(fg_slice), np.std(fg_slice)) # frustrating to see that 15 orders of magnitude of near-zero have gone up in smoke: 0.004150945162675765 1.4897165599263442
 
         fg_box_this_ingredient*=Tref.unit
         fg_box_this_ingredient=fg_box_this_ingredient.to(u.mK)
-        return fg_box_this_ingredient # centre-origin
+        return fg_box_this_ingredient # centre-origin (fftshifted)
 
     def calc_power_contamination(self, isolated:bool=False): # Monte Carlo numerical windowing of beam-aware brightness temp boxes to yield several cylindrically power spectra of interest for forecasting and diagnostics. various states of beam knowledge and fiducial spectrum as appropriate (see Memos I-II)
         if self.P_fid_for_cont_pwr is None:
@@ -608,22 +616,30 @@ class beam_effects(object):
         else:
             raise ValueError("unknown P_fid_for_cont_pwr")
 
-        power_unit=u.mK**2*self.Deltabox_xy.unit**3
+        foreground_temp_unit=u.K
         N_flat=10*self.Nkpar_surv
-        P_flat=np.ones(N_flat) *power_unit
+        P_flat=np.ones(N_flat) *foreground_temp_unit**2 *self.Deltabox_xy.unit**3
         self.P_flat=P_flat
         self.k_for_flat=np.linspace(self.kparmin_surv,self.kparmax_surv,10*self.Nkpar_surv)
         if self.layer_foregrounds:
             self.freqs_for_fg= np.linspace(self.nu_hi.value,self.nu_lo.value, # descending in frequency to match the iteration over increasing redshift
                                            self.Nvox_box_z,endpoint=True)*self.Deltanu.unit
             fg_box=np.zeros((self.Nvox_box_xy,self.Nvox_box_xy,self.Nvox_box_z))*u.mK
-            fg_info_cases=[ [335.4*u.K, 150*u.MHz, -2.8,  0.1],   # synchrotron
-                            [33.5 *u.K, 150*u.MHz, -2.15, 0.01] ] # free-free
+            fg_info_cases=[ [335.4*foreground_temp_unit, 150*u.MHz, -2.8,  0.1],   # synchrotron
+                            [33.5 *foreground_temp_unit, 150*u.MHz, -2.15, 0.01] ] # free-free
+            # fg_info_cases=[[335.4*foreground_temp_unit, 150*u.MHz, -2.8,  0.1]]
             for fg_info in fg_info_cases:
                 Tref,nuref,alpha,sigma_alpha=fg_info
                 fg_box_ingredient=self.get_pwr_law_FG_ingredient(Tref,nuref,alpha,sigma_alpha)
                 fg_box+=fg_box_ingredient
             self.fg_box=fg_box # centre-origin
+            np.save("fg_map.npy",fg_box.value)
+            extreme=np.max(np.abs(fg_box.value))
+            # print("np.mean(fg_box), np.std(fg_box) =",np.mean(fg_box), np.std(fg_box))
+            comprehensive_slice_figure(fg_box.value,
+                                       norm=CenteredNorm(halfrange=extreme),
+                                       cmap="RdBu",
+                                       name="fg_box.png")
 
             fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            LoS_taper=self.LoS_taper,image_taper=self.image_taper,
@@ -799,6 +815,7 @@ class beam_effects(object):
                                              kperp_to_use=self.kperp_for_cosmo[:-1]+0.5*(self.kperp_for_cosmo[1]-self.kperp_for_cosmo[0]), 
                                              kpar_to_use=self.kpar_for_cosmo[:-1]+0.5*(self.kpar_for_cosmo[1]-self.kpar_for_cosmo[0]))
         self.P_co_xx_xx_xx=P_co_xx_xx_xx
+        # print("np.mean(COSMOTEST.T_pristine), np.std(COSMOTEST.T_pristine) =",np.mean(COSMOTEST.T_pristine),np.std(COSMOTEST.T_pristine))
 
         if isolated==False:
             self.Pcont_cyl=self.P_co_fi_sy_fg-self.P_co_fi_xx_fg
@@ -917,7 +934,7 @@ class beam_effects(object):
         C=np.linalg.inv(self.F)
         if np.any(C==np.nan):
             C=np.linalg.pinv(self.F)
-        rng=np.random.default_rng
+        rng=np.random.default_rng()
         samples=rng.multivariate_normal(np.zeros(self.N_pars_forecast),C,size=N_Fisher_samples)
         pygtc.plotGTC(chains=samples, 
                       paramNames=self.pars_forecast_names,
@@ -1000,11 +1017,6 @@ class cosmo_stats(object):
                  wedge_cut:bool=False,nu_ctr=None,                                      # throw away info from k-modes inside the foreground wedge?; when using synchrotron foregrounds AND performing a wedge cut, the calling routine should specify the central frequency of the survey in question to have a physical anchor for the foregrounds. also need central freq for FoG
                  fg_box:np.ndarray=None):                                               # foregrounds to add to the signal-of-interest map (T)
         
-        # units
-        self.temp_unit= T_pristine.unit if T_pristine is not None else u.mK
-        self.length_unit=  Lxy.unit
-        self.power_unit= self.temp_unit**2 *self.length_unit**3
-        
         # spectrum and box
         if (Lz is None): # cubic box
             self.Lz=Lxy
@@ -1069,6 +1081,14 @@ class cosmo_stats(object):
                     self.fid_Nkpar=0
                 else:
                     raise ValueError("unsupported binning mode")
+                
+        # units! branching is safe now that eval reaching here has been confirmed to not be missing necessary info
+        self.length_unit=  Lxy.unit
+        if T_pristine is not None:
+            self.temp_unit=T_pristine.unit
+        else:
+            self.temp_unit=(self.P_fid.unit/self.length_unit**3)**0.5
+        self.power_unit= self.temp_unit**2 *self.length_unit**3
         
         # config space
         self.box_shape=(self.Nvox,self.Nvox,self.Nvoxz) if self.Nvoxz>1 else (self.Nvox,self.Nvox)
@@ -1097,6 +1117,8 @@ class cosmo_stats(object):
         self.kmag_grid_centre_flat=np.reshape(self.kmag_grid_centre,(self.Nvox**2*self.Nvoxz),order="C")
         self.kmag_grid_corner_flat=np.reshape(self.kmag_grid_corner,(self.Nvox**2*self.Nvoxz,),order="C")
         self.kmag_grid_for_comparison= self.kmag_grid_corner if self.Nvoxz>1 else self.kmag_grid_corner[:,:,0]
+        if self.Nvoxz==1:
+            np.savetxt("kmag_grid_for_comparison.txt",self.kmag_grid_for_comparison.value)
               
         self.kpar_column_centre= np.abs(fftshift(self.kz_vec_for_box_corner))                                      # magnitudes of kpar for a representative column along the line of sight (z-like)
         self.kperp_slice_centre= np.sqrt(fftshift(self.kx_grid_corner)**2+fftshift(self.ky_grid_corner)**2)[:,:,0] # magnitudes of kperp for a representative slice transverse to the line of sight (x- and y-like)
@@ -1124,10 +1146,8 @@ class cosmo_stats(object):
             self.voxels_in_wedge_corner=self.kz_grid_corner<=wedge_kpar_threshold_corner
         
         # rng management
-        if seed is not None:
-            self.rng=np.random.default_rng(seed)
-        else:
-            self.rng=np.random.default_rng()
+        self.rng=np.random.default_rng(seed)
+        # print("initialized cosmo_stats RNG with seed",seed)
 
         # if P_fid was passed, establish its values on the k grid (helpful when generating a box)
         self.k_fid=k_fid
@@ -1192,10 +1212,25 @@ class cosmo_stats(object):
         if LoS_taper:
             taper_z= Blackman_Harris_safe_for_FFT(Nvoxz) # confirmed to be centre-, not corner-origin
             fftshift_axes+=(2,)
-        taper_xxx,taper_yyy,taper_zzz=np.meshgrid(taper_xy,taper_xy,taper_z, indexing="ij")
-        taper_xyz_product=taper_xxx*taper_yyy*taper_zzz
+        if self.Nvoxz>1:
+            taper_xxx,taper_yyy,taper_zzz=np.meshgrid(taper_xy,taper_xy,taper_z, indexing="ij")
+            taper_xyz_product=taper_xxx*taper_yyy*taper_zzz
+        else:
+            taper_xx,taper_yy=np.meshgrid(taper_xy,taper_xy,indexing="ij")
+            taper_xyz_product=taper_xx*taper_yy
         self.taper_xyz_centre=taper_xyz_product
         self.taper_xyz_corner=ifftshift(taper_xyz_product,axes=fftshift_axes)
+        # if fftshift_axes==():
+        #     taper_product_FT_corner=1
+        #     taper_product_FT_centre=1
+        # else:
+        #     taper_product_FT_corner=fftn(self.taper_xyz_corner,axes=fftshift_axes)
+        #     taper_product_FT_centre=fftshift(taper_product_FT_corner,axes=fftshift_axes)
+        #     comprehensive_slice_figure(np.abs(taper_product_FT_centre),
+        #                             #    norm=,
+        #                                name="abs_taper_product_FT_centre.png")
+        # self.taper_product_FT_corner=taper_product_FT_corner
+        # self.taper_product_FT_centre=taper_product_FT_centre
 
         # beam
         evaled_num=None
@@ -1221,7 +1256,7 @@ class cosmo_stats(object):
             try:    # to access this branch, the numerically sampled beam needs to be close enough to a numpy array that it has a shape and not, e.g. a callable
                 synth_beam.shape
             except: # beam is a callable (or something else without a shape method), which is not in line with how this part of the code is supposed to work
-                raise ValueError("conflicting info") 
+                raise ValueError("beam must be array-like in this pipeline version") 
             if self.beam_domain is None:
                 raise ValueError("not enough info")
 
@@ -1251,16 +1286,19 @@ class cosmo_stats(object):
                 extrapolation_warning("low z",   z_want_lo,  z_have_lo)
             if (z_want_hi>z_have_hi):
                 extrapolation_warning("high z",   z_want_hi,  z_have_hi)
+            print("original: xy {} -> {}\n          z {} -> {}".format(x_have_lo,x_have_hi,z_have_lo,z_have_hi))
             evaled_num=RGI(beam_domain,self.synth_beam,
-                                    bounds_error=False,fill_value=None)(self.to_eval_at).T
+                           bounds_error=False,fill_value=None)(self.to_eval_at).T
             self.evaled_num=evaled_num
 
-            synth_beam_norm=SymLogNorm(1e-2,vmin=-1,vmax=1)
+            synth_beam_norm=TwoSlopeNorm(0,vmin=-1,vmax=1)
             comprehensive_slice_figure(self.synth_beam, 
-                                    #    norm=synth_beam_norm,
+                                       norm=synth_beam_norm,
+                                       cmap="RdBu",
                                        name="beam_box_pre__interpolation.png")
             comprehensive_slice_figure(evaled_num,
-                                    #    norm=synth_beam_norm,
+                                       norm=synth_beam_norm,
+                                       cmap="RdBu",
                                        name="beam_box_post_interpolation.png")
         
         self.beam_domain=beam_domain
@@ -1269,14 +1307,16 @@ class cosmo_stats(object):
 
         self.evaled_num_padded=None
         if evaled_num is not None:
-            assert(not np.all(np.isclose(evaled_num,0))), "synthesized beam should not be identically vanishing"
+            assert(not np.all(np.isclose(evaled_num,0,rtol=1e-10))), "synthesized beam should not be identically vanishing"
             pad_lo_xy,pad_hi_xy=get_padding(self.Nvox )
             pad_lo_z, pad_hi_z =get_padding(self.Nvoxz)
-            evaled_num_padded=np.pad(evaled_num,((pad_lo_xy,pad_hi_xy),(pad_lo_xy,pad_hi_xy),(pad_lo_z,pad_hi_z),),"edge")
+            # evaled_num_padded=np.pad(evaled_num,((pad_lo_xy,pad_hi_xy),(pad_lo_xy,pad_hi_xy),(pad_lo_z,pad_hi_z),),"edge")
+            evaled_num_padded=np.pad(evaled_num*self.taper_xyz_centre,((pad_lo_xy,pad_hi_xy),(pad_lo_xy,pad_hi_xy),(pad_lo_z,pad_hi_z),),"edge")
             taper_for_convolution=Blackman_Harris_safe_for_FFT(2*self.Nvoxz-1)
             Nxy_padded=2*self.Nvox-1
             self.taper_for_convolution=np.tile(taper_for_convolution, (Nxy_padded,Nxy_padded,1))
-            self.evaled_num_padded=evaled_num_padded*self.taper_for_convolution
+            # self.evaled_num_padded=evaled_num_padded*self.taper_for_convolution
+            self.evaled_num_padded=evaled_num_padded
             if (self.T_pristine is not None):
                 self.T_beam=convolve(self.evaled_num_padded,self.T_pristine.value,mode="valid")*self.temp_unit
         
@@ -1289,7 +1329,7 @@ class cosmo_stats(object):
         self.kparbins_interp=kparbins_interp
 
         # realization, averaging, and interpolation placeholders if no prior info
-        self.P_unbinned_running_sum=np.zeros(self.box_shape)*u.mK**2*u.Mpc**3
+        self.P_unbinned_running_sum=np.zeros(self.box_shape)*self.power_unit
         self.P_MC_complete=P_MC_complete
         self.P_interp=None
         self.MC_not_complete=None
@@ -1349,6 +1389,7 @@ class cosmo_stats(object):
                         ) # centre-origin
         modsq_T_tilde=np.abs(T_tilde)**2 *self.temp_unit**2*self.length_unit**6
         P_unbinned=modsq_T_tilde/self.effective_volume # box-shaped, but calculated according to the power spectrum estimator equation
+                #    /self.taper_product_FT_centre**2 # nice try reinventing a division-by-zero problem
 
         self.P_unbinned=P_unbinned # centre-origin
         
@@ -1401,7 +1442,6 @@ class cosmo_stats(object):
         
         self.T_pristine=T
         if self.synth_beam is not None:
-            # print("cosmo_stats.generate_GRF: self.synth_beam is not None -> forming self.T_beam")
             self.T_beam=convolve(self.evaled_num_padded,T.value,mode="valid")*self.temp_unit
 
     def power_Monte_Carlo(self,interfix:str=""): # since box generation is not deterministic
@@ -1484,8 +1524,8 @@ class cosmo_stats(object):
 def beam_type_distribution(N_NS,N_EW,N_types,distribution="random",frame_width=2):
     N_ant=N_NS*N_EW
     if N_types>0:
+        rng=np.random.default_rng()
         if distribution=="random":
-            rng=np.random.default_rng()
             synthesized_beam_types=rng.integers(0,N_types,size=(N_ant,))
         elif distribution=="corner":
             if N_types!=4:
@@ -1505,7 +1545,6 @@ def beam_type_distribution(N_NS,N_EW,N_types,distribution="random",frame_width=2
         elif distribution=="frame":
             synthesized_beam_types=np.zeros((N_NS,N_EW),dtype=np.int8)
             if N_types>1: # stricter threshold for this case based on where the random numbers come from
-                rng=np.random.default_rng()
                 sh=synthesized_beam_types.shape
                 sz=synthesized_beam_types.size
                 sz_ind=np.arange(sz)
@@ -1627,6 +1666,14 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
 
         # beam synthesis numerics
         taper_1d_centre=Blackman_Harris_safe_for_FFT(N_CST_xy)
+        self.taper_1d_centre=taper_1d_centre
+        # taper_domain=fftshift(N_CST_xy*fftfreq(N_CST_xy))
+        # taper_1d_centre=np.exp(-(taper_domain)**2/(5*N_CST_xy))
+        # plt.figure()
+        # plt.plot(taper_domain,taper_1d_centre)
+        # plt.show()
+        # plt.close()
+        # assert(1==0), "fine-tuning Gaussian taper"
         taper_xx,taper_yy=np.meshgrid(taper_1d_centre,taper_1d_centre,indexing="ij")
         self.taper_slice=taper_xx*taper_yy
         self.weighting=weighting
@@ -1707,12 +1754,12 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         self.uv_synth=uv_synth
         print("synthesized rotation")        
 
-    def calc_uv_slice(self, Npix:int=1024, pbw_fidu_use:float=None,tol:float=img_bin_tol):
+    def calc_uv_slice(self, Npix:int=1024, pbw_fidu_use:float=None):
         if pbw_fidu_use is None: # otherwise, use the one that was passed
             pbw_fidu_use=self.pbw_fidu
         all_ungridded_u=self.uv_synth[:,0,:]
         all_ungridded_v=self.uv_synth[:,1,:]
-        uvmagmax=np.max([np.max(np.abs(all_ungridded_u)),
+        uvmagmax=5*np.max([np.max(np.abs(all_ungridded_u)),
                          np.max(np.abs(all_ungridded_v))])
 
         uvmagmin=2*uvmagmax/Npix
@@ -1721,8 +1768,7 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         xy_image=self.ctr_chan_comov_dist*np.linspace(-thetamax//2,thetamax//2,Npix)
 
         uvbins=np.linspace(-uvmagmax,uvmagmax,Npix)
-        d2u=uvbins[1]-uvbins[0]
-        self.d2u=d2u
+        self.d2u=uvbins[1]-uvbins[0]
         implane=np.zeros((Npix,Npix))
         uvbins_use=np.append(uvbins,uvbins[-1]+uvbins[1]-uvbins[0])
 
@@ -1741,10 +1787,14 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
                 reshaped_v=np.reshape(v_here,N_here,order="C")
                 gridded_uv,_,_=np.histogram2d(reshaped_u,reshaped_v,bins=uvbins_use) # natural weighting
                 comb=np.nonzero(gridded_uv)
-                if self.weighting=="uniform":
+                if self.weighting=="custom":
                     gridded_uv[comb]=1/gridded_uv[comb]
+                elif self.weighting=="uniform":
+                    gridded_uv[comb]=1
+                elif self.weighting!="natural":
+                    raise ValueError("unknown uv plane weighting scheme")
                 gridded_im=fftshift(irfftn(ifftshift(gridded_uv*self.taper_slice*self.d2u), # irfftn silently discarding imag part of symmetry slices of the last transformed axis is not a problem here because the uv slices in question are entirely real-valued
-                                           norm="forward",s=(Npix,Npix)))
+                                           norm="backward",s=(Npix,Npix)))
                 LoS_idx=np.argmin(np.abs(self.nu_obs-self.CST_freqs))
                 beam_i=self.all_boxes[type_i,:,:,LoS_idx] # [N_total_beam_types, Nxy, Nxy, Nz]
                 beam_j=self.all_boxes[type_j,:,:,LoS_idx]
@@ -1760,9 +1810,11 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         plt.colorbar()
         plt.savefig("single_slice_gridded_uv.png")
         plt.close()
+        mid=int(self.N_CST_xy//2)
+        implane/=implane[mid,mid]
         return implane
 
-    def stack_to_box(self, tol:float=img_bin_tol):
+    def stack_to_box(self):
         if (self.nu_ctr_MHz.value<(350/(1-self.evol_restriction_threshold/2)) or 
             self.nu_ctr_MHz>(nu_HI_z0/(1+self.evol_restriction_threshold/2))):
             raise ValueError("{:6.2f} is out of bounds".format(self.nu_ctr_MHz))
@@ -1775,14 +1827,12 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
             nu_obs=c/self.lambda_obs
             self.nu_obs=nu_obs.decompose()
 
-            chan_gridded_implane=self.calc_uv_slice(Npix=N_grid_pix, tol=tol) # compute this channel's synthesized beam            
+            chan_gridded_implane=self.calc_uv_slice(Npix=N_grid_pix) # compute this channel's synthesized beam            
             # box_xyz[:,:,i]=chan_gridded_implane/np.max(chan_gridded_implane) # peak-normalize in configuration space
             box_xyz[:,:,i]=chan_gridded_implane
             if ((i%(self.N_chan//3))==0):
                 print("{:7.1f} pct complete".format(i/self.N_chan*100))
         self.box=box_xyz
-
-        
 
         # generate a box of r-values (necessary for interpolation to survey domain in cosmo_stats as called by beam_effects)
         xy_vec=self.CST_xy # making the coeval approximation
@@ -2359,7 +2409,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                     init_and_box_tol=0.05,CAMB_tol=0.05,                                 
                                     frac_tol_conv=frac_tol_conv,seed=seed,                                         
                                     ftol_deriv=1e-16,maxiter=5,   
-                                    LoS_taper=True,image_taper=False,        
+                                    LoS_taper=True,image_taper=False,
+                                    # LoS_taper=False,image_taper=False,        
 
                                     # CONVENIENCE
                                     heavy_beam_recalc=redo_box_calc                                                 
@@ -2432,10 +2483,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                     P_co_xx_xx_fg=windowed_survey.P_co_xx_xx_fg
                     np.save("P_co_xx_xx_fg_"+ioname+".npy",P_co_xx_xx_fg.value)
 
-                TEST=True
-                if TEST:
-                    P_CO_XX_XX_XX=windowed_survey.P_CO_XX_XX_XX
-                    np.save("P_CO_XX_XX_XX__"+ioname+".npy",P_CO_XX_XX_XX.value)
+                P_CO_XX_XX_XX=windowed_survey.P_CO_XX_XX_XX
+                np.save("P_CO_XX_XX_XX__"+ioname+".npy",P_CO_XX_XX_XX.value)
 
                 N_per_realization=windowed_survey.N_per_realization
                 np.save("N_per_realization_"+ioname+".npy",N_per_realization)
