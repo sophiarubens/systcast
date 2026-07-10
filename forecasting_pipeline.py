@@ -1220,17 +1220,6 @@ class cosmo_stats(object):
             taper_xyz_product=taper_xx*taper_yy
         self.taper_xyz_centre=taper_xyz_product
         self.taper_xyz_corner=ifftshift(taper_xyz_product,axes=fftshift_axes)
-        # if fftshift_axes==():
-        #     taper_product_FT_corner=1
-        #     taper_product_FT_centre=1
-        # else:
-        #     taper_product_FT_corner=fftn(self.taper_xyz_corner,axes=fftshift_axes)
-        #     taper_product_FT_centre=fftshift(taper_product_FT_corner,axes=fftshift_axes)
-        #     comprehensive_slice_figure(np.abs(taper_product_FT_centre),
-        #                             #    norm=,
-        #                                name="abs_taper_product_FT_centre.png")
-        # self.taper_product_FT_corner=taper_product_FT_corner
-        # self.taper_product_FT_centre=taper_product_FT_centre
 
         # beam
         evaled_num=None
@@ -1286,12 +1275,13 @@ class cosmo_stats(object):
                 extrapolation_warning("low z",   z_want_lo,  z_have_lo)
             if (z_want_hi>z_have_hi):
                 extrapolation_warning("high z",   z_want_hi,  z_have_hi)
-            print("original: xy {} -> {}\n          z {} -> {}".format(x_have_lo,x_have_hi,z_have_lo,z_have_hi))
+            # print("original: xy {} -> {}\n          z {} -> {}".format(x_have_lo,x_have_hi,z_have_lo,z_have_hi))
             evaled_num=RGI(beam_domain,self.synth_beam,
                            bounds_error=False,fill_value=None)(self.to_eval_at).T
             self.evaled_num=evaled_num
 
-            synth_beam_norm=TwoSlopeNorm(0,vmin=-1,vmax=1)
+            synth_beam_extremum=np.max(np.abs(self.synth_beam))
+            synth_beam_norm=TwoSlopeNorm(0,vmin=-synth_beam_extremum,vmax=synth_beam_extremum)
             comprehensive_slice_figure(self.synth_beam, 
                                        norm=synth_beam_norm,
                                        cmap="RdBu",
@@ -1305,20 +1295,25 @@ class cosmo_stats(object):
         self.evaled_num=evaled_num
         
 
+        # self.evaled_num_padded=None
+        # if evaled_num is not None:
+        #     assert(not np.all(np.isclose(evaled_num,0,rtol=1e-16))), "synthesized beam should not be identically vanishing"
+        #     pad_lo_xy,pad_hi_xy=get_padding(self.Nvox )
+        #     pad_lo_z, pad_hi_z =get_padding(self.Nvoxz)
+        #     evaled_num_padded=np.pad(evaled_num*self.taper_xyz_centre,((pad_lo_xy,pad_hi_xy),(pad_lo_xy,pad_hi_xy),(pad_lo_z,pad_hi_z),),"edge")
+        #     self.evaled_num_padded=evaled_num_padded
+        #     if (self.T_pristine is not None):
+        #         self.T_beam=convolve(self.evaled_num_padded,self.T_pristine.value,mode="valid")*self.temp_unit
         self.evaled_num_padded=None
         if evaled_num is not None:
-            assert(not np.all(np.isclose(evaled_num,0,rtol=1e-10))), "synthesized beam should not be identically vanishing"
+            assert(not np.all(np.isclose(evaled_num,0,atol=1e-16))), "synthesized beam should not be identically vanishing"
             pad_lo_xy,pad_hi_xy=get_padding(self.Nvox )
             pad_lo_z, pad_hi_z =get_padding(self.Nvoxz)
-            # evaled_num_padded=np.pad(evaled_num,((pad_lo_xy,pad_hi_xy),(pad_lo_xy,pad_hi_xy),(pad_lo_z,pad_hi_z),),"edge")
-            evaled_num_padded=np.pad(evaled_num*self.taper_xyz_centre,((pad_lo_xy,pad_hi_xy),(pad_lo_xy,pad_hi_xy),(pad_lo_z,pad_hi_z),),"edge")
+            evaled_num_padded=np.pad(evaled_num,((pad_lo_xy,pad_hi_xy),(pad_lo_xy,pad_hi_xy),(pad_lo_z,pad_hi_z),),"edge")
             taper_for_convolution=Blackman_Harris_safe_for_FFT(2*self.Nvoxz-1)
             Nxy_padded=2*self.Nvox-1
             self.taper_for_convolution=np.tile(taper_for_convolution, (Nxy_padded,Nxy_padded,1))
-            # self.evaled_num_padded=evaled_num_padded*self.taper_for_convolution
-            self.evaled_num_padded=evaled_num_padded
-            if (self.T_pristine is not None):
-                self.T_beam=convolve(self.evaled_num_padded,self.T_pristine.value,mode="valid")*self.temp_unit
+            self.evaled_num_padded=evaled_num_padded*self.taper_for_convolution
         
         # strictness control for realization averaging
         self.frac_tol=frac_tol
@@ -1389,7 +1384,6 @@ class cosmo_stats(object):
                         ) # centre-origin
         modsq_T_tilde=np.abs(T_tilde)**2 *self.temp_unit**2*self.length_unit**6
         P_unbinned=modsq_T_tilde/self.effective_volume # box-shaped, but calculated according to the power spectrum estimator equation
-                #    /self.taper_product_FT_centre**2 # nice try reinventing a division-by-zero problem
 
         self.P_unbinned=P_unbinned # centre-origin
         
@@ -1667,13 +1661,6 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         # beam synthesis numerics
         taper_1d_centre=Blackman_Harris_safe_for_FFT(N_CST_xy)
         self.taper_1d_centre=taper_1d_centre
-        # taper_domain=fftshift(N_CST_xy*fftfreq(N_CST_xy))
-        # taper_1d_centre=np.exp(-(taper_domain)**2/(5*N_CST_xy))
-        # plt.figure()
-        # plt.plot(taper_domain,taper_1d_centre)
-        # plt.show()
-        # plt.close()
-        # assert(1==0), "fine-tuning Gaussian taper"
         taper_xx,taper_yy=np.meshgrid(taper_1d_centre,taper_1d_centre,indexing="ij")
         self.taper_slice=taper_xx*taper_yy
         self.weighting=weighting
@@ -1708,6 +1695,10 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
             all_boxes=np.asarray(all_boxes)
             self.all_boxes=all_boxes
         self.pb_types,self.weights=beam_type_distribution(N_NS,N_EW,N_total_beam_types, distribution=self.distribution)
+        if self.N_total_beam_types>1:
+            self.N_baseline_classes=self.N_total_beam_types*(self.N_total_beam_types-1)
+        else:
+            self.N_baseline_classes=1
 
         comprehensive_slice_figure(fidu_box,
                                    norm=LogNorm(vmax=1),
@@ -1794,12 +1785,14 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
                 elif self.weighting!="natural":
                     raise ValueError("unknown uv plane weighting scheme")
                 gridded_im=fftshift(irfftn(ifftshift(gridded_uv*self.taper_slice*self.d2u), # irfftn silently discarding imag part of symmetry slices of the last transformed axis is not a problem here because the uv slices in question are entirely real-valued
-                                           norm="backward",s=(Npix,Npix)))
+                # gridded_im=fftshift(irfftn(ifftshift(gridded_uv*self.d2u), # irfftn silently discarding imag part of symmetry slices of the last transformed axis is not a problem here because the uv slices in question are entirely real-valued
+                                           norm="forward",s=(Npix,Npix)))
                 LoS_idx=np.argmin(np.abs(self.nu_obs-self.CST_freqs))
                 beam_i=self.all_boxes[type_i,:,:,LoS_idx] # [N_total_beam_types, Nxy, Nxy, Nz]
                 beam_j=self.all_boxes[type_j,:,:,LoS_idx]
                 product=beam_i*beam_j
                 beam_ij=np.sqrt(product) # geo mean of the beams of this baseline's two constituent antennas. still on initial CST grid
+                beam_ij/=np.max(beam_ij)
                 
                 interpolator=RBS(xy_image,xy_image, beam_ij)
                 beam_ij_interpolated=interpolator(self.CST_xy,self.CST_xy)
@@ -1810,8 +1803,12 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         plt.colorbar()
         plt.savefig("single_slice_gridded_uv.png")
         plt.close()
-        mid=int(self.N_CST_xy//2)
-        implane/=implane[mid,mid]
+        # mid=int(self.N_CST_xy//2)
+        # implane/=implane[mid,mid]
+        # implane/=self.N_baseline_classes
+        implane/=np.max(implane)
+        taper_area=np.sum(self.taper_slice*self.d2u)
+        implane/=taper_area
         return implane
 
     def stack_to_box(self):
