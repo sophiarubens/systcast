@@ -1294,22 +1294,12 @@ class cosmo_stats(object):
         self.beam_domain=beam_domain
         self.evaled_num=evaled_num
         
-
-        # self.evaled_num_padded=None
-        # if evaled_num is not None:
-        #     assert(not np.all(np.isclose(evaled_num,0,rtol=1e-16))), "synthesized beam should not be identically vanishing"
-        #     pad_lo_xy,pad_hi_xy=get_padding(self.Nvox )
-        #     pad_lo_z, pad_hi_z =get_padding(self.Nvoxz)
-        #     evaled_num_padded=np.pad(evaled_num*self.taper_xyz_centre,((pad_lo_xy,pad_hi_xy),(pad_lo_xy,pad_hi_xy),(pad_lo_z,pad_hi_z),),"edge")
-        #     self.evaled_num_padded=evaled_num_padded
-        #     if (self.T_pristine is not None):
-        #         self.T_beam=convolve(self.evaled_num_padded,self.T_pristine.value,mode="valid")*self.temp_unit
         self.evaled_num_padded=None
         if evaled_num is not None:
             assert(not np.all(np.isclose(evaled_num,0,atol=1e-16))), "synthesized beam should not be identically vanishing"
             pad_lo_xy,pad_hi_xy=get_padding(self.Nvox )
             pad_lo_z, pad_hi_z =get_padding(self.Nvoxz)
-            evaled_num_padded=np.pad(evaled_num,((pad_lo_xy,pad_hi_xy),(pad_lo_xy,pad_hi_xy),(pad_lo_z,pad_hi_z),),"edge")
+            evaled_num_padded=np.pad(evaled_num,((pad_lo_xy,pad_hi_xy),(pad_lo_xy,pad_hi_xy),(pad_lo_z,pad_hi_z),),"wrap")
             taper_for_convolution=Blackman_Harris_safe_for_FFT(2*self.Nvoxz-1)
             Nxy_padded=2*self.Nvox-1
             self.taper_for_convolution=np.tile(taper_for_convolution, (Nxy_padded,Nxy_padded,1))
