@@ -333,6 +333,7 @@ class beam_effects(object):
         self.Nvox_box_xy=int(self.Lsurv_box_xy*kperpmax_surv/pi)
         self.Lsurv_box_z=twopi/kparmin_surv
         self.Nvox_box_z=int(self.Lsurv_box_z*kparmax_surv/pi)
+        print("beam_effects: Nxy,Nz =",self.Nvox_box_xy,self.Nvox_box_z)
 
         self.fgfreqs=np.asarray([self.nu_lo.value,self.nu_hi.value])*self.nu_ctr.unit
 
@@ -1645,6 +1646,7 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         N_CST_xy=len(CST_xy)
         self.uvbins_CST=fftshift(fftfreq(N_CST_xy,d=CST_Delta_xy))
         self.CST_freqs=CST_freqs
+        self.CST_deltanu=CST_freqs[1]-CST_freqs[0]
         self.N_CST_xy=N_CST_xy
         self.N_CST_freqs=len(CST_freqs)
 
@@ -1774,12 +1776,13 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
                     gridded_uv[comb]=1
                 elif self.weighting!="natural":
                     raise ValueError("unknown uv plane weighting scheme")
-                # gridded_im=fftshift(irfftn(ifftshift(gridded_uv*self.taper_slice*self.d2u), # irfftn silently discarding imag part of symmetry slices of the last transformed axis is not a problem here because the uv slices in question are entirely real-valued
                 gridded_im=fftshift(irfftn(ifftshift(gridded_uv*self.d2u), # irfftn silently discarding imag part of symmetry slices of the last transformed axis is not a problem here because the uv slices in question are entirely real-valued
                                            norm="forward",s=(Npix,Npix)))
-                LoS_idx=np.argmin(np.abs(self.nu_obs-self.CST_freqs))
-                beam_i=self.all_boxes[type_i,:,:,LoS_idx] # [N_total_beam_types, Nxy, Nxy, Nz]
-                beam_j=self.all_boxes[type_j,:,:,LoS_idx]
+                LoS_1st,LoS_2nd=np.argsort(np.abs(self.nu_obs-self.CST_freqs))[:2]
+                weight_1st=np.abs(self.nu_obs-self.CST_freqs[LoS_1st])/self.CST_deltanu
+                weight_2nd=np.abs(self.nu_obs-self.CST_freqs[LoS_2nd])/self.CST_deltanu
+                beam_i=self.all_boxes[type_i,:,:,LoS_1st]*weight_1st + self.all_boxes[type_i,:,:,LoS_2nd]*weight_2nd
+                beam_j=self.all_boxes[type_j,:,:,LoS_1st]*weight_1st + self.all_boxes[type_j,:,:,LoS_2nd]*weight_2nd
                 product=beam_i*beam_j
                 beam_ij=np.sqrt(product) # geo mean of the beams of this baseline's two constituent antennas. still on initial CST grid
                 beam_ij/=np.max(beam_ij) # beam should already be peak-normalized, pero mejor asegurarse que no haya nada raro
@@ -1795,7 +1798,7 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         plt.close()
         mid=int(self.N_CST_xy//2)
         implane/=np.max(implane)
-        taper_area=np.sum(self.taper_slice*self.d2u) # should not be squared
+        # taper_area=np.sum(self.taper_slice*self.d2u) # should not be squared because, unlike in a power spectrum estimator, the apodization function doesn't end up getting squared
         peak_norm=implane[mid,mid]
         # normalization_factor=taper_area*peak_norm
         normalization_factor=peak_norm
@@ -2128,7 +2131,7 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
     k_mag_grid=np.sqrt(k_perp_grid**2+k_par_grid**2)
     values_of_k=np.zeros((N_spectra,3))
 
-    fig = plt.figure(figsize=(N_LHS_cols*4, N_LHS_cols*4),layout="constrained")
+    fig = plt.figure(figsize=(N_LHS_cols*4, N_LHS_cols*3),layout="constrained")
     gs = gridspec.GridSpec(N_LHS_rows, N_LHS_cols+2, figure=fig)
     axs = [[fig.add_subplot(gs[row, col]) for col in range(N_LHS_cols)] for row in range(N_LHS_rows)] # grid for the left
     ax_right = fig.add_subplot(gs[:, N_LHS_cols:]) # summary holder on the right
@@ -2257,7 +2260,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
               freq_bin_width=0.1953125*u.MHz,
 
               CST_lo=None,CST_hi=None,CST_deltanu=None,
-              beam_sim_directory=None,f_mid1=")_[1]",f_mid2=")_[2]",f_tail="_efield.txt",
+              beam_sim_directory=None,f_mid1="pol1/f_",f_mid2="pol2/f_",f_tail="_GHz.txt",
               CST_f_head_fidu="farfield_(f=",CST_f_head_syst="farfield_(f=",
               
               from_incomplete_MC=False,
@@ -2280,10 +2283,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
 
     if (array_version=="pathfinder"): # 10x7=70 antennas (64 w/ gaps for receiver huts and site geometry constraints), 123 baselines
         bmaxCHORD=np.sqrt((b_NS_CHORD*10)**2+(b_EW_CHORD*7)**2) # pathfinder (as per the CHORD-all telecon on May 26th, but without holes)
-        N_ant=64
     elif array_version=="full": # 24x22=528 antennas (512 w/ receiver hut gaps), 1010 baselines
         bmaxCHORD=np.sqrt((b_NS_CHORD*N_NS_CHORD)**2+(b_EW_CHORD*N_EW_CHORD)**2)
-        N_ant=512
     else:
         raise ValueError("unknown array layout (not pathfinder or full)")
 
