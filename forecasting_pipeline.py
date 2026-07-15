@@ -1774,8 +1774,8 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
                     gridded_uv[comb]=1
                 elif self.weighting!="natural":
                     raise ValueError("unknown uv plane weighting scheme")
-                gridded_im=fftshift(irfftn(ifftshift(gridded_uv*self.taper_slice*self.d2u), # irfftn silently discarding imag part of symmetry slices of the last transformed axis is not a problem here because the uv slices in question are entirely real-valued
-                # gridded_im=fftshift(irfftn(ifftshift(gridded_uv*self.d2u), # irfftn silently discarding imag part of symmetry slices of the last transformed axis is not a problem here because the uv slices in question are entirely real-valued
+                # gridded_im=fftshift(irfftn(ifftshift(gridded_uv*self.taper_slice*self.d2u), # irfftn silently discarding imag part of symmetry slices of the last transformed axis is not a problem here because the uv slices in question are entirely real-valued
+                gridded_im=fftshift(irfftn(ifftshift(gridded_uv*self.d2u), # irfftn silently discarding imag part of symmetry slices of the last transformed axis is not a problem here because the uv slices in question are entirely real-valued
                                            norm="forward",s=(Npix,Npix)))
                 LoS_idx=np.argmin(np.abs(self.nu_obs-self.CST_freqs))
                 beam_i=self.all_boxes[type_i,:,:,LoS_idx] # [N_total_beam_types, Nxy, Nxy, Nz]
@@ -1797,8 +1797,8 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         implane/=np.max(implane)
         taper_area=np.sum(self.taper_slice*self.d2u) # should not be squared
         peak_norm=implane[mid,mid]
-        print("taper_area, peak_norm, N_baseline_classes =",taper_area, peak_norm, self.N_baseline_classes)
-        normalization_factor=taper_area*peak_norm
+        # normalization_factor=taper_area*peak_norm
+        normalization_factor=peak_norm
         implane/=normalization_factor
         return implane
 
@@ -2556,6 +2556,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     abs_co_no_fg_indices=np.r_[7,8,9,12]
     abs_co_fg_indices=np.r_[1,2,10]
     abs_co_beam_indices=np.r_[8,9]
+    abs_co_indices=np.r_[7,12]
 
     abs_residual=[np.percentile(Presidual.value,90),
                     np.max(np.abs(Presidual.value))]
@@ -2572,6 +2573,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         abs_co_no_fg=np.percentile(power_quantities_all[:,abs_co_no_fg_indices,:,:],98) 
         abs_co_beam=np.percentile(power_quantities_all[:,abs_co_beam_indices,:,:],98)
         abs_co_fg=np.percentile(power_quantities_all[:,abs_co_fg_indices,:,:],90)
+        abs_co=np.percentile(power_quantities_all[:,abs_co_indices,:,:],90)
         # fgext=np.percentile(P_xx_xx_xx_fg.value,97)
     elif which_power=="Delta2":
         abs_co_no_fg=None
@@ -2644,7 +2646,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     co_xx_xx_xx_params=                       ["cosmo",
                                                 absolute_units,
                                                "cosmo",
-                                                abs_co_no_fg,
+                                                # abs_co_no_fg,
+                                                abs_co,
                                                 abs_map,
                                                 False]
     
@@ -2681,7 +2684,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     P_CO_XX_XX_XX_params=                     ["COSMO",
                                                 absolute_units,
                                                "COSMOCOSMO",
-                                                abs_co_no_fg,
+                                                # abs_co_no_fg,
+                                                abs_co,
                                                 abs_map,
                                                 False]
     
