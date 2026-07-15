@@ -1782,7 +1782,7 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
                 beam_j=self.all_boxes[type_j,:,:,LoS_idx]
                 product=beam_i*beam_j
                 beam_ij=np.sqrt(product) # geo mean of the beams of this baseline's two constituent antennas. still on initial CST grid
-                beam_ij/=np.max(beam_ij)
+                beam_ij/=np.max(beam_ij) # beam should already be peak-normalized, pero mejor asegurarse que no haya nada raro
                 
                 interpolator=RBS(xy_image,xy_image, beam_ij)
                 beam_ij_interpolated=interpolator(self.CST_xy,self.CST_xy)
@@ -1793,12 +1793,13 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         plt.colorbar()
         plt.savefig("single_slice_gridded_uv.png")
         plt.close()
-        # mid=int(self.N_CST_xy//2)
-        # implane/=implane[mid,mid]
-        # implane/=self.N_baseline_classes
+        mid=int(self.N_CST_xy//2)
         implane/=np.max(implane)
-        taper_area=np.sum(self.taper_slice*self.d2u)
-        implane/=taper_area
+        taper_area=np.sum(self.taper_slice*self.d2u) # should not be squared
+        peak_norm=implane[mid,mid]
+        print("taper_area, peak_norm, N_baseline_classes =",taper_area, peak_norm, self.N_baseline_classes)
+        normalization_factor=taper_area*peak_norm
+        implane/=normalization_factor
         return implane
 
     def stack_to_box(self):
@@ -2554,6 +2555,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   
     abs_co_no_fg_indices=np.r_[7,8,9,12]
     abs_co_fg_indices=np.r_[1,2,10]
+    abs_co_beam_indices=np.r_[8,9]
 
     abs_residual=[np.percentile(Presidual.value,90),
                     np.max(np.abs(Presidual.value))]
@@ -2568,6 +2570,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     fgext=None
     if which_power=="P":
         abs_co_no_fg=np.percentile(power_quantities_all[:,abs_co_no_fg_indices,:,:],98) 
+        abs_co_beam=np.percentile(power_quantities_all[:,abs_co_beam_indices,:,:],98)
         abs_co_fg=np.percentile(power_quantities_all[:,abs_co_fg_indices,:,:],90)
         # fgext=np.percentile(P_xx_xx_xx_fg.value,97)
     elif which_power=="Delta2":
@@ -2648,14 +2651,16 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     co_fi_xx_xx_params=                       ["cosmo + fidu beam",
                                                 absolute_units,
                                                "cosmo_fidu",
-                                                abs_co_no_fg,
+                                                # abs_co_no_fg,
+                                                abs_co_beam,
                                                 abs_map,
                                                 False]
     
     co_fi_sy_xx_params=                       ["cosmo + fidu beam + syst",
                                                 absolute_units,
                                                "cosmo_fidu_syst",
-                                                abs_co_no_fg,
+                                                # abs_co_no_fg,
+                                                abs_co_beam,
                                                 abs_map,
                                                 False]
     
