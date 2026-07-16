@@ -1649,6 +1649,14 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         self.CST_deltanu=CST_freqs[1]-CST_freqs[0]
         self.N_CST_xy=N_CST_xy
         self.N_CST_freqs=len(CST_freqs)
+        self.CST_freqs_obs_units=self.CST_freqs.to(u.Hz)
+        self.CST_deltanu_obs_units=self.CST_deltanu.to(u.Hz)
+
+        # ##
+        # self.lambda_obs=self.surv_wavelengths[i] # update the observing frequency for next time
+        # nu_obs=c/self.lambda_obs
+        # self.nu_obs=nu_obs.decompose()
+        # ##
 
         # beam synthesis numerics
         taper_1d_centre=Blackman_Harris_safe_for_FFT(N_CST_xy)
@@ -1779,13 +1787,14 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
                 gridded_im=fftshift(irfftn(ifftshift(gridded_uv*self.d2u), # irfftn silently discarding imag part of symmetry slices of the last transformed axis is not a problem here because the uv slices in question are entirely real-valued
                                            norm="forward",s=(Npix,Npix)))
                 LoS_1st,LoS_2nd=np.argsort(np.abs(self.nu_obs-self.CST_freqs))[:2]
-                weight_1st=np.abs(self.nu_obs-self.CST_freqs[LoS_1st])/self.CST_deltanu
-                weight_2nd=np.abs(self.nu_obs-self.CST_freqs[LoS_2nd])/self.CST_deltanu
+                weight_1st=np.abs(self.nu_obs-self.CST_freqs_obs_units[LoS_1st])/self.CST_deltanu_obs_units.value
+                weight_2nd=np.abs(self.nu_obs-self.CST_freqs_obs_units[LoS_2nd])/self.CST_deltanu_obs_units.value
+                print("weight_1st, weight_2nd =",weight_1st, weight_2nd)
                 beam_i=self.all_boxes[type_i,:,:,LoS_1st]*weight_1st + self.all_boxes[type_i,:,:,LoS_2nd]*weight_2nd
                 beam_j=self.all_boxes[type_j,:,:,LoS_1st]*weight_1st + self.all_boxes[type_j,:,:,LoS_2nd]*weight_2nd
                 product=beam_i*beam_j
                 beam_ij=np.sqrt(product) # geo mean of the beams of this baseline's two constituent antennas. still on initial CST grid
-                beam_ij/=np.max(beam_ij) # beam should already be peak-normalized, pero mejor asegurarse que no haya nada raro
+                beam_ij/=np.max(beam_ij) # beam should already be peak-normalized, pero mejor asegurarse que no haya nada raro... for example, a 2-3-pixel offset in the peak location
                 
                 interpolator=RBS(xy_image,xy_image, beam_ij)
                 beam_ij_interpolated=interpolator(self.CST_xy,self.CST_xy)
@@ -1796,13 +1805,10 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         plt.colorbar()
         plt.savefig("single_slice_gridded_uv.png")
         plt.close()
-        mid=int(self.N_CST_xy//2)
-        implane/=np.max(implane)
-        # taper_area=np.sum(self.taper_slice*self.d2u) # should not be squared because, unlike in a power spectrum estimator, the apodization function doesn't end up getting squared
-        peak_norm=implane[mid,mid]
-        # normalization_factor=taper_area*peak_norm
-        normalization_factor=peak_norm
-        implane/=normalization_factor
+        # mid=int(self.N_CST_xy//2)
+        # norm=implane[mid,mid]
+        norm=np.max(implane) # this is what I meant to override on the AM of July 15th 2026 but actually left uncommented somewhere else. maybe it doesn't lead to such crazy artifacts... and if it didn't, that would be convenient... because it would be robust against division-by-zero errors
+        implane/=norm
         return implane
 
     def stack_to_box(self):
