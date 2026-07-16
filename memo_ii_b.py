@@ -30,8 +30,9 @@ with open("ptg_err.json", "w") as f:
 
 # re-simulate / re-plot
 power_comparison_plots(redo_window_calc=True, # redo the Monte Carlos
-                       redo_box_calc=False,    # re-synthesize the beams; reimports CST only if files DNE
-                       array_version="pathfinder", nu_ctr=600.*u.MHz, frac_tol_conv=0.25, which_power="P",
-                       antenna_dist="frame", pointing_errors=pointingerrs[:N_systs_use],
+                       redo_box_calc=True,    # re-synthesize the beams; reimports CST only if files DNE
+                       array_version="full", nu_ctr=600.*u.MHz, frac_tol_conv=0.25, which_power="P",
+                       antenna_dist="random", # comment out to revert to the two-pixel frame systematic
+                       pointing_errors=pointingerrs[:N_systs_use],
                        CST_lo=0.58*u.GHz,CST_hi=0.62*u.GHz,CST_deltanu=2e-4*u.GHz,
                        beam_sim_directory=CST_dir, CST_f_head_fidu=fiduname, CST_f_head_syst=all_syst_dirs[:N_systs_use])

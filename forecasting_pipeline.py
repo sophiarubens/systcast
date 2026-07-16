@@ -1517,8 +1517,6 @@ def beam_type_distribution(N_NS,N_EW,N_types,distribution="random",frame_width=2
             synthesized_beam_types[:half_NS,half_EW:]=1
             synthesized_beam_types[half_NS:,:half_EW]=2
             synthesized_beam_types[half_NS:,half_EW:]=3 # the quarter of the array with no explicit overwriting keeps its idx=0 (as necessary)
-        elif distribution=="diagonal":
-            raise ValueError("not yet implemented")
         elif distribution=="column":
             synthesized_beam_types=np.zeros((N_NS,N_EW),dtype=np.int32)
             if N_types>1:
@@ -1681,8 +1679,6 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
             all_boxes=np.asarray(all_boxes)
             self.all_boxes=all_boxes
         self.pb_types,self.weights=beam_type_distribution(N_NS,N_EW,N_total_beam_types, distribution=self.distribution)
-        np.save("antennas_xyz_"+supplementary_name+".npy",antennas_xyz) # for the baseline type vs length histogram
-        np.save("pb_types_"+supplementary_name+".npy",self.pb_types) # for the baseline type vs length histogram
         if self.N_total_beam_types>1:
             self.N_baseline_classes=self.N_total_beam_types*(self.N_total_beam_types-1)
         else:
@@ -1702,12 +1698,16 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
                 uvw_inst[k,:]=antennas_xyz[i,:]-antennas_xyz[j,:]
                 indices_of_constituent_ant_pb_types[k]=[self.pb_types[i],self.pb_types[j]]
                 k+=1
+        
         uvw_inst=np.vstack((uvw_inst,-uvw_inst))
         self.uvw_inst=uvw_inst
         indices_of_constituent_ant_pb_types=np.vstack((indices_of_constituent_ant_pb_types,indices_of_constituent_ant_pb_types)) # get the opposite-permutation baselines for free
         self.indices_of_constituent_ant_pb_types=indices_of_constituent_ant_pb_types
         print("computed ungridded instantaneous uv-coverage")
         print("extrema of uvw_inst:",np.min(uvw_inst),np.min(np.abs(uvw_inst)),np.max(uvw_inst))
+
+        np.save("uvw_inst_"+supplementary_name+".npy",uvw_inst) # for the baseline type vs length histogram
+        np.save("pb_types_"+supplementary_name+".npy",indices_of_constituent_ant_pb_types) # for the baseline type vs length histogram
 
         # rotation-synthesized uv-coverage *******(N_bl,3,N_timesteps), accumulating xyz->uvw transformations at each timestep
         hour_angle_ceiling=np.pi*self.N_hrs/12
@@ -1752,7 +1752,9 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
                 type_j=self.pb_types[j]
 
                 here=(self.indices_of_constituent_ant_pb_types[:,0]==i
-                        )&(self.indices_of_constituent_ant_pb_types[:,1]==j)
+                        )&(self.indices_of_constituent_ant_pb_types[:,1]==j)|(
+                            self.indices_of_constituent_ant_pb_types[:,0]==j
+                                )&(self.indices_of_constituent_ant_pb_types[:,1]==i)
                 u_here=self.uv_synth[here,0,:] # [N_bl,2,N_hr_angles]
                 v_here=self.uv_synth[here,1,:]
                 N_bl_here,N_hr_angles_here=u_here.shape # (N_bl,N_hr_angles)
