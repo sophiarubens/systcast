@@ -408,9 +408,10 @@ class beam_effects(object):
         if heavy_beam_recalc: # redo the beam synthesis
             fidu_synthesis=synthesize_beam(array_version=array_version,N_timesteps=self.N_timesteps,
                                                 N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
-                                                distribution="random",
+                                                distribution="random",Npix=def_PA_N_grid_pix,
                                                 sub_ensemble_of_CST_beams=fidu_box,
-                                                CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
+                                                CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs,
+                                                supplementary_name=ioname)
             fidu_synthesis.stack_to_box()
             print("finished synthesizing fiducial CST beam")
             fidu_box_synthesized=fidu_synthesis.box
@@ -418,9 +419,10 @@ class beam_effects(object):
             synthesized_z_vec=fidu_synthesis.z_vec
             syst_synthesis=synthesize_beam(array_version=array_version,N_timesteps=self.N_timesteps,
                                                 N_pbws_pert=N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
-                                                distribution=antenna_distribution,
+                                                distribution=antenna_distribution,Npix=def_PA_N_grid_pix,
                                                 sub_ensemble_of_CST_beams=[fidu_box,CST_syst_ensemble],
-                                                CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs)
+                                                CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs,
+                                                supplementary_name=ioname)
             syst_synthesis.stack_to_box()
             print("finished synthesizing systematic-laden CST beam")
             syst_box_synthesized=syst_synthesis.box
@@ -1276,7 +1278,6 @@ class cosmo_stats(object):
                 extrapolation_warning("low z",   z_want_lo,  z_have_lo)
             if (z_want_hi>z_have_hi):
                 extrapolation_warning("high z",   z_want_hi,  z_have_hi)
-            # print("original: xy {} -> {}\n          z {} -> {}".format(x_have_lo,x_have_hi,z_have_lo,z_have_hi))
             evaled_num=RGI(beam_domain,self.synth_beam,
                            bounds_error=False,fill_value=None)(self.to_eval_at).T
             self.evaled_num=evaled_num
@@ -1515,7 +1516,7 @@ def beam_type_distribution(N_NS,N_EW,N_types,distribution="random",frame_width=2
         elif distribution=="corner":
             if N_types!=4:
                 raise ValueError("conflicting info") # in order to use corner systematics layout, you need four beam types
-            synthesized_beam_types=np.zeros((N_NS,N_EW))
+            synthesized_beam_types=np.zeros((N_NS,N_EW),dtype=np.int32)
             half_NS=N_NS//2
             half_EW=N_EW//2
             synthesized_beam_types[:half_NS,half_EW:]=1
@@ -1524,9 +1525,10 @@ def beam_type_distribution(N_NS,N_EW,N_types,distribution="random",frame_width=2
         elif distribution=="diagonal":
             raise ValueError("not yet implemented")
         elif distribution=="column":
-            synthesized_beam_types=np.zeros((N_NS,N_EW))
-            for i in range(1,N_types):
-                synthesized_beam_types[:,i::N_types]=i
+            synthesized_beam_types=np.zeros((N_NS,N_EW),dtype=np.int32)
+            if N_types>1:
+                for i in range(1,N_types):
+                    synthesized_beam_types[:,i::N_types]=i
         elif distribution=="frame":
             synthesized_beam_types=np.zeros((N_NS,N_EW),dtype=np.int8)
             if N_types>1: # stricter threshold for this case based on where the random numbers come from
@@ -1546,7 +1548,7 @@ def beam_type_distribution(N_NS,N_EW,N_types,distribution="random",frame_width=2
         
         synthesized_beam_types=np.reshape(synthesized_beam_types,(N_ant,),order="C")
     else:
-        synthesized_beam_types=np.zeros(N_ant)
+        synthesized_beam_types=np.zeros(N_ant,dtype=np.float64)
 
     weights=np.bincount(synthesized_beam_types)/N_ant
     return synthesized_beam_types,weights
@@ -1568,16 +1570,15 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
                  N_grid_pix:int=def_PA_N_grid_pix,                                 # number of pixels per side of the gridded uv plane
                  Delta_nu:float=CHORD_channel_width_MHz,                           # channel width in frequency (MHz)
                  distribution:str="random",                                        # distribution of per-antenna systematics. the options I've encoded for now are random, column, and corner, based on where the fiducial beam types are placed within the array
-                 per_channel_systematic=None,                                      # apply a systematic that corrupts the 1/lambda scaling of the beam width? options encoded so far are sporadic (multiply the beam widths for a contiguous chunk of frequency channels by a different multiplicative prefactor for the different fiducial beam types) and D3A-like (noise + too wide at low frequencies... inspired by early three-dish transit beam measurements)
                  evol_restriction_threshold:float=def_evol_restriction_threshold,  # max \delta z/z you will tolerate for the survey of interest and still consider the box close enough to coeval
-                 weighting="uniform",
+                 weighting="uniform", Npix=1024,
 
                  sub_ensemble_of_CST_beams=None,                                   # array-like with shape (N_CST_types, N_pointing_errors+1, N_CST_xy, N_CST_xy, N_CST_freqs)
-                 CST_xy=None,CST_freqs=None                                        # domain of each CST box in the ensemble. this domain is currently assumed to be the same for each box (not very rigorous/robust, but in practice, if you're running a simulation for a given survey frequency, it would be fairly pathological/ unintuitive/ anti–Occam's razor to get these boxes from CST slices at different frequencies. I guess the practical guidance/takeaway here is that my initial implementation will not support getting different boxes from different CST box resolutions)
+                 CST_xy=None,CST_freqs=None,                                       # domain of each CST box in the ensemble. this domain is currently assumed to be the same for each box (not very rigorous/robust, but in practice, if you're running a simulation for a given survey frequency, it would be fairly pathological/ unintuitive/ anti–Occam's razor to get these boxes from CST slices at different frequencies. I guess the practical guidance/takeaway here is that my initial implementation will not support getting different boxes from different CST box resolutions)
+                 supplementary_name=None # literally just for the July 16th 2026 histogram validation
                  ): 
         # array and observation geometry
         self.N_pbws_pert=N_pbws_pert
-        self.per_channel_systematic=per_channel_systematic
         self.N_timesteps=N_timesteps
         self.N_grid_pix=N_grid_pix
         self.distribution=distribution
@@ -1613,12 +1614,14 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         dif=antennas_EN[0,0]-antennas_EN[0,-1]+antennas_EN[0,-1]-antennas_EN[-1,-1]
         up=np.reshape(2+(-antennas_EN[:,0]+antennas_EN[:,1])/dif, (N_ant,1), order="C") # eyeballed ~2 m vertical range that ramps ~linearly from a high near the NW corner to a low near the SE corner
         antennas_ENU=np.hstack((antennas_EN,up))
+        print("extrema of antennas_ENU:",np.min(antennas_ENU),np.min(np.abs(antennas_ENU)),np.max(antennas_ENU))
         
         zenith=np.array([np.cos(DRAO_lat),0,np.sin(DRAO_lat)]) # Jon math
         east=np.array([0,1,0])
         north=np.cross(zenith,east)
         lat_mat=np.vstack([north,east,zenith])
         antennas_xyz=antennas_ENU@lat_mat.T
+        print("extrema of antennas_xyz:",np.min(antennas_xyz),np.min(np.abs(antennas_xyz)),np.max(antennas_xyz))
         
         # line-of-sight quantities
         bw_MHz=self.nu_ctr_MHz*evol_restriction_threshold
@@ -1650,11 +1653,8 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         self.CST_deltanu_obs_units=self.CST_deltanu.to(u.Hz)
 
         # beam synthesis numerics
-        taper_1d_centre=Blackman_Harris_safe_for_FFT(N_CST_xy)
-        self.taper_1d_centre=taper_1d_centre
-        taper_xx,taper_yy=np.meshgrid(taper_1d_centre,taper_1d_centre,indexing="ij")
-        self.taper_slice=taper_xx*taper_yy
         self.weighting=weighting
+        self.Npix=Npix
 
         if type(sub_ensemble_of_CST_beams) is not list: # can't use .ndim because it doesn't behave well for the inhomog arrays of the else
             print("synthesize_beam received only a !fiducial! beam box")
@@ -1686,6 +1686,8 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
             all_boxes=np.asarray(all_boxes)
             self.all_boxes=all_boxes
         self.pb_types,self.weights=beam_type_distribution(N_NS,N_EW,N_total_beam_types, distribution=self.distribution)
+        np.save("antennas_xyz_"+supplementary_name+".npy",antennas_xyz) # for the baseline type vs length histogram
+        np.save("pb_types_"+supplementary_name+".npy",self.pb_types) # for the baseline type vs length histogram
         if self.N_total_beam_types>1:
             self.N_baseline_classes=self.N_total_beam_types*(self.N_total_beam_types-1)
         else:
@@ -1710,6 +1712,7 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         indices_of_constituent_ant_pb_types=np.vstack((indices_of_constituent_ant_pb_types,indices_of_constituent_ant_pb_types)) # get the opposite-permutation baselines for free
         self.indices_of_constituent_ant_pb_types=indices_of_constituent_ant_pb_types
         print("computed ungridded instantaneous uv-coverage")
+        print("extrema of uvw_inst:",np.min(uvw_inst),np.min(np.abs(uvw_inst)),np.max(uvw_inst))
 
         # rotation-synthesized uv-coverage *******(N_bl,3,N_timesteps), accumulating xyz->uvw transformations at each timestep
         hour_angle_ceiling=np.pi*self.N_hrs/12
@@ -1733,21 +1736,21 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
             uvw_rotated=uvw_inst@accumulate_rotation
             uvw_projected=uvw_rotated@project_to_dec.T
             uv_synth[:,:,i]=uvw_projected/self.lambda_obs # ok for this to be the first LoS slice!! this *is* just for one LoS slice
-        self.uv_synth=uv_synth
-        print("extrema of uv_synth are",np.min(uv_synth),np.max(uv_synth))
-        print("synthesized rotation")        
+        self.uv_synth=uv_synth # units are wavelengths
+        print("extrema of uv_synth are",np.min(uv_synth),np.min(np.abs(uv_synth)),np.max(uv_synth))
+        print("synthesized rotation")
 
-    def calc_uv_slice(self, Npix:int=1024):
-        thetamax=pi # can never see more than horizon-to-horizon
-        uvmagmax=1/thetamax # these are 1/-convention Fourier duals, not 2pi/-convention Fourier duals
+        uvmagmax=np.max(np.abs(self.uv_synth)) # have not yet implemented the horizon constraint (inability to see more than horizon-to-horizon)
+        uvmagmin=uvmagmax/Npix
+        thetamax=1/uvmagmin # these are 1/-convention Fourier duals, not 2pi/-convention Fourier duals
         self.thetamax=thetamax
-        xy_image=self.ctr_chan_comov_dist*np.linspace(-thetamax,thetamax,Npix)
-
+        self.xy_image_broadest=self.ctr_chan_comov_dist*np.arange(-thetamax,thetamax,Npix)
         uvbins=np.linspace(-uvmagmax,uvmagmax,Npix)
         self.d2u=uvbins[1]-uvbins[0]
-        implane=np.zeros((Npix,Npix))
-        uvbins_use=np.append(uvbins,uvbins[-1]+uvbins[1]-uvbins[0])
+        self.uvbins_use=np.append(uvbins,uvbins[-1]+uvbins[1]-uvbins[0])
 
+    def calc_uv_slice(self):
+        implane=np.zeros((self.Npix,self.Npix))
         for i in range(self.N_total_beam_types):
             type_i=self.pb_types[i]
             for j in range(i+1):
@@ -1761,7 +1764,7 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
                 N_here=N_bl_here*N_hr_angles_here
                 reshaped_u=np.reshape(u_here,N_here,order="C")
                 reshaped_v=np.reshape(v_here,N_here,order="C")
-                gridded_uv,_,_=np.histogram2d(reshaped_u,reshaped_v,bins=uvbins_use) # natural weighting
+                gridded_uv,_,_=np.histogram2d(reshaped_u,reshaped_v,bins=self.uvbins_use) # natural weighting
                 comb=np.nonzero(gridded_uv)
                 if self.weighting=="custom":
                     gridded_uv[comb]=1/gridded_uv[comb]
@@ -1770,7 +1773,7 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
                 elif self.weighting!="natural":
                     raise ValueError("unknown uv plane weighting scheme")
                 gridded_im=fftshift(irfftn(ifftshift(gridded_uv*self.d2u), # irfftn silently discarding imag part of symmetry slices of the last transformed axis is not a problem here because the uv slices in question are entirely real-valued
-                                           norm="forward",s=(Npix,Npix)))
+                                           norm="forward",s=(self.Npix,self.Npix)))
                 LoS_1st,LoS_2nd=np.argsort(np.abs(self.nu_obs-self.CST_freqs_obs_units))[:2]
                 weight_1st=np.abs(self.nu_obs-self.CST_freqs_obs_units[LoS_1st])/self.CST_deltanu_obs_units
                 weight_2nd=np.abs(self.nu_obs-self.CST_freqs_obs_units[LoS_2nd])/self.CST_deltanu_obs_units
@@ -1780,8 +1783,8 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
                 beam_ij=np.sqrt(product) # geo mean of the beams of this baseline's two constituent antennas. still on initial CST grid
                 beam_ij/=np.max(beam_ij) # beam should already be peak-normalized, pero mejor asegurarse que no haya nada raro... for example, a 2-3-pixel offset in the peak location
                 
-                interpolator=RBS(xy_image,xy_image, beam_ij)
-                beam_ij_interpolated=interpolator(self.CST_xy,self.CST_xy)
+                interpolator=RBS(self.CST_xy,self.CST_xy, beam_ij) # originally on CST-derived grid
+                beam_ij_interpolated=interpolator(self.xy_image_broadest,self.xy_image_broadest) # want to evaluate on image grid that is Fourier-dual to the uv grid
                 implane+=gridded_im*beam_ij_interpolated
 
         plt.figure()
@@ -1808,7 +1811,7 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
             nu_obs=c/self.lambda_obs
             self.nu_obs=nu_obs.decompose()
 
-            chan_gridded_implane=self.calc_uv_slice(Npix=N_grid_pix) # compute this channel's synthesized beam            
+            chan_gridded_implane=self.calc_uv_slice() # compute this LoS slice's synthesized beam            
             # box_xyz[:,:,i]=chan_gridded_implane/np.max(chan_gridded_implane) # peak-normalize in configuration space
             box_xyz[:,:,i]=chan_gridded_implane
             if ((i%(self.N_chan//3))==0):
