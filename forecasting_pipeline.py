@@ -1595,10 +1595,6 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         self.nu_ctr_Hz=nu_ctr.to(u.Hz)
         self.Dc_ctr=comoving_distance(nu_HI_z0/nu_ctr-1)
         self.N_hrs=hrs_per_night
-        self.lambda_obs=c/self.nu_ctr_Hz
-        pbw_fidu=self.lambda_obs/D
-        pbw_fidu=[pbw_fidu,pbw_fidu]
-        self.pbw_fidu=np.array(pbw_fidu)
         
         # antenna positions xyz
         antennas_EN=np.zeros((N_ant,2))
@@ -1639,6 +1635,7 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         self.comoving_distances_channels=comoving_distances_channels*u.Mpc
         self.ctr_chan_comov_dist=self.comoving_distances_channels[N_chan//2]
         self.surv_channels_MHz=surv_channels_MHz
+        self.lambda_obs=surv_wavelengths[0]
 
         # helper args
         self.CST_xy=CST_xy
@@ -1728,29 +1725,23 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         north=np.cross(zenith,east)
         project_to_dec=np.vstack([east,north])
 
-        uv_synth=np.zeros((2*N_bl,2,self.N_timesteps))
+        uv_synth=np.zeros((2*N_bl,2,self.N_timesteps)) # N_baselines, u and v, N_timesteps
         for i,theta in enumerate(thetas): # thetas are the rotation synthesis angles (converted from hr. angles using 15 deg/hr rotation rate)
             accumulate_rotation=np.array([[ np.cos(theta),np.sin(theta),0],
                                           [-np.sin(theta),np.cos(theta),0],
                                           [ 0,            0,            1]])
             uvw_rotated=uvw_inst@accumulate_rotation
             uvw_projected=uvw_rotated@project_to_dec.T
-            uv_synth[:,:,i]=uvw_projected/self.lambda_obs
+            uv_synth[:,:,i]=uvw_projected/self.lambda_obs # ok for this to be the first LoS slice!! this *is* just for one LoS slice
         self.uv_synth=uv_synth
+        print("extrema of uv_synth are",np.min(uv_synth),np.max(uv_synth))
         print("synthesized rotation")        
 
-    def calc_uv_slice(self, Npix:int=1024, pbw_fidu_use:float=None):
-        if pbw_fidu_use is None: # otherwise, use the one that was passed
-            pbw_fidu_use=self.pbw_fidu
-        all_ungridded_u=self.uv_synth[:,0,:]
-        all_ungridded_v=self.uv_synth[:,1,:]
-        uvmagmax=5*np.max([np.max(np.abs(all_ungridded_u)),
-                         np.max(np.abs(all_ungridded_v))])
-
-        uvmagmin=2*uvmagmax/Npix
-        thetamax=1/uvmagmin # these are 1/-convention Fourier duals, not 2pi/-convention Fourier duals
+    def calc_uv_slice(self, Npix:int=1024):
+        thetamax=pi # can never see more than horizon-to-horizon
+        uvmagmax=1/thetamax # these are 1/-convention Fourier duals, not 2pi/-convention Fourier duals
         self.thetamax=thetamax
-        xy_image=self.ctr_chan_comov_dist*np.linspace(-thetamax//2,thetamax//2,Npix)
+        xy_image=self.ctr_chan_comov_dist*np.linspace(-thetamax,thetamax,Npix)
 
         uvbins=np.linspace(-uvmagmax,uvmagmax,Npix)
         self.d2u=uvbins[1]-uvbins[0]
@@ -1780,7 +1771,7 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
                     raise ValueError("unknown uv plane weighting scheme")
                 gridded_im=fftshift(irfftn(ifftshift(gridded_uv*self.d2u), # irfftn silently discarding imag part of symmetry slices of the last transformed axis is not a problem here because the uv slices in question are entirely real-valued
                                            norm="forward",s=(Npix,Npix)))
-                LoS_1st,LoS_2nd=np.argsort(np.abs(self.nu_obs-self.CST_freqs))[:2]
+                LoS_1st,LoS_2nd=np.argsort(np.abs(self.nu_obs-self.CST_freqs_obs_units))[:2]
                 weight_1st=np.abs(self.nu_obs-self.CST_freqs_obs_units[LoS_1st])/self.CST_deltanu_obs_units
                 weight_2nd=np.abs(self.nu_obs-self.CST_freqs_obs_units[LoS_2nd])/self.CST_deltanu_obs_units
                 beam_i=self.all_boxes[type_i,:,:,LoS_1st]*weight_1st + self.all_boxes[type_i,:,:,LoS_2nd]*weight_2nd
