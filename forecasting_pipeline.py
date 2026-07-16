@@ -1652,12 +1652,6 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         self.CST_freqs_obs_units=self.CST_freqs.to(u.Hz)
         self.CST_deltanu_obs_units=self.CST_deltanu.to(u.Hz)
 
-        # ##
-        # self.lambda_obs=self.surv_wavelengths[i] # update the observing frequency for next time
-        # nu_obs=c/self.lambda_obs
-        # self.nu_obs=nu_obs.decompose()
-        # ##
-
         # beam synthesis numerics
         taper_1d_centre=Blackman_Harris_safe_for_FFT(N_CST_xy)
         self.taper_1d_centre=taper_1d_centre
@@ -1787,9 +1781,8 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
                 gridded_im=fftshift(irfftn(ifftshift(gridded_uv*self.d2u), # irfftn silently discarding imag part of symmetry slices of the last transformed axis is not a problem here because the uv slices in question are entirely real-valued
                                            norm="forward",s=(Npix,Npix)))
                 LoS_1st,LoS_2nd=np.argsort(np.abs(self.nu_obs-self.CST_freqs))[:2]
-                weight_1st=np.abs(self.nu_obs-self.CST_freqs_obs_units[LoS_1st])/self.CST_deltanu_obs_units.value
-                weight_2nd=np.abs(self.nu_obs-self.CST_freqs_obs_units[LoS_2nd])/self.CST_deltanu_obs_units.value
-                print("weight_1st, weight_2nd =",weight_1st, weight_2nd)
+                weight_1st=np.abs(self.nu_obs-self.CST_freqs_obs_units[LoS_1st])/self.CST_deltanu_obs_units
+                weight_2nd=np.abs(self.nu_obs-self.CST_freqs_obs_units[LoS_2nd])/self.CST_deltanu_obs_units
                 beam_i=self.all_boxes[type_i,:,:,LoS_1st]*weight_1st + self.all_boxes[type_i,:,:,LoS_2nd]*weight_2nd
                 beam_j=self.all_boxes[type_j,:,:,LoS_1st]*weight_1st + self.all_boxes[type_j,:,:,LoS_2nd]*weight_2nd
                 product=beam_i*beam_j
