@@ -636,9 +636,7 @@ class beam_effects(object):
                 fg_box_ingredient=self.get_pwr_law_FG_ingredient(Tref,nuref,alpha,sigma_alpha)
                 fg_box+=fg_box_ingredient
             self.fg_box=fg_box # centre-origin
-            np.save("fg_map.npy",fg_box.value)
             extreme=np.max(np.abs(fg_box.value))
-            # print("np.mean(fg_box), np.std(fg_box) =",np.mean(fg_box), np.std(fg_box))
             comprehensive_slice_figure(fg_box.value,
                                        norm=CenteredNorm(halfrange=extreme),
                                        cmap="RdBu",
@@ -650,7 +648,6 @@ class beam_effects(object):
             fg.generate_P()
             fg.bin_power()
             self.P_xx_xx_xx_fg=fg.P_binned *fg_box.unit**2 *self.Lsurv_box_xy.unit**3
-            np.save("fg_power.npy",fg.P_unbinned.value)
             print("                           fg power calc complete")
 
         print("beam_effects.calc_power_contamination: self.Nvox_box_xy =",self.Nvox_box_xy)
@@ -1120,8 +1117,6 @@ class cosmo_stats(object):
         self.kmag_grid_centre_flat=np.reshape(self.kmag_grid_centre,(self.Nvox**2*self.Nvoxz),order="C")
         self.kmag_grid_corner_flat=np.reshape(self.kmag_grid_corner,(self.Nvox**2*self.Nvoxz,),order="C")
         self.kmag_grid_for_comparison= self.kmag_grid_corner if self.Nvoxz>1 else self.kmag_grid_corner[:,:,0]
-        if self.Nvoxz==1:
-            np.savetxt("kmag_grid_for_comparison.txt",self.kmag_grid_for_comparison.value)
               
         self.kpar_column_centre= np.abs(fftshift(self.kz_vec_for_box_corner))                                      # magnitudes of kpar for a representative column along the line of sight (z-like)
         self.kperp_slice_centre= np.sqrt(fftshift(self.kx_grid_corner)**2+fftshift(self.ky_grid_corner)**2)[:,:,0] # magnitudes of kperp for a representative slice transverse to the line of sight (x- and y-like)
