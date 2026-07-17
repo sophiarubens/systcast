@@ -85,7 +85,7 @@ CHORD_channel_width_MHz=0.1953125*u.MHz
 def_observing_dec=pi/60.
 def_offset=1.75*pi/180. # for this placeholder state where I build up the CHORD layout using rotation matrices instead of actual measurements. probably add Hans' mask at some point to punch the corners and receiver hut holes out...
 def_pbw_pert_frac=1e-2
-def_evol_restriction_threshold=1./30. # HERA 1/15 was made up. turn this down for a computationally less intense substitute
+def_evol_restriction_threshold=1./60. # HERA 1/15 was made up. turn this down for a computationally less intense substitute. had been using 1/30 as of 2026 July 17th AM
 img_bin_tol=5 # ringing is remarkably insensitive to turning this down; you get really bad scale mismatch by turning it up... the real solution was the "need good resolution in both Fourier and configuration space" thing
 def_PA_N_grid_pix=256
 N_fid_beam_types=1
@@ -93,9 +93,7 @@ integration_s=10*u.s # seconds
 hrs_per_night=8*u.hr # borrowed from Debanjan / 21cmSense
 # N_nights=100 # also borrowed from Debanjan / 21cmSense
 N_nights=1
-# def_N_timesteps=int(N_nights*hrs_per_night//integration_s)
 def_N_timesteps=1 # for local tests
-print("def_N_timesteps=",def_N_timesteps)
 
 # side calculations
 def get_padding(n): # avoid edge effects in a convolution
@@ -263,6 +261,7 @@ class beam_effects(object):
                  maxiter:int=5,                       # maximum number of times the partial derivative computation can recurse with an updated step size estimate
                  PA_N_grid_pix:int=def_PA_N_grid_pix, # number of pixels per side of gridded uv plane
                  LoS_taper=False,image_taper=False,   # apply apodization along the line of sight or transverse directions?
+                 N_timesteps=def_N_timesteps,
 
                  # CONVENIENCE
                  heavy_beam_recalc:bool=True,         # save time by using pre-saved synthesized beams?
@@ -337,7 +336,7 @@ class beam_effects(object):
 
         self.fgfreqs=np.asarray([self.nu_lo.value,self.nu_hi.value])*self.nu_ctr.unit
 
-        self.N_timesteps=           def_N_timesteps
+        self.N_timesteps=           N_timesteps
         precalculated_xy_vec=self.Lsurv_box_xy*fftshift(fftfreq(def_PA_N_grid_pix))
         N_CST_types=len(CST_f_head_syst)
 
@@ -2230,6 +2229,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
               wedge_cut=False, layer_foregrounds=True, pointing_errors=[0.,0.,0.],
                   
               freq_bin_width=0.1953125*u.MHz,
+              N_timesteps=def_N_timesteps,
 
               CST_lo=None,CST_hi=None,CST_deltanu=None,
               beam_sim_directory=None,f_mid1="pol1/f_",f_mid2="pol2/f_",f_tail="_GHz.txt",
@@ -2371,7 +2371,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                     frac_tol_conv=frac_tol_conv,seed=seed,                                         
                                     ftol_deriv=1e-16,maxiter=5,   
                                     LoS_taper=True,image_taper=False,
-                                    # LoS_taper=False,image_taper=False,        
+                                    N_timesteps=N_timesteps,
 
                                     # CONVENIENCE
                                     heavy_beam_recalc=redo_box_calc                                                 
