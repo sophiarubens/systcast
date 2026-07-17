@@ -585,25 +585,18 @@ class beam_effects(object):
                        seed=rngseed,nu_ctr=self.nu_ctr) 
         fg.generate_GRF()
         white_noise_slice=fg.T_pristine.to(Tref.unit).value
-        # print("white noise slice temp units:",fg.T_pristine.unit)
-        # print("np.mean(white_noise_slice), np.std(white_noise_slice) =",np.mean(white_noise_slice), np.std(white_noise_slice)) # -2.0599841277224584e-18 0.20017005259588688
 
         # bookkeeping to prep for power law
         freqs_in_ref_unit=self.freqs_for_fg.to(nuref.unit)   
         fg_box_this_ingredient=np.zeros((self.Nvox_box_xy,self.Nvox_box_xy,self.Nvox_box_z))
         rng=np.random.default_rng(rngseed+1)
-        # print("initialized slice_of_alphas RNG with seed",rngseed)
         freq_ratios=freqs_in_ref_unit/nuref
         slice_of_alphas=rng.normal(loc=alpha, scale=sigma_alpha, size=(self.Nvox_box_xy,self.Nvox_box_xy))
 
         # apply LoS power law renormalization to each slice  
-        # print("MANUALLY OVERRIDING FOREGROUND STATISTICS")
         for i,freq_ratio_i in enumerate(freq_ratios):
             fg_slice = Tref.value*freq_ratio_i**slice_of_alphas *white_noise_slice
-            # fg_slice-=np.mean(fg_slice)
             fg_box_this_ingredient[:,:,i]=fg_slice
-        # print("check last slice: Tref.value, freq_ratio_i, np.mean(slice_of_alphas) =",Tref.value, freq_ratio_i, np.mean(slice_of_alphas)) # nothing super alarming here for the synchrotron test case: 335.4 3.933333333333333 -2.7989298861610825
-        # print("check last slice: np.mean(fg_slice), np.std(fg_slice) =",np.mean(fg_slice), np.std(fg_slice)) # frustrating to see that 15 orders of magnitude of near-zero have gone up in smoke: 0.004150945162675765 1.4897165599263442
 
         fg_box_this_ingredient*=Tref.unit
         fg_box_this_ingredient=fg_box_this_ingredient.to(u.mK)
@@ -650,7 +643,6 @@ class beam_effects(object):
             self.P_xx_xx_xx_fg=fg.P_binned *fg_box.unit**2 *self.Lsurv_box_xy.unit**3
             print("                           fg power calc complete")
 
-        print("beam_effects.calc_power_contamination: self.Nvox_box_xy =",self.Nvox_box_xy)
         co_fi_xx_fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nvox=self.Nvox_box_xy,Nvoxz=self.Nvox_box_z,
@@ -815,7 +807,6 @@ class beam_effects(object):
                                              kperp_to_use=self.kperp_for_cosmo[:-1]+0.5*(self.kperp_for_cosmo[1]-self.kperp_for_cosmo[0]), 
                                              kpar_to_use=self.kpar_for_cosmo[:-1]+0.5*(self.kpar_for_cosmo[1]-self.kpar_for_cosmo[0]))
         self.P_co_xx_xx_xx=P_co_xx_xx_xx
-        # print("np.mean(COSMOTEST.T_pristine), np.std(COSMOTEST.T_pristine) =",np.mean(COSMOTEST.T_pristine),np.std(COSMOTEST.T_pristine))
 
         if isolated==False:
             self.Pcont_cyl=self.P_co_fi_sy_fg-self.P_co_fi_xx_fg
@@ -1145,7 +1136,6 @@ class cosmo_stats(object):
         
         # rng management
         self.rng=np.random.default_rng(seed)
-        # print("initialized cosmo_stats RNG with seed",seed)
 
         # if P_fid was passed, establish its values on the k grid (helpful when generating a box)
         self.k_fid=k_fid
@@ -1449,8 +1439,6 @@ class cosmo_stats(object):
         self.P_binned_MC_complete=P_binned_MC_complete*self.power_unit
 
         self.N_per_realization=self.N_cumul/self.N_realizations
-        # if self.evaled_num_padded is not None: 
-            # print("self.evaled_num_padded.shape, self.T_pristine.shape, self.T_beam.shape =",self.evaled_num_padded.shape, self.T_pristine.shape, self.T_beam.shape)
 
     def interpolate_P(self,use_P_fid:bool=False):
         if use_P_fid:
@@ -1607,14 +1595,12 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         dif=antennas_EN[0,0]-antennas_EN[0,-1]+antennas_EN[0,-1]-antennas_EN[-1,-1]
         up=np.reshape(2+(-antennas_EN[:,0]+antennas_EN[:,1])/dif, (N_ant,1), order="C") # eyeballed ~2 m vertical range that ramps ~linearly from a high near the NW corner to a low near the SE corner
         antennas_ENU=np.hstack((antennas_EN,up))
-        print("extrema of antennas_ENU:",np.min(antennas_ENU),np.min(np.abs(antennas_ENU)),np.max(antennas_ENU))
         
         zenith=np.array([np.cos(DRAO_lat),0,np.sin(DRAO_lat)]) # Jon math
         east=np.array([0,1,0])
         north=np.cross(zenith,east)
         lat_mat=np.vstack([north,east,zenith])
         antennas_xyz=antennas_ENU@lat_mat.T
-        print("extrema of antennas_xyz:",np.min(antennas_xyz),np.min(np.abs(antennas_xyz)),np.max(antennas_xyz))
         
         # line-of-sight quantities
         bw_MHz=self.nu_ctr_MHz*evol_restriction_threshold
@@ -1704,7 +1690,6 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         indices_of_constituent_ant_pb_types=np.vstack((indices_of_constituent_ant_pb_types,indices_of_constituent_ant_pb_types)) # get the opposite-permutation baselines for free
         self.indices_of_constituent_ant_pb_types=indices_of_constituent_ant_pb_types
         print("computed ungridded instantaneous uv-coverage")
-        print("extrema of uvw_inst:",np.min(uvw_inst),np.min(np.abs(uvw_inst)),np.max(uvw_inst))
 
         np.save("uvw_inst_"+supplementary_name+".npy",uvw_inst) # for the baseline type vs length histogram
         np.save("pb_types_"+supplementary_name+".npy",indices_of_constituent_ant_pb_types) # for the baseline type vs length histogram
@@ -1732,7 +1717,6 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
             uvw_projected=uvw_rotated@project_to_dec.T
             uv_synth[:,:,i]=uvw_projected/self.lambda_obs # ok for this to be the first LoS slice!! this *is* just for one LoS slice
         self.uv_synth=uv_synth # units are wavelengths
-        print("extrema of uv_synth are",np.min(uv_synth),np.min(np.abs(uv_synth)),np.max(uv_synth))
         print("synthesized rotation")
 
         uvmagmax=np.max(np.abs(self.uv_synth)) # have not yet implemented the horizon constraint (inability to see more than horizon-to-horizon)
@@ -1861,7 +1845,6 @@ class reconfigure_CST_beam(object):
 
         L_xy=comoving_middle
         xy_for_box=L_xy*fftshift(fftfreq(Nxy))
-        print("reconfigure_CST_beam.__init__: len(xy_for_box) =",len(xy_for_box))
         self.xy_for_box=xy_for_box
         np.save("xy_vec_for_box"+box_outname,xy_for_box.value)
         self.Nxy=Nxy
@@ -1920,7 +1903,6 @@ class reconfigure_CST_beam(object):
                 print("{:7.1f} pct complete".format(i/self.Nfreqs*100))
         np.save("CST_box_"+self.box_outname,box)
         self.box=box # centre-origin
-        print("reconfigure_CST_beam.construct_CST_box: box.shape=",box.shape)
 
 class CHORD_sense(object): # modified from a notebook helpfully shared by Debanjan Sarkar in April 2025
     def __init__(
