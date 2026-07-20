@@ -1688,6 +1688,7 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         self.uvw_inst=uvw_inst
         indices_of_constituent_ant_pb_types=np.vstack((indices_of_constituent_ant_pb_types,indices_of_constituent_ant_pb_types)) # get the opposite-permutation baselines for free
         self.indices_of_constituent_ant_pb_types=indices_of_constituent_ant_pb_types
+        self.N_baselines=indices_of_constituent_ant_pb_types.shape[0]
         print("computed ungridded instantaneous uv-coverage")
 
         np.save("uvw_inst_"+supplementary_name+".npy",uvw_inst) # for the baseline type vs length histogram
@@ -1735,9 +1736,10 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
                 type_j=self.pb_types[j]
 
                 here=(self.indices_of_constituent_ant_pb_types[:,0]==i
-                        )&(self.indices_of_constituent_ant_pb_types[:,1]==j)|(
-                            self.indices_of_constituent_ant_pb_types[:,0]==j
+                        )&(self.indices_of_constituent_ant_pb_types[:,1]==j
+                           )|(self.indices_of_constituent_ant_pb_types[:,0]==j
                                 )&(self.indices_of_constituent_ant_pb_types[:,1]==i)
+                frac_baselines=np.sum(here!=0)/self.N_baselines # fraction of baselines in this beam category
                 u_here=self.uv_synth[here,0,:] # [N_bl,2,N_hr_angles]
                 v_here=self.uv_synth[here,1,:]
                 N_bl_here,N_hr_angles_here=u_here.shape # (N_bl,N_hr_angles)
@@ -1749,7 +1751,7 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
                 if self.weighting=="custom":
                     gridded_uv[comb]=1/gridded_uv[comb]
                 elif self.weighting=="uniform":
-                    gridded_uv[comb]=1
+                    gridded_uv[comb]=1 * frac_baselines
                 elif self.weighting!="natural":
                     raise ValueError("unknown uv plane weighting scheme")
                 gridded_im=fftshift(irfftn(ifftshift(gridded_uv*self.d2u), # irfftn silently discarding imag part of symmetry slices of the last transformed axis is not a problem here because the uv slices in question are entirely real-valued
