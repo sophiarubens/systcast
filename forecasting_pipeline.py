@@ -86,9 +86,7 @@ def_observing_dec=pi/60.
 def_offset=1.75*pi/180. # for this placeholder state where I build up the CHORD layout using rotation matrices instead of actual measurements. probably add Hans' mask at some point to punch the corners and receiver hut holes out...
 def_pbw_pert_frac=1e-2
 def_evol_restriction_threshold=1./60. # HERA 1/15 was made up. turn this down for a computationally less intense substitute. had been using 1/30 as of 2026 July 17th AM
-img_bin_tol=5 # ringing is remarkably insensitive to turning this down; you get really bad scale mismatch by turning it up... the real solution was the "need good resolution in both Fourier and configuration space" thing
-def_PA_N_grid_pix=256
-N_fid_beam_types=1
+def_PA_N_grid_pix=128
 integration_s=10*u.s # seconds
 hrs_per_night=8*u.hr # borrowed from Debanjan / 21cmSense
 # N_nights=100 # also borrowed from Debanjan / 21cmSense
@@ -226,7 +224,6 @@ class beam_effects(object):
                  evol_restriction_threshold:float=def_evol_restriction_threshold, # how close to coeval is close enough? \Delta z/z
                  
                  # parameters of per-antenna systematic–aware beam synthesis
-                 N_pbws_pert:int=0,                 # number of beams to perturb
                  ioname:str="placeholder",          # unique identifier for saving files and figures related to the uv coverage of this scenario
                  antenna_distribution:str="random", # random, column, corner, or frame distribution of fiducial beam types?
                  array_version:str="full",          # full or pathfinder CHORD?
@@ -406,22 +403,22 @@ class beam_effects(object):
         CST_freqs=np.arange(CST_lo.value,CST_hi.value,CST_deltanu.value)*CST_deltanu.unit
         if heavy_beam_recalc: # redo the beam synthesis
             fidu_synthesis=synthesize_beam(array_version=array_version,N_timesteps=self.N_timesteps,
-                                                N_pbws_pert=0,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
-                                                distribution="random",Npix=def_PA_N_grid_pix,
-                                                sub_ensemble_of_CST_beams=fidu_box,
-                                                CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs,
-                                                supplementary_name=ioname)
+                                           nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
+                                           distribution="random",Npix=def_PA_N_grid_pix,
+                                           sub_ensemble_of_CST_beams=fidu_box,
+                                           CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs,
+                                           supplementary_name=ioname)
             fidu_synthesis.stack_to_box()
             print("finished synthesizing fiducial CST beam")
             fidu_box_synthesized=fidu_synthesis.box
             synthesized_xy_vec=fidu_synthesis.xy_vec
             synthesized_z_vec=fidu_synthesis.z_vec
             syst_synthesis=synthesize_beam(array_version=array_version,N_timesteps=self.N_timesteps,
-                                                N_pbws_pert=N_pbws_pert,nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
-                                                distribution=antenna_distribution,Npix=def_PA_N_grid_pix,
-                                                sub_ensemble_of_CST_beams=[fidu_box,CST_syst_ensemble],
-                                                CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs,
-                                                supplementary_name=ioname)
+                                           nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
+                                           distribution=antenna_distribution,Npix=def_PA_N_grid_pix,
+                                           sub_ensemble_of_CST_beams=[fidu_box,CST_syst_ensemble],
+                                           CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs,
+                                           supplementary_name=ioname)
             syst_synthesis.stack_to_box()
             print("finished synthesizing systematic-laden CST beam")
             syst_box_synthesized=syst_synthesis.box
@@ -1544,7 +1541,6 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
                  b_NS:float=b_NS,b_EW:float=b_EW,                                  # N-S and E-W baseline lengths (m)
                  offset_rad:float=def_offset,                                      # (astropy-unitless because this class expects rad) CHORD is aligned with magnetic, not geographical north, so, when mathematically constructing the uv coverage, rotate the rectangular array grid
                  observing_dec:float=def_observing_dec,                            # declination to observe at (º)
-                 N_pbws_pert:int=0,                                                # number of antennas with perturbed primary beams
                  N_timesteps:float=def_N_timesteps,                                # number of timesteps in rotation synthesis
                  nu_ctr:float=nu_HI_z0,                                            # central frequency of the survey of interest
                  N_grid_pix:int=def_PA_N_grid_pix,                                 # number of pixels per side of the gridded uv plane
@@ -1558,7 +1554,6 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
                  supplementary_name=None # literally just for the July 16th 2026 histogram validation
                  ): 
         # array and observation geometry
-        self.N_pbws_pert=N_pbws_pert
         self.N_timesteps=N_timesteps
         self.N_grid_pix=N_grid_pix
         self.distribution=distribution
@@ -2225,7 +2220,7 @@ def pointing_family(original_pointing,N,seed=270426):
 def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False,
               array_version:str="pathfinder", nu_ctr:float=800, epsxy:float=0.1,
               frac_tol_conv=0.1, N_th_k=1024,
-              N_pbws_pert=0, antenna_dist="random", 
+              antenna_dist="random", 
               which_power="P",
                   
               wedge_cut=False, layer_foregrounds=True, pointing_errors=[0.,0.,0.],
@@ -2305,12 +2300,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         t00=time.time()
         if N_CST_types==0:
             N_fidu_types_i,N_pert_types_i=complexity_type
-            if N_pert_types_i==0: # loop over complexity cases–friendly number of antennas with perturbed beams
-                N_pbws_pert_i=0
-            else:
-                N_pbws_pert_i=N_pbws_pert
             complexity_part="Nreal_"+str(N_fidu_types_i)+"__"\
-                            "Npert_"+str(N_pert_types_i)+"_"+str(N_pbws_pert)+"__"\
+                            "Npert_"+str(N_pert_types_i)+"__"\
                             "epsxy_"+str(epsxy)+"__"
             related_to_N_of_types={"N_fidu_types":N_fidu_types_i,"N_pert_types":N_pert_types_i}
         else:
@@ -2324,7 +2315,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                 pointing_errors_i=[[0.,0.,0.,]]
 
             CST_f_head_syst_i=CST_f_head_syst[:NCST_i]
-            N_pbws_pert_i=N_pbws_pert
         
         ioname=array_version+"_"+c_or_w+"_"+"_"\
            ""+per_chan_syst_string+"_"+per_chan_syst_name+"_"\
@@ -2355,7 +2345,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                     beam_domain=None,                              
 
                                     # numerical beam perturbation parameters
-                                    N_pbws_pert=N_pbws_pert_i,
                                     antenna_distribution=antdist,array_version=array_version,
                                     **related_to_N_of_types,
                                     CST_lo=CST_lo,CST_hi=CST_hi,CST_deltanu=CST_deltanu,ioname=ioname,
