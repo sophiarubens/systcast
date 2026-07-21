@@ -1510,8 +1510,15 @@ def beam_type_distribution(N_NS,N_EW,N_types,distribution="random",frame_width=2
         elif distribution=="column":
             synthesized_beam_types=np.zeros((N_NS,N_EW),dtype=np.int32)
             if N_types>1:
-                for i in range(1,N_types):
-                    synthesized_beam_types[:,i::N_types]=i
+                types_iterable=np.arange(1,N_types)
+                if N_types>N_EW:
+                    for i in types_iterable:
+                        synthesized_beam_types[:,i::N_types]=i
+                else:
+                    rest_of_types=np.arange(N_EW,N_types)
+                    for i in rest_of_types:
+                        synthesized_beam_types[::2,i::N_EW]=i
+                    
         elif distribution=="frame":
             synthesized_beam_types=np.zeros((N_NS,N_EW),dtype=np.int8)
             if N_types>1: # stricter threshold for this case based on where the random numbers come from
