@@ -86,7 +86,7 @@ def_observing_dec=pi/60.
 def_offset=1.75*pi/180. # for this placeholder state where I build up the CHORD layout using rotation matrices instead of actual measurements. probably add Hans' mask at some point to punch the corners and receiver hut holes out...
 def_pbw_pert_frac=1e-2
 def_evol_restriction_threshold=1./60. # HERA 1/15 was made up. turn this down for a computationally less intense substitute. had been using 1/30 as of 2026 July 17th AM
-def_PA_N_grid_pix=128
+def_PA_N_grid_pix=512
 integration_s=10*u.s # seconds
 hrs_per_night=8*u.hr # borrowed from Debanjan / 21cmSense
 # N_nights=100 # also borrowed from Debanjan / 21cmSense
@@ -304,7 +304,10 @@ class beam_effects(object):
         N_ant=N_ant
         
         # cylindrically binned survey k-modes and box considerations
-        kpar_surv=kpar(self.nu_ctr,self.Deltanu,self.Nchan)
+        kpar_surv=kpar(self.nu_ctr,self.Deltanu,self.Nchan) # realistic for an observation
+        Deltanu_finer=100*u.kHz
+        Nchan_finer=self.bw/Deltanu_finer
+        kpar_surv=kpar(self.nu_ctr,Deltanu_finer,Nchan_finer) # not what CHORD will see, but geared towards resolving more in k-parallel
         self.kpar_surv=kpar_surv
         kparmin_surv=kpar_surv[0]
         kparmax_surv=kpar_surv[-1]
@@ -314,7 +317,8 @@ class beam_effects(object):
         self.Nkpar_surv=len(self.kpar_surv)
         self.bmin=bmin
         self.bmax=bmax
-        kperp_surv=kperp(self.nu_ctr,self.bmin,self.bmax)
+        kperp_surv=kperp(self.nu_ctr,self.bmin,self.bmax) # realistic for an observation
+        kperp_surv=kperp(self.nu_ctr,1.*u.m,self.bmax) # not what CHORD will see, but geared towards resolving more in k-perp
         kperpmin_surv=kperp_surv[0]
         kperpmax_surv=kperp_surv[-1]
         self.kperp_surv=kperp_surv
