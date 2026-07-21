@@ -92,6 +92,31 @@ hrs_per_night=8*u.hr # borrowed from Debanjan / 21cmSense
 # N_nights=100 # also borrowed from Debanjan / 21cmSense
 N_nights=1
 def_N_timesteps=1 # for local tests
+CHORD_antenna_mask=np.asarray([ [0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+                                [1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1],
+                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+                                [1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,0],
+                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0],
+                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0],
+                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0],
+                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0],
+                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0],
+                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0]  ], dtype=bool) # courtesy of Hans (CHORD Slack)
+CHORD_antenna_mask_1d=np.reshape(CHORD_antenna_mask, (N_NS_full*N_EW_full,))
 
 # side calculations
 def get_padding(n): # avoid edge effects in a convolution
@@ -1541,6 +1566,11 @@ def beam_type_distribution(N_NS,N_EW,N_types,distribution="random",frame_width=2
         synthesized_beam_types=np.zeros(N_ant,dtype=np.float64)
 
     weights=np.bincount(synthesized_beam_types)/N_ant
+
+    # if full CHORD, mask out the 528-512=14 antennas that aren't actually being constructed -> masking antennas here ensures compatibility with the beam synthesis code
+    if N_NS*N_EW==528:
+        synthesized_beam_types=synthesized_beam_types[CHORD_antenna_mask_1d]
+        weights=weights[CHORD_antenna_mask_1d]
     return synthesized_beam_types,weights
 
 """
@@ -1602,6 +1632,7 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         dif=antennas_EN[0,0]-antennas_EN[0,-1]+antennas_EN[0,-1]-antennas_EN[-1,-1]
         up=np.reshape(2+(-antennas_EN[:,0]+antennas_EN[:,1])/dif, (N_ant,1), order="C") # eyeballed ~2 m vertical range that ramps ~linearly from a high near the NW corner to a low near the SE corner
         antennas_ENU=np.hstack((antennas_EN,up))
+        antennas_ENU=antennas_ENU[CHORD_antenna_mask_1d]
         
         zenith=np.array([np.cos(DRAO_lat),0,np.sin(DRAO_lat)]) # Jon math
         east=np.array([0,1,0])
@@ -1775,7 +1806,7 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
                 
                 interpolator=RBS(self.CST_xy,self.CST_xy, beam_ij) # originally on CST-derived grid
                 beam_ij_interpolated=interpolator(self.xy_image_broadest,self.xy_image_broadest) # want to evaluate on image grid that is Fourier-dual to the uv grid
-                implane+=gridded_im*beam_ij_interpolated
+                implane+=gridded_im*beam_ij_interpolated # add the PSF for this beam type
 
         plt.figure()
         plt.imshow(gridded_uv.T,origin="lower")
