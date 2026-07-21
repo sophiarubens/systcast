@@ -125,6 +125,7 @@ def kpar(nu_ctr=600*u.MHz,chan_width=0.1953125*u.MHz,N_chan=300,H0=H0): # not pu
     prefac=1e3*twopi*H0.value*nu_HI_z0.value/c.value # 1e3 to account for units of H0/c ... assumes nu_HI_z0 and chan_width have the same units
     z_ctr=freq2z(nu_HI_z0,nu_ctr)
     Ez=1/comoving_dist_arg(z_ctr)
+    chan_width=chan_width.to(nu_ctr.unit)
     zterm=Ez/((1+z_ctr)**2*chan_width.value)
     kparmax=prefac*zterm
     kparmin=kparmax/N_chan
@@ -305,8 +306,8 @@ class beam_effects(object):
         
         # cylindrically binned survey k-modes and box considerations
         kpar_surv=kpar(self.nu_ctr,self.Deltanu,self.Nchan) # realistic for an observation
-        Deltanu_finer=100*u.kHz
-        Nchan_finer=self.bw/Deltanu_finer
+        Deltanu_finer=100*u.kHz 
+        Nchan_finer=(self.bw/Deltanu_finer).decompose()
         kpar_surv=kpar(self.nu_ctr,Deltanu_finer,Nchan_finer) # not what CHORD will see, but geared towards resolving more in k-parallel
         self.kpar_surv=kpar_surv
         kparmin_surv=kpar_surv[0]
@@ -332,6 +333,7 @@ class beam_effects(object):
         self.Lsurv_box_xy=twopi/kperpmin_surv
         self.Nvox_box_xy=int(self.Lsurv_box_xy*kperpmax_surv/pi)
         self.Lsurv_box_z=twopi/kparmin_surv
+        print("self.Lsurv_box_xy,self.Lsurv_box_z=",self.Lsurv_box_xy,self.Lsurv_box_z)
         self.Nvox_box_z=int(self.Lsurv_box_z*kparmax_surv/pi)
         print("beam_effects: Nxy,Nz =",self.Nvox_box_xy,self.Nvox_box_z)
 
@@ -2164,7 +2166,7 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
         axs[i][j].set_xlabel("k$_\perp$")
         axs[i][j].set_ylabel("k$_{||}$")
         axs[i][j].tick_params(axis='x', labelrotation=30)
-        axs[i][j].set_title(ensemble_ids[k])
+        axs[i][j].set_title("[{},{}]".format(ensemble_ids[k]))
         axs[i][j].set_aspect("equal")
         if plot_log:
             neg_ticks = np.linspace(vminlog, 0., num=4, endpoint=False)
