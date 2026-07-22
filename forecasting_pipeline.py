@@ -1820,8 +1820,20 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         plt.colorbar()
         plt.savefig("single_slice_gridded_uv.png")
         plt.close()
-        # mid=int(self.N_CST_xy//2)
-        # norm=implane[mid,mid]
+        _,axs=plt.subplots(1,3,layout="constrained")
+        fftpsf=fftshift(fftn(ifftshift(implane)))
+        im=axs[0].imshow(fftpsf.real.T)
+        plt.colorbar(im,ax=axs[1])
+        axs[0].set_title("Re")
+        im=axs[1].imshow(fftpsf.imag.T)
+        plt.colorbar(im,ax=axs[1])
+        axs[1].set_title("Im")
+        im=axs[2].imshow(np.abs(fftpsf).T)
+        plt.colorbar(im,ax=axs[2])
+        axs[2].set_title("abs")
+        plt.suptitle("FFT(PSF)\nIMPROPERLY NORMALIZED")
+        plt.savefig("FFT_PSF.png",dpi=500)
+        plt.close()
         norm=np.max(implane) # this is what I meant to override on the AM of July 15th 2026 but actually left uncommented somewhere else. maybe it doesn't lead to such crazy artifacts... and if it didn't, that would be convenient... because it would be robust against division-by-zero errors
         implane/=norm
         return implane
@@ -2369,9 +2381,9 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             complexity_id_i=str(complexity_type)
             complexity_part="N_CST_types_"+str(NCST_i)+"__"+"N_ptg_err_"+str(Npoint_i)
             print("power_comparison_plots: pointing_errors=",pointing_errors)
-            print("power_comparison_plots: pointing_errors[NCST_i]=",pointing_errors[NCST_i])
-            print("power_comparison_plots: pointing_errors[NCST_i][:Npoint_i+1]=",pointing_errors[NCST_i][:Npoint_i+1])
-            pointing_errors_i=pointing_errors[NCST_i][:Npoint_i+1]
+            print("power_comparison_plots: pointing_errors[NCST_i-1]=",pointing_errors[NCST_i-1])
+            print("power_comparison_plots: pointing_errors[NCST_i-1][:Npoint_i+1]=",pointing_errors[NCST_i-1][:Npoint_i+1])
+            pointing_errors_i=pointing_errors[NCST_i-1][:Npoint_i+1]
             print("power_comparison_plots: pointing_errors_i=",pointing_errors_i)
             # if Npoint_i>0:
                 # print("NCST_i-1, Npoint_i =",NCST_i-1, Npoint_i)
