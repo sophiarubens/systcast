@@ -248,6 +248,7 @@ class beam_effects(object):
                  nu_ctr:float=600.*u.MHz,                                         # central freq of survey
                  delta_nu:float=CHORD_channel_width_MHz,                          # channel width
                  evol_restriction_threshold:float=def_evol_restriction_threshold, # how close to coeval is close enough? \Delta z/z
+                 overresolve=[False,False],
                  
                  # parameters of per-antenna systematic–aware beam synthesis
                  ioname:str="placeholder",          # unique identifier for saving files and figures related to the uv coverage of this scenario
@@ -291,6 +292,7 @@ class beam_effects(object):
                  ):   
                 
         # forecasting considerations
+        overresolve0,overresolve1=overresolve
         self.seed=seed
         self.pars_set_cosmo=pars_set_cosmo
         self.N_pars_set_cosmo=len(pars_set_cosmo)
@@ -331,9 +333,10 @@ class beam_effects(object):
         
         # cylindrically binned survey k-modes and box considerations
         kpar_surv=kpar(self.nu_ctr,self.Deltanu,self.Nchan) # realistic for an observation
-        # Deltanu_finer=1*u.kHz 
-        # Nchan_finer=(self.bw/Deltanu_finer).decompose()
-        # kpar_surv=kpar(self.nu_ctr,Deltanu_finer,Nchan_finer) # not what CHORD will see, but geared towards resolving more in k-parallel
+        if overresolve0:
+            Deltanu_finer=100*u.kHz 
+            Nchan_finer=(self.bw/Deltanu_finer).decompose()
+            kpar_surv=kpar(self.nu_ctr,Deltanu_finer,Nchan_finer) # not what CHORD will see, but geared towards resolving more in k-parallel
         self.kpar_surv=kpar_surv
         kparmin_surv=kpar_surv[0]
         kparmax_surv=kpar_surv[-1]
@@ -344,7 +347,8 @@ class beam_effects(object):
         self.bmin=bmin
         self.bmax=bmax
         kperp_surv=kperp(self.nu_ctr,self.bmin,self.bmax) # realistic for an observation
-        kperp_surv=kperp(self.nu_ctr,3.*u.m,self.bmax) # not what CHORD will see, but geared towards resolving more in k-perp
+        if overresolve1:
+            kperp_surv=kperp(self.nu_ctr,3.*u.m,self.bmax) # not what CHORD will see, but geared towards resolving more in k-perp
         kperpmin_surv=kperp_surv[0]
         kperpmax_surv=kperp_surv[-1]
         self.kperp_surv=kperp_surv
@@ -418,6 +422,7 @@ class beam_effects(object):
         CST_syst_ensemble=np.zeros((N_CST_types,N_pointing_errors_max+1,def_PA_N_grid_pix,def_PA_N_grid_pix,N_CST_z)) # shape of CST_syst_ensemble is (N_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z) but the sub-ensembles passed to synthesize_beam have shapes  ////////replace
         CST_syst_ensemble[:,0,:,:,:]=syst_boxes # situate the pointing error–free versions
 
+        print("pointing_errors",pointing_errors)
         if type(pointing_errors[0])==float:
             pointing_errors_to_loop_over=[pointing_errors]
         elif pointing_errors is not None:
@@ -1607,8 +1612,7 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         if (array_version=="pathfinder"):
             N_NS=N_NS//2
             N_EW=N_EW//2
-        N_ant=N_NS*N_EW
-        # N_bl=N_ant*(N_ant-1)//2
+        N_ant=N_NS*N_EW # preliminary version -> will get filtered later
         self.nu_ctr_MHz=nu_ctr.to(u.MHz)
         self.nu_ctr_Hz=nu_ctr.to(u.Hz)
         self.Dc_ctr=comoving_distance(nu_HI_z0/nu_ctr-1)
@@ -2260,8 +2264,16 @@ def get_f_types_prefacs(cases):
 def pointing_family(original_pointing,N,seed=270426):
     rng=np.random.default_rng(seed)
     orig_norm=np.linalg.norm(original_pointing)
-    unscaled_pointings=rng.normal(size=(N,3))
-    unscaled_norms=    np.linalg.norm(unscaled_pointings,axis=1,keepdims=True)
+    print("original_pointing,orig_norm=",original_pointing,orig_norm)
+    unscaled_pointings=[[0.,0.,0.]]
+    unscaled_norms=np.asarray(orig_norm)
+    if N>0:
+        unscaled_pointings_to_append=rng.normal(size=(N,3))
+        unscaled_norms_to_append=    np.linalg.norm(unscaled_pointings_to_append,axis=1,keepdims=True)
+        unscaled_pointings=np.vstack((unscaled_pointings,unscaled_pointings_to_append))
+        unscaled_norms=np.vstack((unscaled_norms,unscaled_norms_to_append))
+
+    print("unscaled_pointings,unscaled_norms=",unscaled_pointings,unscaled_norms)
     rescaled_pointings=unscaled_pointings/unscaled_norms*orig_norm
     return rescaled_pointings
 
@@ -2275,6 +2287,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                   
               freq_bin_width=0.1953125*u.MHz,
               N_timesteps=def_N_timesteps,
+              overresolve=[False,False],
 
               CST_lo=None,CST_hi=None,CST_deltanu=None,
               beam_sim_directory=None,f_mid1="pol1/f_",f_mid2="pol2/f_",f_tail="_GHz.txt",
@@ -2357,10 +2370,16 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             related_to_N_of_types={} # this info comes from unpacking in this mode now
             complexity_id_i=str(complexity_type)
             complexity_part="N_CST_types_"+str(NCST_i)+"__"+"N_ptg_err_"+str(Npoint_i)
-            if Npoint_i>0:
-                pointing_errors_i=pointing_errors[NCST_i-1][:Npoint_i] # the non-+1 version is actually fine because the indices are zero-based
-            else:
-                pointing_errors_i=[[0.,0.,0.,]]
+            print("power_comparison_plots: pointing_errors=",pointing_errors)
+            print("power_comparison_plots: pointing_errors[NCST_i]=",pointing_errors[NCST_i])
+            print("power_comparison_plots: pointing_errors[NCST_i][:Npoint_i+1]=",pointing_errors[NCST_i][:Npoint_i+1])
+            pointing_errors_i=pointing_errors[NCST_i][:Npoint_i+1]
+            print("power_comparison_plots: pointing_errors_i=",pointing_errors_i)
+            # if Npoint_i>0:
+                # print("NCST_i-1, Npoint_i =",NCST_i-1, Npoint_i)
+                # pointing_errors_i=pointing_errors[NCST_i-1][:Npoint_i] # the non-+1 version is actually fine because the indices are zero-based
+            # else:
+                # pointing_errors_i=[[0.,0.,0.,]]
 
             CST_f_head_syst_i=CST_f_head_syst[:NCST_i]
         
@@ -2377,17 +2396,15 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
 
         # PIPELINE ADMIN FOR THIS PA SYSTEMATIC PERMUTATION
         antdist=antenna_dist
-        pointing_errors_to_use_i=pointing_errors_i
-        if Npoint_i==0:
-            if NCST_i==1:
-                CST_f_head_syst_i=[CST_f_head_fidu] # literally just use fiducial for both num and denom everywhere
-            else:
-                pointing_errors_to_use_i=[[0.,0.,0.,]]                # use the syst beams, but don't apply any pointing errors
+        if Npoint_i==0 and NCST_i==1:
+            CST_f_head_syst_i=[CST_f_head_fidu] # literally just use fiducial for both num and denom everywhere
+
         windowed_survey=beam_effects(# SCIENCE
                                     # the observation
                                     bminCHORD,bmaxCHORD,                                                       
                                     nu_ctr,freq_bin_width,                                                 
-                                    evol_restriction_threshold=def_evol_restriction_threshold,           
+                                    evol_restriction_threshold=def_evol_restriction_threshold,  
+                                    overresolve=overresolve,         
                                         
                                     # beam generalities
                                     beam_domain=None,                              
@@ -2398,7 +2415,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                     CST_lo=CST_lo,CST_hi=CST_hi,CST_deltanu=CST_deltanu,ioname=ioname,
                                     beam_sim_directory=beam_sim_directory,f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,
                                     CST_f_head_fidu=CST_f_head_fidu,CST_f_head_syst=CST_f_head_syst_i,
-                                    pointing_errors=pointing_errors_to_use_i,
+                                    pointing_errors=pointing_errors_i,
 
                                     # FORECASTING
                                     P_fid_for_cont_pwr=contaminant_or_window, k_idx_for_window=k_idx_for_window,
