@@ -2264,7 +2264,6 @@ def get_f_types_prefacs(cases):
 def pointing_family(original_pointing,N,seed=270426):
     rng=np.random.default_rng(seed)
     orig_norm=np.linalg.norm(original_pointing)
-    print("original_pointing,orig_norm=",original_pointing,orig_norm)
     unscaled_pointings=[[0.,0.,0.]]
     unscaled_norms=np.asarray(orig_norm)
     if N>0:
@@ -2273,7 +2272,6 @@ def pointing_family(original_pointing,N,seed=270426):
         unscaled_pointings=np.vstack((unscaled_pointings,unscaled_pointings_to_append))
         unscaled_norms=np.vstack((unscaled_norms,unscaled_norms_to_append))
 
-    print("unscaled_pointings,unscaled_norms=",unscaled_pointings,unscaled_norms)
     rescaled_pointings=unscaled_pointings/unscaled_norms*orig_norm
     return rescaled_pointings
 
@@ -2338,7 +2336,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     if type(CST_f_head_syst)==str: # make even the single-CST-type case iterable
         CST_f_head_syst=[CST_f_head_syst]
     assert (type(CST_f_head_syst)==np.ndarray or type(CST_f_head_syst)==list) and type(CST_f_head_syst[0])==str
-    N_CST_types=len(CST_f_head_syst)
+    N_CST_types=len(CST_f_head_syst)+1
     if (len(pointing_errors)==3 and type(pointing_errors[0])==int):
         pointing_errors=[pointing_errors] # associate one pointing error with one CST case
     if N_CST_types>1: # length-M list of length-N_m lists of length-3 lists
@@ -2348,10 +2346,10 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     N_pointing_errors_each_CST=[np.arange(0,N_max_pt_er+1) for N_max_pt_er in N_max_pointing_errors_each_CST]
     complexity_cases=[]
     for a in range(1,N_CST_types+1):
-        for b in range(N_max_pointing_errors_each_CST[a-1]+1):
+        for b in range(N_max_pointing_errors_each_CST[a-1]):
             point=N_pointing_errors_each_CST[a-1][b]
             complexity_cases.append([a,point])
-
+    print("complexity_cases=",complexity_cases)
     complexity_ids=[str(case) for case in complexity_cases]
 
     power_quantities_all=[]
