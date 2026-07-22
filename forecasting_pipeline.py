@@ -1608,7 +1608,7 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
             N_NS=N_NS//2
             N_EW=N_EW//2
         N_ant=N_NS*N_EW
-        N_bl=N_ant*(N_ant-1)//2
+        # N_bl=N_ant*(N_ant-1)//2
         self.nu_ctr_MHz=nu_ctr.to(u.MHz)
         self.nu_ctr_Hz=nu_ctr.to(u.Hz)
         self.Dc_ctr=comoving_distance(nu_HI_z0/nu_ctr-1)
@@ -1631,13 +1631,14 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         dif=antennas_EN[0,0]-antennas_EN[0,-1]+antennas_EN[0,-1]-antennas_EN[-1,-1]
         up=np.reshape(2+(-antennas_EN[:,0]+antennas_EN[:,1])/dif, (N_ant,1), order="C") # eyeballed ~2 m vertical range that ramps ~linearly from a high near the NW corner to a low near the SE corner
         antennas_ENU=np.hstack((antennas_EN,up))
-        antennas_ENU=antennas_ENU[CHORD_antenna_mask_1d]
+        antennas_ENU=antennas_ENU[CHORD_antenna_mask_1d,:]
         
         zenith=np.array([np.cos(DRAO_lat),0,np.sin(DRAO_lat)]) # Jon math
         east=np.array([0,1,0])
         north=np.cross(zenith,east)
         lat_mat=np.vstack([north,east,zenith])
         antennas_xyz=antennas_ENU@lat_mat.T
+        print("antennas_xyz.shape=",antennas_xyz.shape)
         
         # line-of-sight quantities
         bw_MHz=self.nu_ctr_MHz*evol_restriction_threshold
@@ -1706,6 +1707,9 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
             self.N_baseline_classes=self.N_total_beam_types*(self.N_total_beam_types-1)
         else:
             self.N_baseline_classes=1
+        N_ant=len(self.pb_types) # can't do the simple N_NS*N_EW computation now that I'm masking out the "missing" antennas
+        N_bl=N_ant*(N_ant-1)//2
+        print("N_bl=",N_bl)
 
         comprehensive_slice_figure(fidu_box,
                                    norm=LogNorm(vmax=1),
