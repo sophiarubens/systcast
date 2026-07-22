@@ -331,9 +331,9 @@ class beam_effects(object):
         
         # cylindrically binned survey k-modes and box considerations
         kpar_surv=kpar(self.nu_ctr,self.Deltanu,self.Nchan) # realistic for an observation
-        Deltanu_finer=100*u.kHz 
-        Nchan_finer=(self.bw/Deltanu_finer).decompose()
-        kpar_surv=kpar(self.nu_ctr,Deltanu_finer,Nchan_finer) # not what CHORD will see, but geared towards resolving more in k-parallel
+        # Deltanu_finer=1*u.kHz 
+        # Nchan_finer=(self.bw/Deltanu_finer).decompose()
+        # kpar_surv=kpar(self.nu_ctr,Deltanu_finer,Nchan_finer) # not what CHORD will see, but geared towards resolving more in k-parallel
         self.kpar_surv=kpar_surv
         kparmin_surv=kpar_surv[0]
         kparmax_surv=kpar_surv[-1]
@@ -344,7 +344,7 @@ class beam_effects(object):
         self.bmin=bmin
         self.bmax=bmax
         kperp_surv=kperp(self.nu_ctr,self.bmin,self.bmax) # realistic for an observation
-        kperp_surv=kperp(self.nu_ctr,1.*u.m,self.bmax) # not what CHORD will see, but geared towards resolving more in k-perp
+        kperp_surv=kperp(self.nu_ctr,3.*u.m,self.bmax) # not what CHORD will see, but geared towards resolving more in k-perp
         kperpmin_surv=kperp_surv[0]
         kperpmax_surv=kperp_surv[-1]
         self.kperp_surv=kperp_surv
@@ -1565,12 +1565,11 @@ def beam_type_distribution(N_NS,N_EW,N_types,distribution="random",frame_width=2
     else:
         synthesized_beam_types=np.zeros(N_ant,dtype=np.float64)
 
-    weights=np.bincount(synthesized_beam_types)/N_ant
-
     # if full CHORD, mask out the 528-512=14 antennas that aren't actually being constructed -> masking antennas here ensures compatibility with the beam synthesis code
     if N_NS*N_EW==528:
         synthesized_beam_types=synthesized_beam_types[CHORD_antenna_mask_1d]
-        weights=weights[CHORD_antenna_mask_1d]
+
+    weights=np.bincount(synthesized_beam_types)/N_ant
     return synthesized_beam_types,weights
 
 """
