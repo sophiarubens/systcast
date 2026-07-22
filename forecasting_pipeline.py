@@ -2204,7 +2204,8 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
         axs[i][j].set_xlabel("k$_\perp$")
         axs[i][j].set_ylabel("k$_{||}$")
         axs[i][j].tick_params(axis='x', labelrotation=30)
-        axs[i][j].set_title("[{},{}]".format(ensemble_ids[k]))
+        id0,id1=ensemble_ids[k]
+        axs[i][j].set_title("[{},{}]".format(id0,id1))
         axs[i][j].set_aspect("equal")
         if plot_log:
             neg_ticks = np.linspace(vminlog, 0., num=4, endpoint=False)
