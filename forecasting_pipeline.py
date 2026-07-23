@@ -86,7 +86,7 @@ def_observing_dec=pi/60.
 def_offset=1.75*pi/180. # for this placeholder state where I build up the CHORD layout using rotation matrices instead of actual measurements. probably add Hans' mask at some point to punch the corners and receiver hut holes out...
 def_pbw_pert_frac=1e-2
 def_evol_restriction_threshold=1./60. # HERA 1/15 was made up. turn this down for a computationally less intense substitute. had been using 1/30 as of 2026 July 17th AM
-def_PA_N_grid_pix=512
+def_PA_N_grid_pix=256
 integration_s=10*u.s # seconds
 hrs_per_night=8*u.hr # borrowed from Debanjan / 21cmSense
 # N_nights=100 # also borrowed from Debanjan / 21cmSense
@@ -283,7 +283,7 @@ class beam_effects(object):
                  seed=None,                           # specify a seed if you want replicable RNG behaviour
                  ftol_deriv:float=1e-16,              # this numerical tolerance factor * the function you are trying to differentiate gives a pointwise comparison for whether the derivative computation is accurate enough with the current step size
                  maxiter:int=5,                       # maximum number of times the partial derivative computation can recurse with an updated step size estimate
-                 PA_N_grid_pix:int=def_PA_N_grid_pix, # number of pixels per side of gridded uv plane
+                 Npix:int=def_PA_N_grid_pix, # number of pixels per side of gridded uv plane
                  LoS_taper=False,image_taper=False,   # apply apodization along the line of sight or transverse directions?
                  N_timesteps=def_N_timesteps,
 
@@ -389,13 +389,13 @@ class beam_effects(object):
             fidu_box=fidu.box
             CST_z_vec=np.asarray(fidu.CST_z_vec)*u.Mpc # by construction = not brittle
             np.save("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy",fidu_box)
-            np.save("z_vec"+ioname+".npy",CST_z_vec.value)
+            np.save("z_vec.npy",CST_z_vec.value)
         else:
             fidu_box=  np.load("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy")
 
             ioname_base_case=ioname.replace("N_CST_types_"+str(N_CST_types),"N_CST_types_1")
             ioname_base_case=ioname_base_case.replace("N_ptg_err_"+str(N_pointing_errors_max),"N_ptg_err_0")
-            CST_z_vec=np.load("z_vec"+ioname_base_case+".npy")*u.Mpc # by construction = not brittle
+            CST_z_vec=np.load("z_vec.npy")*u.Mpc # by construction = not brittle
         N_CST_z=len(CST_z_vec)
 
         syst_boxes=np.zeros((N_CST_types,def_PA_N_grid_pix,def_PA_N_grid_pix,N_CST_z)) # this needs to be 4D to be forward-compatible with the new iteration strategy in synthesize_beam
@@ -439,8 +439,8 @@ class beam_effects(object):
         CST_freqs=np.arange(CST_lo.value,CST_hi.value,CST_deltanu.value)*CST_deltanu.unit
         if heavy_beam_recalc: # redo the beam synthesis
             fidu_synthesis=synthesize_beam(array_version=array_version,N_timesteps=self.N_timesteps,
-                                           nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
-                                           distribution="random",Npix=def_PA_N_grid_pix,
+                                           nu_ctr=nu_ctr,Npix=Npix,
+                                           distribution="random",
                                            sub_ensemble_of_CST_beams=fidu_box,
                                            CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs,
                                            supplementary_name=ioname)
@@ -450,8 +450,8 @@ class beam_effects(object):
             synthesized_xy_vec=fidu_synthesis.xy_vec
             synthesized_z_vec=fidu_synthesis.z_vec
             syst_synthesis=synthesize_beam(array_version=array_version,N_timesteps=self.N_timesteps,
-                                           nu_ctr=nu_ctr,N_grid_pix=PA_N_grid_pix,
-                                           distribution=antenna_distribution,Npix=def_PA_N_grid_pix,
+                                           nu_ctr=nu_ctr,Npix=Npix,
+                                           distribution=antenna_distribution,
                                            sub_ensemble_of_CST_beams=[fidu_box,CST_syst_ensemble],
                                            CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs,
                                            supplementary_name=ioname)
@@ -1541,7 +1541,7 @@ def beam_type_distribution(N_NS,N_EW,N_types,distribution="random",frame_width=2
             synthesized_beam_types=np.zeros((N_NS,N_EW),dtype=np.int32)
             if N_types>1:
                 types_iterable=np.arange(1,N_types)
-                if N_types>N_EW:
+                if N_types<N_EW:
                     for i in types_iterable:
                         synthesized_beam_types[:,i::N_types]=i
                 else:
@@ -1590,11 +1590,10 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
                  observing_dec:float=def_observing_dec,                            # declination to observe at (º)
                  N_timesteps:float=def_N_timesteps,                                # number of timesteps in rotation synthesis
                  nu_ctr:float=nu_HI_z0,                                            # central frequency of the survey of interest
-                 N_grid_pix:int=def_PA_N_grid_pix,                                 # number of pixels per side of the gridded uv plane
                  Delta_nu:float=CHORD_channel_width_MHz,                           # channel width in frequency (MHz)
                  distribution:str="random",                                        # distribution of per-antenna systematics. the options I've encoded for now are random, column, and corner, based on where the fiducial beam types are placed within the array
                  evol_restriction_threshold:float=def_evol_restriction_threshold,  # max \delta z/z you will tolerate for the survey of interest and still consider the box close enough to coeval
-                 weighting="uniform", Npix=1024,
+                 weighting="uniform",Npix:int=def_PA_N_grid_pix,
 
                  sub_ensemble_of_CST_beams=None,                                   # array-like with shape (N_CST_types, N_pointing_errors+1, N_CST_xy, N_CST_xy, N_CST_freqs)
                  CST_xy=None,CST_freqs=None,                                       # domain of each CST box in the ensemble. this domain is currently assumed to be the same for each box (not very rigorous/robust, but in practice, if you're running a simulation for a given survey frequency, it would be fairly pathological/ unintuitive/ anti–Occam's razor to get these boxes from CST slices at different frequencies. I guess the practical guidance/takeaway here is that my initial implementation will not support getting different boxes from different CST box resolutions)
@@ -1602,7 +1601,7 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
                  ): 
         # array and observation geometry
         self.N_timesteps=N_timesteps
-        self.N_grid_pix=N_grid_pix
+        self.Npix=Npix
         self.distribution=distribution
         self.evol_restriction_threshold=evol_restriction_threshold
         self.Delta_nu=Delta_nu
@@ -1675,7 +1674,6 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
 
         # beam synthesis numerics
         self.weighting=weighting
-        self.Npix=Npix
 
         if type(sub_ensemble_of_CST_beams) is not list: # can't use .ndim because it doesn't behave well for the inhomog arrays of the else
             print("synthesize_beam received only a !fiducial! beam box")
@@ -1765,13 +1763,24 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         self.uv_synth=uv_synth # units are wavelengths
         print("synthesized rotation")
 
-        uvmagmax=np.max(np.abs(self.uv_synth)) # have not yet implemented the horizon constraint (inability to see more than horizon-to-horizon)
-        uvmagmin=uvmagmax/Npix
-        thetamax=1/uvmagmin # these are 1/-convention Fourier duals, not 2pi/-convention Fourier duals
+        uvmagmax=np.max(np.abs(self.uv_synth)) # pragmatic... but could revisit numerics
+
+        # # the horizon limit approach
+        # thetamax=twopi # naturally, this leads to an impractically high Npix
+        #                # for a fixed uvmagmax, you can lower Npix by increasing deltauv <> decreasing thetamax
+        # deltauv=1/thetamax # 1/ Fourier dual relationship, not 2pi/
+        # Npix=2*uvmagmax/deltauv
+        # print("synthesize_beam.__init__: real phys calc: Npix=",Npix)
+
+        # the "what can I get from the highest Npix I'm willing to tolerate?" approach
+        deltauv=2*uvmagmax/Npix
+        thetamax=1/deltauv # will take you far beyond the horizon limit
+
+        self.Npix=Npix
         self.thetamax=thetamax
-        self.xy_image_broadest=self.ctr_chan_comov_dist*np.arange(-thetamax,thetamax,Npix)
+        self.xy_image_broadest=self.ctr_chan_comov_dist*np.linspace(-thetamax,thetamax,Npix)
         uvbins=np.linspace(-uvmagmax,uvmagmax,Npix)
-        self.d2u=uvbins[1]-uvbins[0]
+        self.d2u=deltauv**2
         self.uvbins_use=np.append(uvbins,uvbins[-1]+uvbins[1]-uvbins[0])
 
     def calc_uv_slice(self):
@@ -1820,10 +1829,10 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         plt.colorbar()
         plt.savefig("single_slice_gridded_uv.png")
         plt.close()
-        _,axs=plt.subplots(1,3,layout="constrained")
+        _,axs=plt.subplots(1,3,layout="constrained",figsize=(12,5))
         fftpsf=fftshift(fftn(ifftshift(implane)))
         im=axs[0].imshow(fftpsf.real.T)
-        plt.colorbar(im,ax=axs[1])
+        plt.colorbar(im,ax=axs[0])
         axs[0].set_title("Re")
         im=axs[1].imshow(fftpsf.imag.T)
         plt.colorbar(im,ax=axs[1])
@@ -1842,9 +1851,8 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         if (self.nu_ctr_MHz.value<(350/(1-self.evol_restriction_threshold/2)) or 
             self.nu_ctr_MHz>(nu_HI_z0/(1+self.evol_restriction_threshold/2))):
             raise ValueError("{:6.2f} is out of bounds".format(self.nu_ctr_MHz))
-        N_grid_pix=self.N_grid_pix
 
-        box_xyz=np.zeros((N_grid_pix,N_grid_pix,self.N_chan))
+        box_xyz=np.zeros((self.Npix,self.Npix,self.N_chan))
         for i in range(self.N_chan): # rescale the uv-coverage to this channel's frequency
             self.uv_synth=self.uv_synth*self.lambda_obs/self.surv_wavelengths[i] # rescale according to observing frequency: multiply up by the prev lambda to cancel, then divide by the current/new lambda
             self.lambda_obs=self.surv_wavelengths[i] # update the observing frequency for next time
@@ -1852,7 +1860,6 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
             self.nu_obs=nu_obs.decompose()
 
             chan_gridded_implane=self.calc_uv_slice() # compute this LoS slice's synthesized beam            
-            # box_xyz[:,:,i]=chan_gridded_implane/np.max(chan_gridded_implane) # peak-normalize in configuration space
             box_xyz[:,:,i]=chan_gridded_implane
             if ((i%(self.N_chan//3))==0):
                 print("{:7.1f} pct complete".format(i/self.N_chan*100))
@@ -2223,8 +2230,7 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
         axs[i][j].set_xlabel("k$_\perp$")
         axs[i][j].set_ylabel("k$_{||}$")
         axs[i][j].tick_params(axis='x', labelrotation=30)
-        id0,id1=ensemble_ids[k]
-        axs[i][j].set_title("[{},{}]".format(id0,id1))
+        axs[i][j].set_title(ensemble_ids[k])
         axs[i][j].set_aspect("equal")
         if plot_log:
             neg_ticks = np.linspace(vminlog, 0., num=4, endpoint=False)
@@ -2298,6 +2304,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
               freq_bin_width=0.1953125*u.MHz,
               N_timesteps=def_N_timesteps,
               overresolve=[False,False],
+              Npix=def_PA_N_grid_pix,
 
               CST_lo=None,CST_hi=None,CST_deltanu=None,
               beam_sim_directory=None,f_mid1="pol1/f_",f_mid2="pol2/f_",f_tail="_GHz.txt",
@@ -2361,8 +2368,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         for b in range(N_max_pointing_errors_each_CST[a-1]):
             point=N_pointing_errors_each_CST[a-1][b]
             complexity_cases.append([a,point])
-    print("complexity_cases=",complexity_cases)
-    complexity_ids=[str(case) for case in complexity_cases]
+    complexity_ids=["{}".format(case) for case in complexity_cases]
 
     power_quantities_all=[]
     Delta2_quantities_all=[]
@@ -2380,16 +2386,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             related_to_N_of_types={} # this info comes from unpacking in this mode now
             complexity_id_i=str(complexity_type)
             complexity_part="N_CST_types_"+str(NCST_i)+"__"+"N_ptg_err_"+str(Npoint_i)
-            print("power_comparison_plots: pointing_errors=",pointing_errors)
-            print("power_comparison_plots: pointing_errors[NCST_i-1]=",pointing_errors[NCST_i-1])
-            print("power_comparison_plots: pointing_errors[NCST_i-1][:Npoint_i+1]=",pointing_errors[NCST_i-1][:Npoint_i+1])
             pointing_errors_i=pointing_errors[NCST_i-1][:Npoint_i+1]
-            print("power_comparison_plots: pointing_errors_i=",pointing_errors_i)
-            # if Npoint_i>0:
-                # print("NCST_i-1, Npoint_i =",NCST_i-1, Npoint_i)
-                # pointing_errors_i=pointing_errors[NCST_i-1][:Npoint_i] # the non-+1 version is actually fine because the indices are zero-based
-            # else:
-                # pointing_errors_i=[[0.,0.,0.,]]
 
             CST_f_head_syst_i=CST_f_head_syst[:NCST_i]
         
@@ -2414,7 +2411,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                     bminCHORD,bmaxCHORD,                                                       
                                     nu_ctr,freq_bin_width,                                                 
                                     evol_restriction_threshold=def_evol_restriction_threshold,  
-                                    overresolve=overresolve,         
+                                    overresolve=overresolve,   
+                                    Npix=Npix,      
                                         
                                     # beam generalities
                                     beam_domain=None,                              
