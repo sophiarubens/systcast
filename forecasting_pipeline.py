@@ -653,11 +653,6 @@ class beam_effects(object):
                 fg_box_ingredient=self.get_pwr_law_FG_ingredient(Tref,nuref,alpha,sigma_alpha)
                 fg_box+=fg_box_ingredient
             self.fg_box=fg_box # centre-origin
-            extreme=np.max(np.abs(fg_box.value))
-            comprehensive_slice_figure(fg_box.value,
-                                       norm=CenteredNorm(halfrange=extreme),
-                                       cmap="RdBu",
-                                       name="fg_box.png")
 
             fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Lsurv_box_z,
                            LoS_taper=self.LoS_taper,image_taper=self.image_taper,
@@ -1291,8 +1286,8 @@ class cosmo_stats(object):
                            bounds_error=False,fill_value=None)(self.to_eval_at).T
             self.evaled_num=evaled_num
 
-            synth_beam_extremum=np.max(np.abs(self.synth_beam))
-            synth_beam_norm=TwoSlopeNorm(0,vmin=-synth_beam_extremum,vmax=synth_beam_extremum)
+            # synth_beam_norm=TwoSlopeNorm(0,vmin=-1,vmax=1)
+            synth_beam_norm=SymLogNorm(1e-3,vmin=-1,vmax=1)
             comprehensive_slice_figure(self.synth_beam, 
                                        norm=synth_beam_norm,
                                        cmap="RdBu",
@@ -1705,10 +1700,6 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         else:
             self.N_baseline_classes=1
 
-        comprehensive_slice_figure(fidu_box,
-                                   norm=LogNorm(vmax=1),
-                                   name="fidu_box_unprocessed.png")
-
         # ungridded instantaneous uv-coverage (baselines in xyz)
         # second use of the loop: iterate over baselines to make arrays of beam type indices     
         uvw_inst=np.zeros((N_bl,3))
@@ -1756,16 +1747,14 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         print("synthesized rotation")
 
         uvmagmax=np.max(np.abs(self.uv_synth)) # pragmatic
-        uvmagmin=uvmagmax/Npix
-        thetamax=1/uvmagmin # these are 1/-convention Fourier duals, not 2pi/-convention Fourier duals
+        deltauv=uvmagmax/Npix
+        thetamax=1/deltauv # these are 1/-convention Fourier duals, not 2pi/-convention Fourier duals
                             # ideally, this thetamax would be pi for the horizon-to-horizon thing, but that leads to an unreasonably large number of pixels
         self.thetamax=thetamax
-        print("checking that thetamax is positive even though i've done absolutely nothing to make it negative",thetamax)
-        self.PSF_xy=self.ctr_chan_comov_dist*np.arange(-thetamax,thetamax,Npix)
-        print("extrema of self.CST_xy,self.PSF_xy =",self.CST_xy[-1],self.PSF_xy[-1])
-        uvbins=np.linspace(-uvmagmax,uvmagmax,Npix)
-        self.d2u=uvbins[1]-uvbins[0]
-        self.uvbins_use=np.append(uvbins,uvbins[-1]+uvbins[1]-uvbins[0])
+        self.PSF_xy=self.ctr_chan_comov_dist*np.sin(np.linspace(-thetamax,thetamax,Npix))
+        # print("extrema of self.CST_xy,self.PSF_xy =",self.CST_xy[-1],self.PSF_xy[-1])
+        self.uvbins_use=np.linspace(-uvmagmax,uvmagmax+deltauv,Npix+1) # promote symmetry more than with the old implementation
+        self.d2u=deltauv**2
 
     def calc_uv_slice(self):
         implane=np.zeros((self.Npix,self.Npix))
