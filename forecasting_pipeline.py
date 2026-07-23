@@ -136,7 +136,8 @@ def comoving_dist_arg(z,Omegam=Omegam,OmegaLambda=OmegaLambda): # this is 1/ E(z
     return 1/np.sqrt(Omegam*(1+z)**3+OmegaLambda)
 def comoving_distance(z=0.5,H0=H0,Omegam=Omegam,OmegaLambda=OmegaLambda):
     integral,_=quad(comoving_dist_arg,0,z,args=(Omegam,OmegaLambda,))
-    return (c.value*integral)/(H0.value*1000)*u.Mpc
+    H0=H0.to(c.unit/u.Mpc)
+    return (c.value*integral)/(H0.value)*u.Mpc
 
 # typical trivial conversions
 def freq2z(nu_rest,nu_obs):
@@ -147,7 +148,8 @@ def z2freq(nu_rest=600.*u.MHz,z=nu_HI_z0/(600*u.MHz)-1.):
 
 # Fourier space
 def kpar(nu_ctr=600*u.MHz,chan_width=0.1953125*u.MHz,N_chan=300,H0=H0): # not pure cosmo. relies on LoS details of survey
-    prefac=1e3*twopi*H0.value*nu_HI_z0.value/c.value # 1e3 to account for units of H0/c ... assumes nu_HI_z0 and chan_width have the same units
+    H0=H0.to(c.unit/u.Mpc)
+    prefac=twopi*H0.value*nu_HI_z0.value/c.value
     z_ctr=freq2z(nu_HI_z0,nu_ctr)
     Ez=1/comoving_dist_arg(z_ctr)
     chan_width=chan_width.to(nu_ctr.unit)
@@ -1772,9 +1774,17 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         # Npix=2*uvmagmax/deltauv
         # print("synthesize_beam.__init__: real phys calc: Npix=",Npix)
 
-        # the "what can I get from the highest Npix I'm willing to tolerate?" approach
-        deltauv=2*uvmagmax/Npix
-        thetamax=1/deltauv # will take you far beyond the horizon limit
+        # # the "what can I get from the highest Npix I'm willing to tolerate?" approach. stripy = wrong
+        # deltauv=2*uvmagmax/Npix
+        # thetamax=1/deltauv # will take you far beyond the horizon limit
+
+        deltauv=uvmagmax/Npix
+        thetamax=1/deltauv # these are 1/-convention Fourier duals, not 2pi/-convention Fourier duals
+        self.thetamax=thetamax
+        self.xy_image_broadest=self.ctr_chan_comov_dist*np.arange(-thetamax,thetamax,Npix)
+        uvbins=np.linspace(-uvmagmax,uvmagmax,Npix)
+        self.d2u=deltauv**2
+        self.uvbins_use=np.append(uvbins,uvbins[-1]+uvbins[1]-uvbins[0])
 
         self.Npix=Npix
         self.thetamax=thetamax
@@ -1812,6 +1822,7 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
                 gridded_im=fftshift(irfftn(ifftshift(gridded_uv*self.d2u), # irfftn silently discarding imag part of symmetry slices of the last transformed axis is not a problem here because the uv slices in question are entirely real-valued
                                            norm="forward",s=(self.Npix,self.Npix)))
                 LoS_1st,LoS_2nd=np.argsort(np.abs(self.nu_obs-self.CST_freqs_obs_units))[:2]
+                print("LoS_1st,LoS_2nd =",LoS_1st,LoS_2nd)
                 weight_1st=np.abs(self.nu_obs-self.CST_freqs_obs_units[LoS_1st])/self.CST_deltanu_obs_units
                 weight_2nd=np.abs(self.nu_obs-self.CST_freqs_obs_units[LoS_2nd])/self.CST_deltanu_obs_units
                 beam_i=self.all_boxes[type_i,:,:,LoS_1st]*weight_1st + self.all_boxes[type_i,:,:,LoS_2nd]*weight_2nd
