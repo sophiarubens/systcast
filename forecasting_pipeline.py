@@ -86,7 +86,9 @@ def_observing_dec=pi/60.
 def_offset=1.75*pi/180. # for this placeholder state where I build up the CHORD layout using rotation matrices instead of actual measurements. probably add Hans' mask at some point to punch the corners and receiver hut holes out...
 def_pbw_pert_frac=1e-2
 def_evol_restriction_threshold=1./60. # HERA 1/15 was made up. turn this down for a computationally less intense substitute. had been using 1/30 as of 2026 July 17th AM
+img_bin_tol=5 # ringing is remarkably insensitive to turning this down; you get really bad scale mismatch by turning it up... the real solution was the "need good resolution in both Fourier and configuration space" thing
 def_PA_N_grid_pix=256
+N_fid_beam_types=1
 integration_s=10*u.s # seconds
 hrs_per_night=8*u.hr # borrowed from Debanjan / 21cmSense
 # N_nights=100 # also borrowed from Debanjan / 21cmSense
@@ -136,8 +138,7 @@ def comoving_dist_arg(z,Omegam=Omegam,OmegaLambda=OmegaLambda): # this is 1/ E(z
     return 1/np.sqrt(Omegam*(1+z)**3+OmegaLambda)
 def comoving_distance(z=0.5,H0=H0,Omegam=Omegam,OmegaLambda=OmegaLambda):
     integral,_=quad(comoving_dist_arg,0,z,args=(Omegam,OmegaLambda,))
-    H0=H0.to(c.unit/u.Mpc)
-    return (c.value*integral)/(H0.value)*u.Mpc
+    return (c.value*integral)/(H0.value*1000)*u.Mpc
 
 # typical trivial conversions
 def freq2z(nu_rest,nu_obs):
@@ -148,11 +149,9 @@ def z2freq(nu_rest=600.*u.MHz,z=nu_HI_z0/(600*u.MHz)-1.):
 
 # Fourier space
 def kpar(nu_ctr=600*u.MHz,chan_width=0.1953125*u.MHz,N_chan=300,H0=H0): # not pure cosmo. relies on LoS details of survey
-    H0=H0.to(c.unit/u.Mpc)
-    prefac=twopi*H0.value*nu_HI_z0.value/c.value
+    prefac=1e3*twopi*H0.value*nu_HI_z0.value/c.value # 1e3 to account for units of H0/c ... assumes nu_HI_z0 and chan_width have the same units
     z_ctr=freq2z(nu_HI_z0,nu_ctr)
     Ez=1/comoving_dist_arg(z_ctr)
-    chan_width=chan_width.to(nu_ctr.unit)
     zterm=Ez/((1+z_ctr)**2*chan_width.value)
     kparmax=prefac*zterm
     kparmin=kparmax/N_chan
@@ -250,9 +249,9 @@ class beam_effects(object):
                  nu_ctr:float=600.*u.MHz,                                         # central freq of survey
                  delta_nu:float=CHORD_channel_width_MHz,                          # channel width
                  evol_restriction_threshold:float=def_evol_restriction_threshold, # how close to coeval is close enough? \Delta z/z
-                 overresolve=[False,False],
                  
                  # parameters of per-antenna systematic–aware beam synthesis
+                 N_pbws_pert:int=0,                 # number of beams to perturb
                  ioname:str="placeholder",          # unique identifier for saving files and figures related to the uv coverage of this scenario
                  antenna_distribution:str="random", # random, column, corner, or frame distribution of fiducial beam types?
                  array_version:str="full",          # full or pathfinder CHORD?
@@ -294,7 +293,6 @@ class beam_effects(object):
                  ):   
                 
         # forecasting considerations
-        overresolve0,overresolve1=overresolve
         self.seed=seed
         self.pars_set_cosmo=pars_set_cosmo
         self.N_pars_set_cosmo=len(pars_set_cosmo)
@@ -334,11 +332,7 @@ class beam_effects(object):
         N_ant=N_ant
         
         # cylindrically binned survey k-modes and box considerations
-        kpar_surv=kpar(self.nu_ctr,self.Deltanu,self.Nchan) # realistic for an observation
-        if overresolve0:
-            Deltanu_finer=100*u.kHz 
-            Nchan_finer=(self.bw/Deltanu_finer).decompose()
-            kpar_surv=kpar(self.nu_ctr,Deltanu_finer,Nchan_finer) # not what CHORD will see, but geared towards resolving more in k-parallel
+        kpar_surv=kpar(self.nu_ctr,self.Deltanu,self.Nchan)
         self.kpar_surv=kpar_surv
         kparmin_surv=kpar_surv[0]
         kparmax_surv=kpar_surv[-1]
@@ -348,9 +342,7 @@ class beam_effects(object):
         self.Nkpar_surv=len(self.kpar_surv)
         self.bmin=bmin
         self.bmax=bmax
-        kperp_surv=kperp(self.nu_ctr,self.bmin,self.bmax) # realistic for an observation
-        if overresolve1:
-            kperp_surv=kperp(self.nu_ctr,3.*u.m,self.bmax) # not what CHORD will see, but geared towards resolving more in k-perp
+        kperp_surv=kperp(self.nu_ctr,self.bmin,self.bmax)
         kperpmin_surv=kperp_surv[0]
         kperpmax_surv=kperp_surv[-1]
         self.kperp_surv=kperp_surv
@@ -364,14 +356,13 @@ class beam_effects(object):
         self.Lsurv_box_xy=twopi/kperpmin_surv
         self.Nvox_box_xy=int(self.Lsurv_box_xy*kperpmax_surv/pi)
         self.Lsurv_box_z=twopi/kparmin_surv
-        print("self.Lsurv_box_xy,self.Lsurv_box_z=",self.Lsurv_box_xy,self.Lsurv_box_z)
         self.Nvox_box_z=int(self.Lsurv_box_z*kparmax_surv/pi)
         print("beam_effects: Nxy,Nz =",self.Nvox_box_xy,self.Nvox_box_z)
 
         self.fgfreqs=np.asarray([self.nu_lo.value,self.nu_hi.value])*self.nu_ctr.unit
 
         self.N_timesteps=           N_timesteps
-        precalculated_xy_vec=self.Lsurv_box_xy*fftshift(fftfreq(def_PA_N_grid_pix))
+        precalculated_xy_vec=self.Lsurv_box_xy*fftshift(fftfreq(Npix))
         N_CST_types=len(CST_f_head_syst)
 
         if np.all(pointing_errors==[[0.,0.,0.]]):
@@ -383,7 +374,7 @@ class beam_effects(object):
         already_imported_fidu_CST=Path("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy").is_file()
         already_imported_syst_CST=Path("syst_boxes_"+ioname+".npy").is_file()
         if heavy_beam_recalc and not already_imported_fidu_CST:
-            fidu=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=def_PA_N_grid_pix,
+            fidu=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=Npix,
                                         beam_sim_directory=beam_sim_directory,f_head=CST_f_head_fidu,
                                         f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="fidu_box_"+ioname)
             fidu.construct_CST_box()
@@ -400,10 +391,10 @@ class beam_effects(object):
             CST_z_vec=np.load("z_vec.npy")*u.Mpc # by construction = not brittle
         N_CST_z=len(CST_z_vec)
 
-        syst_boxes=np.zeros((N_CST_types,def_PA_N_grid_pix,def_PA_N_grid_pix,N_CST_z)) # this needs to be 4D to be forward-compatible with the new iteration strategy in synthesize_beam
+        syst_boxes=np.zeros((N_CST_types,Npix,Npix,N_CST_z)) # this needs to be 4D to be forward-compatible with the new iteration strategy in synthesize_beam
         if heavy_beam_recalc and not already_imported_syst_CST: # only import the fiducial beam once
             for i,CST_f_head_syst_i in enumerate(CST_f_head_syst):
-                syst=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=def_PA_N_grid_pix,
+                syst=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=Npix,
                                             beam_sim_directory=beam_sim_directory,f_head=CST_f_head_syst_i,
                                             f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="syst_box_"+ioname)
                 syst.construct_CST_box()
@@ -421,10 +412,9 @@ class beam_effects(object):
         beam_domain=(precalculated_xy_vec.value,precalculated_xy_vec.value,CST_z_vec.value)
         self.beam_domain=beam_domain
 
-        CST_syst_ensemble=np.zeros((N_CST_types,N_pointing_errors_max+1,def_PA_N_grid_pix,def_PA_N_grid_pix,N_CST_z)) # shape of CST_syst_ensemble is (N_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z) but the sub-ensembles passed to synthesize_beam have shapes  ////////replace
+        CST_syst_ensemble=np.zeros((N_CST_types,N_pointing_errors_max+1,Npix,Npix,N_CST_z)) # shape of CST_syst_ensemble is (N_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z) but the sub-ensembles passed to synthesize_beam have shapes  ////////replace
         CST_syst_ensemble[:,0,:,:,:]=syst_boxes # situate the pointing error–free versions
 
-        print("pointing_errors",pointing_errors)
         if type(pointing_errors[0])==float:
             pointing_errors_to_loop_over=[pointing_errors]
         elif pointing_errors is not None:
@@ -441,22 +431,22 @@ class beam_effects(object):
         CST_freqs=np.arange(CST_lo.value,CST_hi.value,CST_deltanu.value)*CST_deltanu.unit
         if heavy_beam_recalc: # redo the beam synthesis
             fidu_synthesis=synthesize_beam(array_version=array_version,N_timesteps=self.N_timesteps,
-                                           nu_ctr=nu_ctr,Npix=Npix,
-                                           distribution="random",
-                                           sub_ensemble_of_CST_beams=fidu_box,
-                                           CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs,
-                                           supplementary_name=ioname)
+                                                N_pbws_pert=0,nu_ctr=nu_ctr,
+                                                distribution="random",Npix=def_PA_N_grid_pix,
+                                                sub_ensemble_of_CST_beams=fidu_box,
+                                                CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs,
+                                                supplementary_name=ioname)
             fidu_synthesis.stack_to_box()
             print("finished synthesizing fiducial CST beam")
             fidu_box_synthesized=fidu_synthesis.box
             synthesized_xy_vec=fidu_synthesis.xy_vec
             synthesized_z_vec=fidu_synthesis.z_vec
             syst_synthesis=synthesize_beam(array_version=array_version,N_timesteps=self.N_timesteps,
-                                           nu_ctr=nu_ctr,Npix=Npix,
-                                           distribution=antenna_distribution,
-                                           sub_ensemble_of_CST_beams=[fidu_box,CST_syst_ensemble],
-                                           CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs,
-                                           supplementary_name=ioname)
+                                                N_pbws_pert=N_pbws_pert,nu_ctr=nu_ctr,
+                                                distribution=antenna_distribution,Npix=def_PA_N_grid_pix,
+                                                sub_ensemble_of_CST_beams=[fidu_box,CST_syst_ensemble],
+                                                CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs,
+                                                supplementary_name=ioname)
             syst_synthesis.stack_to_box()
             print("finished synthesizing systematic-laden CST beam")
             syst_box_synthesized=syst_synthesis.box
@@ -1550,7 +1540,6 @@ def beam_type_distribution(N_NS,N_EW,N_types,distribution="random",frame_width=2
                     rest_of_types=np.arange(N_EW,N_types)
                     for i in rest_of_types:
                         synthesized_beam_types[::2,i::N_EW]=i
-                    
         elif distribution=="frame":
             synthesized_beam_types=np.zeros((N_NS,N_EW),dtype=np.int8)
             if N_types>1: # stricter threshold for this case based on where the random numbers come from
@@ -1573,9 +1562,8 @@ def beam_type_distribution(N_NS,N_EW,N_types,distribution="random",frame_width=2
         synthesized_beam_types=np.zeros(N_ant,dtype=np.float64)
 
     # if full CHORD, mask out the 528-512=14 antennas that aren't actually being constructed -> masking antennas here ensures compatibility with the beam synthesis code
-    if N_NS*N_EW==528:
+    if N_NS*N_EW==528: # proxy for "have all the calculations so far been using a 22x24 grid?"
         synthesized_beam_types=synthesized_beam_types[CHORD_antenna_mask_1d]
-
     weights=np.bincount(synthesized_beam_types)/N_ant
     return synthesized_beam_types,weights
 
@@ -1590,20 +1578,21 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
                  b_NS:float=b_NS,b_EW:float=b_EW,                                  # N-S and E-W baseline lengths (m)
                  offset_rad:float=def_offset,                                      # (astropy-unitless because this class expects rad) CHORD is aligned with magnetic, not geographical north, so, when mathematically constructing the uv coverage, rotate the rectangular array grid
                  observing_dec:float=def_observing_dec,                            # declination to observe at (º)
+                 N_pbws_pert:int=0,                                                # number of antennas with perturbed primary beams
                  N_timesteps:float=def_N_timesteps,                                # number of timesteps in rotation synthesis
                  nu_ctr:float=nu_HI_z0,                                            # central frequency of the survey of interest
                  Delta_nu:float=CHORD_channel_width_MHz,                           # channel width in frequency (MHz)
                  distribution:str="random",                                        # distribution of per-antenna systematics. the options I've encoded for now are random, column, and corner, based on where the fiducial beam types are placed within the array
                  evol_restriction_threshold:float=def_evol_restriction_threshold,  # max \delta z/z you will tolerate for the survey of interest and still consider the box close enough to coeval
-                 weighting="uniform",Npix:int=def_PA_N_grid_pix,
+                 weighting="uniform", Npix:int=def_PA_N_grid_pix,
 
                  sub_ensemble_of_CST_beams=None,                                   # array-like with shape (N_CST_types, N_pointing_errors+1, N_CST_xy, N_CST_xy, N_CST_freqs)
                  CST_xy=None,CST_freqs=None,                                       # domain of each CST box in the ensemble. this domain is currently assumed to be the same for each box (not very rigorous/robust, but in practice, if you're running a simulation for a given survey frequency, it would be fairly pathological/ unintuitive/ anti–Occam's razor to get these boxes from CST slices at different frequencies. I guess the practical guidance/takeaway here is that my initial implementation will not support getting different boxes from different CST box resolutions)
                  supplementary_name=None # literally just for the July 16th 2026 histogram validation
                  ): 
         # array and observation geometry
+        self.N_pbws_pert=N_pbws_pert
         self.N_timesteps=N_timesteps
-        self.Npix=Npix
         self.distribution=distribution
         self.evol_restriction_threshold=evol_restriction_threshold
         self.Delta_nu=Delta_nu
@@ -1613,7 +1602,8 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         if (array_version=="pathfinder"):
             N_NS=N_NS//2
             N_EW=N_EW//2
-        N_ant=N_NS*N_EW # preliminary version -> will get filtered later
+        N_ant=N_NS*N_EW # gets overwritten later if necessary
+        N_bl=N_ant*(N_ant-1)//2 # idem
         self.nu_ctr_MHz=nu_ctr.to(u.MHz)
         self.nu_ctr_Hz=nu_ctr.to(u.Hz)
         self.Dc_ctr=comoving_distance(nu_HI_z0/nu_ctr-1)
@@ -1636,14 +1626,16 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         dif=antennas_EN[0,0]-antennas_EN[0,-1]+antennas_EN[0,-1]-antennas_EN[-1,-1]
         up=np.reshape(2+(-antennas_EN[:,0]+antennas_EN[:,1])/dif, (N_ant,1), order="C") # eyeballed ~2 m vertical range that ramps ~linearly from a high near the NW corner to a low near the SE corner
         antennas_ENU=np.hstack((antennas_EN,up))
-        antennas_ENU=antennas_ENU[CHORD_antenna_mask_1d,:]
+        if N_ant==528: # another step of post-facto gap masking
+            antennas_ENU=antennas_ENU[CHORD_antenna_mask_1d,:]
+            N_ant=512
+            N_bl=N_ant*(N_ant-1)//2
         
         zenith=np.array([np.cos(DRAO_lat),0,np.sin(DRAO_lat)]) # Jon math
         east=np.array([0,1,0])
         north=np.cross(zenith,east)
         lat_mat=np.vstack([north,east,zenith])
         antennas_xyz=antennas_ENU@lat_mat.T
-        print("antennas_xyz.shape=",antennas_xyz.shape)
         
         # line-of-sight quantities
         bw_MHz=self.nu_ctr_MHz*evol_restriction_threshold
@@ -1676,6 +1668,7 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
 
         # beam synthesis numerics
         self.weighting=weighting
+        self.Npix=Npix
 
         if type(sub_ensemble_of_CST_beams) is not list: # can't use .ndim because it doesn't behave well for the inhomog arrays of the else
             print("synthesize_beam received only a !fiducial! beam box")
@@ -1711,9 +1704,6 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
             self.N_baseline_classes=self.N_total_beam_types*(self.N_total_beam_types-1)
         else:
             self.N_baseline_classes=1
-        N_ant=len(self.pb_types) # can't do the simple N_NS*N_EW computation now that I'm masking out the "missing" antennas
-        N_bl=N_ant*(N_ant-1)//2
-        print("N_bl=",N_bl)
 
         comprehensive_slice_figure(fidu_box,
                                    norm=LogNorm(vmax=1),
@@ -1765,32 +1755,14 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         self.uv_synth=uv_synth # units are wavelengths
         print("synthesized rotation")
 
-        uvmagmax=np.max(np.abs(self.uv_synth)) # pragmatic... but could revisit numerics
-
-        # # the horizon limit approach
-        # thetamax=twopi # naturally, this leads to an impractically high Npix
-        #                # for a fixed uvmagmax, you can lower Npix by increasing deltauv <> decreasing thetamax
-        # deltauv=1/thetamax # 1/ Fourier dual relationship, not 2pi/
-        # Npix=2*uvmagmax/deltauv
-        # print("synthesize_beam.__init__: real phys calc: Npix=",Npix)
-
-        # # the "what can I get from the highest Npix I'm willing to tolerate?" approach. stripy = wrong
-        # deltauv=2*uvmagmax/Npix
-        # thetamax=1/deltauv # will take you far beyond the horizon limit
-
-        deltauv=uvmagmax/Npix
-        thetamax=1/deltauv # these are 1/-convention Fourier duals, not 2pi/-convention Fourier duals
+        uvmagmax=np.max(np.abs(self.uv_synth)) # pragmatic
+        uvmagmin=uvmagmax/Npix
+        thetamax=1/uvmagmin # these are 1/-convention Fourier duals, not 2pi/-convention Fourier duals
+                            # ideally, this thetamax would be pi for the horizon-to-horizon thing, but that leads to an unreasonably large number of pixels
         self.thetamax=thetamax
         self.xy_image_broadest=self.ctr_chan_comov_dist*np.arange(-thetamax,thetamax,Npix)
         uvbins=np.linspace(-uvmagmax,uvmagmax,Npix)
-        self.d2u=deltauv**2
-        self.uvbins_use=np.append(uvbins,uvbins[-1]+uvbins[1]-uvbins[0])
-
-        self.Npix=Npix
-        self.thetamax=thetamax
-        self.xy_image_broadest=self.ctr_chan_comov_dist*np.linspace(-thetamax,thetamax,Npix)
-        uvbins=np.linspace(-uvmagmax,uvmagmax,Npix)
-        self.d2u=deltauv**2
+        self.d2u=uvbins[1]-uvbins[0]
         self.uvbins_use=np.append(uvbins,uvbins[-1]+uvbins[1]-uvbins[0])
 
     def calc_uv_slice(self):
@@ -1804,7 +1776,6 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
                         )&(self.indices_of_constituent_ant_pb_types[:,1]==j
                            )|(self.indices_of_constituent_ant_pb_types[:,0]==j
                                 )&(self.indices_of_constituent_ant_pb_types[:,1]==i)
-                frac_baselines=np.sum(here!=0)/self.N_baselines # fraction of baselines in this beam category
                 u_here=self.uv_synth[here,0,:] # [N_bl,2,N_hr_angles]
                 v_here=self.uv_synth[here,1,:]
                 N_bl_here,N_hr_angles_here=u_here.shape # (N_bl,N_hr_angles)
@@ -1815,14 +1786,14 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
                 comb=np.nonzero(gridded_uv)
                 if self.weighting=="custom":
                     gridded_uv[comb]=1/gridded_uv[comb]
-                elif self.weighting=="uniform":
+                elif self.weighting=="uniform": # I'm kind of oversubscribing this concept here because I have multiple beam types, but I use the weights to make things less bad
+                    frac_baselines=np.sum(here!=0)/self.N_baselines # fraction of baselines in this beam category
                     gridded_uv[comb]=1 * frac_baselines
                 elif self.weighting!="natural":
                     raise ValueError("unknown uv plane weighting scheme")
                 gridded_im=fftshift(irfftn(ifftshift(gridded_uv*self.d2u), # irfftn silently discarding imag part of symmetry slices of the last transformed axis is not a problem here because the uv slices in question are entirely real-valued
                                            norm="forward",s=(self.Npix,self.Npix)))
                 LoS_1st,LoS_2nd=np.argsort(np.abs(self.nu_obs-self.CST_freqs_obs_units))[:2]
-                print("LoS_1st,LoS_2nd =",LoS_1st,LoS_2nd)
                 weight_1st=np.abs(self.nu_obs-self.CST_freqs_obs_units[LoS_1st])/self.CST_deltanu_obs_units
                 weight_2nd=np.abs(self.nu_obs-self.CST_freqs_obs_units[LoS_2nd])/self.CST_deltanu_obs_units
                 beam_i=self.all_boxes[type_i,:,:,LoS_1st]*weight_1st + self.all_boxes[type_i,:,:,LoS_2nd]*weight_2nd
@@ -1833,7 +1804,7 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
                 
                 interpolator=RBS(self.CST_xy,self.CST_xy, beam_ij) # originally on CST-derived grid
                 beam_ij_interpolated=interpolator(self.xy_image_broadest,self.xy_image_broadest) # want to evaluate on image grid that is Fourier-dual to the uv grid
-                implane+=gridded_im*beam_ij_interpolated # add the PSF for this beam type
+                implane+=gridded_im*beam_ij_interpolated # add the PSF for this baseline type
 
         plt.figure()
         plt.imshow(gridded_uv.T,origin="lower")
@@ -2307,15 +2278,13 @@ def pointing_family(original_pointing,N,seed=270426):
 def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False,
               array_version:str="pathfinder", nu_ctr:float=800, epsxy:float=0.1,
               frac_tol_conv=0.1, N_th_k=1024,
-              antenna_dist="random", 
+              N_pbws_pert=0, antenna_dist="random", 
               which_power="P",
                   
               wedge_cut=False, layer_foregrounds=True, pointing_errors=[0.,0.,0.],
                   
               freq_bin_width=0.1953125*u.MHz,
               N_timesteps=def_N_timesteps,
-              overresolve=[False,False],
-              Npix=def_PA_N_grid_pix,
 
               CST_lo=None,CST_hi=None,CST_deltanu=None,
               beam_sim_directory=None,f_mid1="pol1/f_",f_mid2="pol2/f_",f_tail="_GHz.txt",
@@ -2379,6 +2348,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         for b in range(N_max_pointing_errors_each_CST[a-1]):
             point=N_pointing_errors_each_CST[a-1][b]
             complexity_cases.append([a,point])
+
     complexity_ids=["{}".format(case) for case in complexity_cases]
 
     power_quantities_all=[]
@@ -2388,8 +2358,12 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         t00=time.time()
         if N_CST_types==0:
             N_fidu_types_i,N_pert_types_i=complexity_type
+            if N_pert_types_i==0: # loop over complexity cases–friendly number of antennas with perturbed beams
+                N_pbws_pert_i=0
+            else:
+                N_pbws_pert_i=N_pbws_pert
             complexity_part="Nreal_"+str(N_fidu_types_i)+"__"\
-                            "Npert_"+str(N_pert_types_i)+"__"\
+                            "Npert_"+str(N_pert_types_i)+"_"+str(N_pbws_pert)+"__"\
                             "epsxy_"+str(epsxy)+"__"
             related_to_N_of_types={"N_fidu_types":N_fidu_types_i,"N_pert_types":N_pert_types_i}
         else:
@@ -2397,9 +2371,13 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             related_to_N_of_types={} # this info comes from unpacking in this mode now
             complexity_id_i=str(complexity_type)
             complexity_part="N_CST_types_"+str(NCST_i)+"__"+"N_ptg_err_"+str(Npoint_i)
-            pointing_errors_i=pointing_errors[NCST_i-1][:Npoint_i+1]
+            if Npoint_i>0:
+                pointing_errors_i=pointing_errors_i=pointing_errors[NCST_i-1][:Npoint_i+1]
+            else:
+                pointing_errors_i=[[0.,0.,0.,]]
 
             CST_f_head_syst_i=CST_f_head_syst[:NCST_i]
+            N_pbws_pert_i=N_pbws_pert
         
         ioname=array_version+"_"+c_or_w+"_"+"_"\
            ""+per_chan_syst_string+"_"+per_chan_syst_name+"_"\
@@ -2416,19 +2394,17 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         antdist=antenna_dist
         if Npoint_i==0 and NCST_i==1:
             CST_f_head_syst_i=[CST_f_head_fidu] # literally just use fiducial for both num and denom everywhere
-
         windowed_survey=beam_effects(# SCIENCE
                                     # the observation
                                     bminCHORD,bmaxCHORD,                                                       
                                     nu_ctr,freq_bin_width,                                                 
-                                    evol_restriction_threshold=def_evol_restriction_threshold,  
-                                    overresolve=overresolve,   
-                                    Npix=Npix,      
+                                    evol_restriction_threshold=def_evol_restriction_threshold,           
                                         
                                     # beam generalities
                                     beam_domain=None,                              
 
                                     # numerical beam perturbation parameters
+                                    N_pbws_pert=N_pbws_pert_i,
                                     antenna_distribution=antdist,array_version=array_version,
                                     **related_to_N_of_types,
                                     CST_lo=CST_lo,CST_hi=CST_hi,CST_deltanu=CST_deltanu,ioname=ioname,
