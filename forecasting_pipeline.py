@@ -389,8 +389,8 @@ class beam_effects(object):
 
             ioname_base_case=ioname.replace("N_CST_types_"+str(N_CST_types),"N_CST_types_1")
             ioname_base_case=ioname_base_case.replace("N_ptg_err_"+str(N_pointing_errors_max),"N_ptg_err_0")
-            CST_xy_vec=np.load("xy_vec.npy")*u.Mpc
-            CST_z_vec=np.load("z_vec.npy")*u.Mpc # by construction = not brittle
+            CST_xy_vec=np.load("CST_xy_vec.npy")*u.Mpc
+            CST_z_vec=np.load("CST_z_vec.npy")*u.Mpc # by construction = not brittle
         N_CST_z=len(CST_z_vec)
 
         syst_boxes=np.zeros((N_CST_types,Npix,Npix,N_CST_z)) # this needs to be 4D to be forward-compatible with the new iteration strategy in generate_PSF
