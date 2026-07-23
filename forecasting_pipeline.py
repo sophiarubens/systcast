@@ -362,7 +362,6 @@ class beam_effects(object):
         self.fgfreqs=np.asarray([self.nu_lo.value,self.nu_hi.value])*self.nu_ctr.unit
 
         self.N_timesteps=           N_timesteps
-        precalculated_xy_vec=self.Lsurv_box_xy*fftshift(fftfreq(Npix))
         N_CST_types=len(CST_f_head_syst)
 
         if np.all(pointing_errors==[[0.,0.,0.]]):
@@ -380,18 +379,21 @@ class beam_effects(object):
             fidu.construct_CST_box()
             print("generated fidu beam box\n")
             fidu_box=fidu.box
+            CST_xy_vec=np.asarray(fidu.xy_for_box)*u.Mpc
             CST_z_vec=np.asarray(fidu.CST_z_vec)*u.Mpc # by construction = not brittle
             np.save("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy",fidu_box)
-            np.save("z_vec.npy",CST_z_vec.value)
+            np.save("CST_xy_vec.npy",CST_xy_vec.value)
+            np.save("CST_z_vec.npy",CST_z_vec.value)
         else:
             fidu_box=  np.load("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy")
 
             ioname_base_case=ioname.replace("N_CST_types_"+str(N_CST_types),"N_CST_types_1")
             ioname_base_case=ioname_base_case.replace("N_ptg_err_"+str(N_pointing_errors_max),"N_ptg_err_0")
+            CST_xy_vec=np.load("xy_vec.npy")*u.Mpc
             CST_z_vec=np.load("z_vec.npy")*u.Mpc # by construction = not brittle
         N_CST_z=len(CST_z_vec)
 
-        syst_boxes=np.zeros((N_CST_types,Npix,Npix,N_CST_z)) # this needs to be 4D to be forward-compatible with the new iteration strategy in synthesize_beam
+        syst_boxes=np.zeros((N_CST_types,Npix,Npix,N_CST_z)) # this needs to be 4D to be forward-compatible with the new iteration strategy in generate_PSF
         if heavy_beam_recalc and not already_imported_syst_CST: # only import the fiducial beam once
             for i,CST_f_head_syst_i in enumerate(CST_f_head_syst):
                 syst=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=Npix,
@@ -409,10 +411,10 @@ class beam_effects(object):
                 syst_boxes[0,:,:,:]=fidu_box
         
         N_CST_z=len(CST_z_vec)
-        beam_domain=(precalculated_xy_vec.value,precalculated_xy_vec.value,CST_z_vec.value)
+        beam_domain=(CST_xy_vec.value,CST_xy_vec.value,CST_z_vec.value)
         self.beam_domain=beam_domain
 
-        CST_syst_ensemble=np.zeros((N_CST_types,N_pointing_errors_max+1,Npix,Npix,N_CST_z)) # shape of CST_syst_ensemble is (N_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z) but the sub-ensembles passed to synthesize_beam have shapes  ////////replace
+        CST_syst_ensemble=np.zeros((N_CST_types,N_pointing_errors_max+1,Npix,Npix,N_CST_z)) # shape of CST_syst_ensemble is (N_CST_types,self.Nvox_box_xy,self.Nvox_box_xy,N_CST_z) but the sub-ensembles passed to generate_PSF have shapes  ////////replace
         CST_syst_ensemble[:,0,:,:,:]=syst_boxes # situate the pointing error–free versions
 
         if type(pointing_errors[0])==float:
@@ -430,22 +432,22 @@ class beam_effects(object):
         
         CST_freqs=np.arange(CST_lo.value,CST_hi.value,CST_deltanu.value)*CST_deltanu.unit
         if heavy_beam_recalc: # redo the beam synthesis
-            fidu_synthesis=synthesize_beam(array_version=array_version,N_timesteps=self.N_timesteps,
+            fidu_synthesis=generate_PSF(array_version=array_version,N_timesteps=self.N_timesteps,
                                                 N_pbws_pert=0,nu_ctr=nu_ctr,
                                                 distribution="random",Npix=def_PA_N_grid_pix,
                                                 sub_ensemble_of_CST_beams=fidu_box,
-                                                CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs,
+                                                CST_xy=CST_xy_vec,CST_freqs=CST_freqs,
                                                 supplementary_name=ioname)
             fidu_synthesis.stack_to_box()
             print("finished synthesizing fiducial CST beam")
             fidu_box_synthesized=fidu_synthesis.box
             synthesized_xy_vec=fidu_synthesis.xy_vec
             synthesized_z_vec=fidu_synthesis.z_vec
-            syst_synthesis=synthesize_beam(array_version=array_version,N_timesteps=self.N_timesteps,
+            syst_synthesis=generate_PSF(array_version=array_version,N_timesteps=self.N_timesteps,
                                                 N_pbws_pert=N_pbws_pert,nu_ctr=nu_ctr,
                                                 distribution=antenna_distribution,Npix=def_PA_N_grid_pix,
                                                 sub_ensemble_of_CST_beams=[fidu_box,CST_syst_ensemble],
-                                                CST_xy=precalculated_xy_vec,CST_freqs=CST_freqs,
+                                                CST_xy=CST_xy_vec,CST_freqs=CST_freqs,
                                                 supplementary_name=ioname)
             syst_synthesis.stack_to_box()
             print("finished synthesizing systematic-laden CST beam")
@@ -1567,7 +1569,7 @@ this class helps compute numerical windowing boxes for brightness temp boxes res
 from beams that have the flexibility to differ on a per-antenna basis.
 """
 
-class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
+class generate_PSF(beam_effects): # developed with rectangular arrays in mind
     def __init__(self,
                  array_version:str="full",                                         # run a simulation for full or pathfinder CHORD?
                  b_NS:float=b_NS,b_EW:float=b_EW,                                  # N-S and E-W baseline lengths (m)
@@ -1666,13 +1668,13 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         self.Npix=Npix
 
         if type(sub_ensemble_of_CST_beams) is not list: # can't use .ndim because it doesn't behave well for the inhomog arrays of the else
-            print("synthesize_beam received only a !fiducial! beam box")
+            print("generate_PSF received only a !fiducial! beam box")
             fidu_box=sub_ensemble_of_CST_beams
             self.all_boxes=np.expand_dims(sub_ensemble_of_CST_beams,axis=0)
             N_total_beam_types=1
             self.N_total_beam_types=1
         else:
-            print("synthesize_beam received both !fiducial and systematic-laden! beam boxes")
+            print("generate_PSF received both !fiducial and systematic-laden! beam boxes")
             fidu_box,syst_boxes=sub_ensemble_of_CST_beams # should be unpackable into two arrays:
             assert fidu_box.ndim==3 and syst_boxes.ndim==5 # one box and one "2D array of 3D boxes"
             self.N_CST_types,self.N_max_pointing_errors,_,_,_=syst_boxes.shape
@@ -1746,13 +1748,12 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         self.uv_synth=uv_synth # units are wavelengths
         print("synthesized rotation")
 
-        uvmagmax=np.max(np.abs(self.uv_synth)) # pragmatic
+        uvmagmax=5*np.max(np.abs(self.uv_synth)) # pragmatic
         deltauv=uvmagmax/Npix
         thetamax=1/deltauv # these are 1/-convention Fourier duals, not 2pi/-convention Fourier duals
                             # ideally, this thetamax would be pi for the horizon-to-horizon thing, but that leads to an unreasonably large number of pixels
         self.thetamax=thetamax
-        self.PSF_xy=self.ctr_chan_comov_dist*np.sin(np.linspace(-thetamax,thetamax,Npix))
-        # print("extrema of self.CST_xy,self.PSF_xy =",self.CST_xy[-1],self.PSF_xy[-1])
+        self.PSF_xy=self.ctr_chan_comov_dist*np.sin(np.linspace(-thetamax,thetamax,Npix)) # this squishes the xy spacing = not a true grid; the converse would also misrepresent what uv things map to, albeit in a different way
         self.uvbins_use=np.linspace(-uvmagmax,uvmagmax+deltauv,Npix+1) # promote symmetry more than with the old implementation
         self.d2u=deltauv**2
 
@@ -1802,8 +1803,17 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         plt.figure()
         plt.imshow(gridded_uv.T,origin="lower")
         plt.colorbar()
+        plt.title("gridded uv")
         plt.savefig("single_slice_gridded_uv.png")
         plt.close()
+
+        plt.figure()
+        plt.imshow(implane.T)
+        plt.colorbar()
+        plt.title("PSF")
+        plt.savefig("PSF.png",dpi=500)
+        plt.close()
+
         _,axs=plt.subplots(1,3,layout="constrained",figsize=(12,5))
         fftpsf=fftshift(fftn(ifftshift(implane)))
         im=axs[0].imshow(fftpsf.real.T)
@@ -1818,6 +1828,7 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         plt.suptitle("FFT(PSF)\nIMPROPERLY NORMALIZED")
         plt.savefig("FFT_PSF.png",dpi=500)
         plt.close()
+
         norm=np.max(implane) # this is what I meant to override on the AM of July 15th 2026 but actually left uncommented somewhere else. maybe it doesn't lead to such crazy artifacts... and if it didn't, that would be convenient... because it would be robust against division-by-zero errors
         implane/=norm
         return implane
@@ -1841,7 +1852,6 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         self.box=box_xyz
 
         # generate a box of r-values (necessary for interpolation to survey domain in cosmo_stats as called by beam_effects)
-        # xy_vec=self.CST_xy # making the coeval approximation # THIS IS THE LINE THAT WAS KILLING ME
         xy_vec=self.PSF_xy
         z_vec=self.comoving_distances_channels-self.ctr_chan_comov_dist 
         self.xy_vec=xy_vec
@@ -1951,7 +1961,7 @@ class CHORD_sense(object): # modified from a notebook helpfully shared by Debanj
         self,
         spacing:np.ndarray=[b_EW,b_NS], # N-S and E-W baselines (m)
         n_side:np.ndarray=[22,24],    # number of dishes per side of the array (N-S, E-W) directions
-        orientation=None,             # same comment about CHORD alignment as in the synthesize_beam documentation (expects rad!)
+        orientation=None,             # same comment about CHORD alignment as in the generate_PSF documentation (expects rad!)
         center:np.ndarray=[0,0],      # where to put the axis origin of the antenna location x-y coordinates (if you leave the default in place, it'll make the zero point the physical centre of the array)
         
         freq_cen:float = 900.*u.MHz,                  # central frequency of the observation/survey
