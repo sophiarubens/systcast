@@ -1760,7 +1760,9 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         thetamax=1/uvmagmin # these are 1/-convention Fourier duals, not 2pi/-convention Fourier duals
                             # ideally, this thetamax would be pi for the horizon-to-horizon thing, but that leads to an unreasonably large number of pixels
         self.thetamax=thetamax
-        self.xy_image_broadest=self.ctr_chan_comov_dist*np.arange(-thetamax,thetamax,Npix)
+        print("checking that thetamax is positive even though i've done absolutely nothing to make it negative",thetamax)
+        self.PSF_xy=self.ctr_chan_comov_dist*np.arange(-thetamax,thetamax,Npix)
+        print("extrema of self.CST_xy,self.PSF_xy =",self.CST_xy[-1],self.PSF_xy[-1])
         uvbins=np.linspace(-uvmagmax,uvmagmax,Npix)
         self.d2u=uvbins[1]-uvbins[0]
         self.uvbins_use=np.append(uvbins,uvbins[-1]+uvbins[1]-uvbins[0])
@@ -1803,7 +1805,9 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
                 beam_ij/=np.max(beam_ij) # beam should already be peak-normalized, pero mejor asegurarse que no haya nada raro... for example, a 2-3-pixel offset in the peak location
                 
                 interpolator=RBS(self.CST_xy,self.CST_xy, beam_ij) # originally on CST-derived grid
-                beam_ij_interpolated=interpolator(self.xy_image_broadest,self.xy_image_broadest) # want to evaluate on image grid that is Fourier-dual to the uv grid
+                beam_ij_interpolated=interpolator(self.PSF_xy,self.PSF_xy) # want to evaluate on image grid that is Fourier-dual to the uv grid
+                # interpolator=RBS(,, beam_ij)
+                # beam_ij_interpolated=interpolator()
                 implane+=gridded_im*beam_ij_interpolated # add the PSF for this baseline type
 
         plt.figure()
@@ -1848,7 +1852,8 @@ class synthesize_beam(beam_effects): # developed with rectangular arrays in mind
         self.box=box_xyz
 
         # generate a box of r-values (necessary for interpolation to survey domain in cosmo_stats as called by beam_effects)
-        xy_vec=self.CST_xy # making the coeval approximation
+        # xy_vec=self.CST_xy # making the coeval approximation # THIS IS THE LINE THAT WAS KILLING ME
+        xy_vec=self.PSF_xy
         z_vec=self.comoving_distances_channels-self.ctr_chan_comov_dist 
         self.xy_vec=xy_vec
         self.z_vec=z_vec
