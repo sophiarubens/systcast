@@ -487,13 +487,10 @@ class beam_effects(object):
         else:
             self.sy_eff_primary_box=np.copy(self.fi_eff_primary_box)
         
-        PSF_domain=(PSF_xy_vec.value,PSF_xy_vec.value,PSF_z_vec.value) # might need to re-unit-ify this more robustly later, but for now the main use is interpolation and I don't want to jam up scipy by putting units where they have no business being
-
         self.fidu=fidu_box_PSF
         self.real=fidu_box_PSF
         self.thgt=syst_box_PSF
 
-        self.PSF_domain=PSF_domain
         self.PSF_xy_ext=PSF_xy_vec[1]-PSF_xy_vec[0]
         self.PSF_Nxy=len(PSF_xy_vec)
 
@@ -674,7 +671,6 @@ class beam_effects(object):
                                 effective_primary_beam_for_effective_volume=self.fi_eff_primary_box, eff_pri_domain=self.CST_domain,
                                 PSF=self.fidu,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
-                                PSF_domain=self.PSF_domain,
                                 LoS_taper=self.LoS_taper,image_taper=self.image_taper,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
         self.kperpbins_internal=co_fi_xx_fg.kperpbins
@@ -685,7 +681,6 @@ class beam_effects(object):
                                 effective_primary_beam_for_effective_volume=self.sy_eff_primary_box, eff_pri_domain=self.CST_domain,
                                 PSF=self.thgt,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
-                                PSF_domain=self.PSF_domain,
                                 LoS_taper=self.LoS_taper,image_taper=self.image_taper,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
         xx_fi_sy_fg=cosmo_stats(self.PSF_xy_ext,Lz=self.Lsurv_box_z,
@@ -694,7 +689,6 @@ class beam_effects(object):
                                 T_pristine=fg_box,
                                 PSF=self.thgt,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
-                                PSF_domain=self.PSF_domain,
                                 LoS_taper=self.LoS_taper,image_taper=self.image_taper,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
         xx_fi_xx_fg=cosmo_stats(self.PSF_xy_ext,Lz=self.Lsurv_box_z,
@@ -703,7 +697,6 @@ class beam_effects(object):
                                 T_pristine=fg_box,
                                 PSF=self.fidu,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
-                                PSF_domain=self.PSF_domain,
                                 LoS_taper=self.LoS_taper,image_taper=self.image_taper,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
         co_fi_xx_xx=cosmo_stats(self.PSF_xy_ext,Lz=self.Lsurv_box_z,
@@ -712,7 +705,6 @@ class beam_effects(object):
                                 effective_primary_beam_for_effective_volume=self.fi_eff_primary_box, eff_pri_domain=self.CST_domain,
                                 PSF=self.fidu,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
-                                PSF_domain=self.PSF_domain,
                                 LoS_taper=self.LoS_taper,image_taper=self.image_taper,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=None)
         co_fi_sy_xx=cosmo_stats(self.PSF_xy_ext,Lz=self.Lsurv_box_z,
@@ -721,7 +713,6 @@ class beam_effects(object):
                                 effective_primary_beam_for_effective_volume=self.sy_eff_primary_box, eff_pri_domain=self.CST_domain,
                                 PSF=self.thgt,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
-                                PSF_domain=self.PSF_domain,
                                 LoS_taper=self.LoS_taper,image_taper=self.image_taper,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=None)
         # co_xx_xx_fg=cosmo_stats(self.PSF_xy_ext,Lz=self.Lsurv_box_z,
