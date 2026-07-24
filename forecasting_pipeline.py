@@ -176,7 +176,8 @@ def wedge_kpar(nu_ctr,kperp,H0=H0,nu_rest=nu_HI_z0): # for some kperps of intere
 def calc_b_HI(z):
     return 1.489 +0.460*(z-1) -0.118*(z-1)**2 +0.0678*(z-1)**3 -0.0128*(z-1)**4 +0.0009*(z-1)**5 # https://arxiv.org/abs/1804.09180 # Villaescusa-Navarro 2018. Widely accepted, but CHIME disagrees. CHIME is just one data point, but CHORD will probably be doing early science at similarly nonlinear scales
 def Blackman_Harris_safe_for_FFT(N): # !!centre-origin!! apodization function
-    a0,a1,a2,a3=0.35875,0.48829,0.14128,0.01168 # from the MATLAB (!) docs https://www.mathworks.com/help/signal/ref/blackmanharris.html
+    a0,a1,a2,a3=0.35875,0.48829,0.14128,0.01168 # choice of apodization function following the EoR analysis tradition
+                                                # these values are from the MATLAB (!) docs https://www.mathworks.com/help/signal/ref/blackmanharris.html
     n=np.arange(N)
     w= a0 \
       -a1*np.cos(twopi*n/N) \
@@ -188,7 +189,8 @@ def comprehensive_slice_figure(box,                      # 3D box to plot slices
                                name="placeholder.png",   # name of the output figure
                                dpi=500,                  # resolution of the output figure
                                fracs=[0,1e-5,1/3,1/2,1], # fractions along each axis at which to slice the box
-                               cmap=None
+                               cmap=None                 # colour map for the imshow
+                                                         # kind of hacky because pixel indices are baked in as the axis labels. but
                                ):
     box_shape=box.shape
     assert len(box_shape)==3, "this plotting function requires a 3D box"
@@ -1236,13 +1238,12 @@ class cosmo_stats(object):
             interpolator=RGI((eff_pri_domain),effective_primary_beam_for_effective_volume,
                              bounds_error=avoid_extrapolation,fill_value=None)
             eff_pri_this_domain=interpolator(self.to_eval_at).T # the constituent self.ii_grid are centre-origin, as intended
-            print("np.max(eff_pri_domain[0]),self.Lxy=",np.max(eff_pri_domain[0]),self.Lxy)
             comprehensive_slice_figure(effective_primary_beam_for_effective_volume,
                                        norm=LogNorm(vmax=1),
                                        name="effective_primary.png")
             comprehensive_slice_figure(eff_pri_this_domain,
                                        norm=LogNorm(vmax=1),
-                                       name="effective_primary_interpolated.png")
+                                       name="effective_primary_interpolated.png") # in the new paradigm, these shouldn't be visibly super different. as of 16:49 24/07/26, they aren't—nice!
 
             self.effective_volume=np.sum((eff_pri_this_domain*self.taper_xyz_centre)**2*self.d3r)
         self.PSF=PSF
@@ -1252,7 +1253,7 @@ class cosmo_stats(object):
             comprehensive_slice_figure(PSF, 
                                        norm=PSF_norm,
                                        cmap="RdBu",
-                                       name="beam_box_pre__interpolation.png")
+                                       name="PSF.png")
         
         
         self.PSF_padded=None
