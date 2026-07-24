@@ -1235,7 +1235,6 @@ class cosmo_stats(object):
         self.taper_xyz_corner=ifftshift(taper_xyz_product,axes=fftshift_axes)
 
         # beam
-        evaled_num=None
         if effective_primary_beam_for_effective_volume is None:
             if PSF is not None:
                 raise ValueError("not enough info")
@@ -1262,14 +1261,13 @@ class cosmo_stats(object):
                                        cmap="RdBu",
                                        name="beam_box_pre__interpolation.png")
         
-        self.evaled_num=evaled_num
         
         self.PSF_padded=None
-        if evaled_num is not None:
-            assert(not np.all(np.isclose(evaled_num,0,atol=1e-16))), "PSF should not be identically vanishing"
+        if PSF is not None:
+            assert(not np.all(np.isclose(PSF,0,atol=1e-16))), "PSF should not be identically vanishing"
             pad_lo_xy,pad_hi_xy=get_padding(self.Nxy)
             pad_lo_z, pad_hi_z =get_padding(self.Nz)
-            PSF_padded=np.pad(evaled_num,((pad_lo_xy,pad_hi_xy),(pad_lo_xy,pad_hi_xy),(pad_lo_z,pad_hi_z),),"wrap")
+            PSF_padded=np.pad(PSF,((pad_lo_xy,pad_hi_xy),(pad_lo_xy,pad_hi_xy),(pad_lo_z,pad_hi_z),),"wrap")
             taper_for_convolution=Blackman_Harris_safe_for_FFT(2*self.Nz-1)
             Nxy_padded=2*self.Nxy-1
             self.taper_for_convolution=np.tile(taper_for_convolution, (Nxy_padded,Nxy_padded,1))
@@ -1319,7 +1317,7 @@ class cosmo_stats(object):
             
     def generate_P(self,T_use=None): # from a box of temperature field values
         if T_use is None:
-            if self.evaled_num is None:
+            if self.PSF is None:
                 T_use="pristine"
             else:
                 T_use="beam"
