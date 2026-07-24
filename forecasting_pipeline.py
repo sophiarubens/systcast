@@ -471,6 +471,7 @@ class beam_effects(object):
             weights_PSF=np.load("weights_PSF_"+ioname+".npy")
             print("loaded synthesized beam")
         print("finished importing/constructing synthesized CST beam")
+        print("beam_effects.__init__: fidu_box_PSF.shape =",fidu_box_PSF.shape)
         
         self.fi_eff_primary_box=fidu_box
         weighted_sum_syst_primary=np.zeros_like(fidu_box)
@@ -1255,15 +1256,13 @@ class cosmo_stats(object):
         
         self.PSF_padded=None
         if PSF is not None:
-            assert(not np.all(np.isclose(PSF,0,atol=1e-16))), "PSF should not be identically vanishing"
+            assert(not np.all(np.isclose(PSF,0))), "PSF should not be identically vanishing"
+            print("cosmo_stats.__init__: PSF.shape,self.Nxy,self.Nz =",PSF.shape,self.Nxy,self.Nz)
             pad_lo_xy,pad_hi_xy=get_padding(self.Nxy)
             pad_lo_z, pad_hi_z =get_padding(self.Nz)
             PSF_padded=np.pad(PSF,((pad_lo_xy,pad_hi_xy),(pad_lo_xy,pad_hi_xy),(pad_lo_z,pad_hi_z),),"wrap")
-            # taper_for_convolution=Blackman_Harris_safe_for_FFT(2*self.Nz-1)
-            # Nxy_padded=2*self.Nxy-1
-            # self.taper_for_convolution=np.tile(taper_for_convolution, (Nxy_padded,Nxy_padded,1))
-            # self.PSF_padded=PSF_padded*self.taper_for_convolution
             self.PSF_padded=PSF_padded
+            assert(self.PSF_padded.shape==(2*self.Nxy-1,2*self.Nxy-1,2*self.Nz-1))
         
         # strictness control for realization averaging
         self.frac_tol=frac_tol
@@ -1319,10 +1318,7 @@ class cosmo_stats(object):
                 if self.T_pristine is None:
                     raise ValueError("not enough info")
                 else:
-                    print("self.PSF_padded is None",self.PSF_padded is None)
-                    print("self.T_beam is None",self.T_beam is None)
-                    print("self.PSF_padded.shape =",self.PSF_padded.shape,self.T_beam.shape) # not sure from the ValueError whether they mean dimensions as in related to shape or related to units
-                    print("self.T_beam.shape =",self.T_beam.shape)
+                    print("self.PSF_padded.shape,self.T_beam.shape =",self.PSF_padded.shape,self.T_beam.shape) # not sure from the ValueError whether they mean dimensions as in related to shape or related to units
                     print("self.PSF_padded[0,0,0], self.T_beam[0,0,0] =",self.PSF_padded[0,0,0], self.T_beam[0,0,0])
                     self.T_beam=convolve(self.PSF_padded,self.T_pristine.value,mode="valid")*self.temp_unit
             T_use=self.T_beam
@@ -1391,8 +1387,6 @@ class cosmo_stats(object):
         
         self.T_pristine=T
         if self.PSF is not None:
-            print("self.PSF_padded is None",self.PSF_padded is None)
-            print("T is None",T is None)
             print("self.PSF_padded.shape,T.shape =",self.PSF_padded.shape,T.shape) # not sure from the ValueError whether they mean dimensions as in related to shape or related to units
             print("self.PSF_padded[0,0,0], T[0,0,0] =",self.PSF_padded[0,0,0], T[0,0,0])
             self.T_beam=convolve(self.PSF_padded,T.value,mode="valid")*self.temp_unit
@@ -1597,7 +1591,7 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
         antennas_xyz=antennas_ENU@lat_mat.T
         
         # line-of-sight quantities
-        bw_MHz=self.nu_ctr_MHz*evol_restriction_threshold
+        bw_MHz=2*self.nu_ctr_MHz*evol_restriction_threshold # I think this missing factor of two was making me compute not enough PSF
         N_chan=int(bw_MHz/self.Delta_nu)
         self.N_chan=N_chan
         nu_lo=self.nu_ctr_MHz-bw_MHz/2.
