@@ -412,6 +412,7 @@ class beam_effects(object):
         
         N_CST_z=len(CST_z_vec)
         beam_domain=(CST_xy_vec.value,CST_xy_vec.value,CST_z_vec.value)
+        CST_xy_ext=CST_xy_vec[-1]-CST_xy_vec[0]
         self.beam_domain=beam_domain
 
         CST_syst_ensemble=np.zeros((N_CST_types,N_pointing_errors_max+1,Npix,Npix,N_CST_z)) # shape of CST_syst_ensemble is (N_CST_types,N_CST_xy,N_CST_xy,N_CST_z) but the sub-ensembles passed to generate_PSF have shapes  ////////replace
@@ -437,7 +438,7 @@ class beam_effects(object):
                                                 distribution="random",Npix=def_PA_N_grid_pix,
                                                 sub_ensemble_of_CST_beams=fidu_box,
                                                 CST_xy=CST_xy_vec,CST_freqs=CST_freqs,
-                                                PSF_xy_max=self.Lsurv_box_xy/2,
+                                                PSF_xy_max=CST_xy_ext/2,
                                                 supplementary_name=ioname)
             fidu_synthesis.stack_to_box()
             print("finished synthesizing fiducial CST PSF")
@@ -449,7 +450,7 @@ class beam_effects(object):
                                                 distribution=antenna_distribution,Npix=def_PA_N_grid_pix,
                                                 sub_ensemble_of_CST_beams=[fidu_box,CST_syst_ensemble],
                                                 CST_xy=CST_xy_vec,CST_freqs=CST_freqs,
-                                                PSF_xy_max=self.Lsurv_box_xy/2,
+                                                PSF_xy_max=CST_xy_ext/2,
                                                 supplementary_name=ioname)
             syst_synthesis.stack_to_box()
             print("finished synthesizing systematic-laden CST PSF")
@@ -494,7 +495,7 @@ class beam_effects(object):
         self.thgt=syst_box_PSF
 
         self.PSF_domain=PSF_domain
-        self.PSF_xy_ext=(PSF_xy_vec[1]-PSF_xy_vec[0]).value
+        self.PSF_xy_ext=PSF_xy_vec[1]-PSF_xy_vec[0]
         self.PSF_Nxy=len(PSF_xy_vec)
 
         # groundwork-informed forecasting considerations
