@@ -35,7 +35,7 @@ with open("ptg_err.json", "w") as f:
 
 # re-simulate / re-plot
 power_comparison_plots(redo_window_calc=True, # redo the Monte Carlos
-                       redo_box_calc=True,    # re-synthesize the beams; reimports CST only if files DNE
+                       redo_box_calc=False,    # re-synthesize the PSF; reimports CST only if files DNE
                        array_version="full", nu_ctr=600.*u.MHz, 
                        frac_tol_conv=0.25, which_power="P",
                        antenna_dist="frame", # comment out to revert to the two-pixel frame systematic
