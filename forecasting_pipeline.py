@@ -1259,10 +1259,11 @@ class cosmo_stats(object):
             pad_lo_xy,pad_hi_xy=get_padding(self.Nxy)
             pad_lo_z, pad_hi_z =get_padding(self.Nz)
             PSF_padded=np.pad(PSF,((pad_lo_xy,pad_hi_xy),(pad_lo_xy,pad_hi_xy),(pad_lo_z,pad_hi_z),),"wrap")
-            taper_for_convolution=Blackman_Harris_safe_for_FFT(2*self.Nz-1)
-            Nxy_padded=2*self.Nxy-1
-            self.taper_for_convolution=np.tile(taper_for_convolution, (Nxy_padded,Nxy_padded,1))
-            self.PSF_padded=PSF_padded*self.taper_for_convolution
+            # taper_for_convolution=Blackman_Harris_safe_for_FFT(2*self.Nz-1)
+            # Nxy_padded=2*self.Nxy-1
+            # self.taper_for_convolution=np.tile(taper_for_convolution, (Nxy_padded,Nxy_padded,1))
+            # self.PSF_padded=PSF_padded*self.taper_for_convolution
+            self.PSF_padded=PSF_padded
         
         # strictness control for realization averaging
         self.frac_tol=frac_tol
