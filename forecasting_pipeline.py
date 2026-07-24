@@ -492,7 +492,7 @@ class beam_effects(object):
         self.real=fidu_box_PSF
         self.thgt=syst_box_PSF
 
-        self.PSF_xy_ext=PSF_xy_vec[1]-PSF_xy_vec[0]
+        self.PSF_xy_ext=PSF_xy_vec[-1]-PSF_xy_vec[0]
         self.PSF_Nxy=len(PSF_xy_vec)
 
         # groundwork-informed forecasting considerations
@@ -607,7 +607,7 @@ class beam_effects(object):
                                   rngseed=438): 
         
         # generate a slice of white noise
-        fg=cosmo_stats(self.Lsurv_box_xy,Lz=self.Deltabox_z,
+        fg=cosmo_stats(self.PSF_xy_ext,Lz=self.Deltabox_z,
                        P_fid=self.P_flat,k_fid=self.k_for_flat,
                        Nxy=self.PSF_Nxy,Nz=1,
                        seed=rngseed,nu_ctr=self.nu_ctr) 
@@ -691,7 +691,7 @@ class beam_effects(object):
                                 PSF=self.thgt,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
                                 LoS_taper=self.LoS_taper,image_taper=self.image_taper,
-                                wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
+                                wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
         xx_fi_xx_fg=cosmo_stats(self.PSF_xy_ext,Lz=self.Lsurv_box_z,
                                 Nxy=self.PSF_Nxy,Nz=self.Nz_box,
                                 effective_primary_beam_for_effective_volume=self.fi_eff_primary_box, eff_pri_domain=self.CST_domain,
@@ -707,7 +707,7 @@ class beam_effects(object):
                                 PSF=self.fidu,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 LoS_taper=self.LoS_taper,image_taper=self.image_taper,
-                                wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=None)
+                                wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
         co_fi_sy_xx=cosmo_stats(self.PSF_xy_ext,Lz=self.Lsurv_box_z,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nxy=self.PSF_Nxy,Nz=self.Nz_box,
@@ -715,13 +715,13 @@ class beam_effects(object):
                                 PSF=self.thgt,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 LoS_taper=self.LoS_taper,image_taper=self.image_taper,
-                                wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=None)
-        # co_xx_xx_fg=cosmo_stats(self.PSF_xy_ext,Lz=self.Lsurv_box_z,
-        #                         P_fid=P_cosmo,k_fid=self.ksph, 
-        #                         Nxy=self.PSF_Nxy,Nz=self.Nz_box,
-        #                         frac_tol=self.frac_tol_conv,seed=self.seed,    
-        #                         LoS_taper=self.LoS_taper,image_taper=self.image_taper,
-        #                         wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
+                                wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
+        co_xx_xx_fg=cosmo_stats(self.PSF_xy_ext,Lz=self.Lsurv_box_z,
+                                P_fid=P_cosmo,k_fid=self.ksph, 
+                                Nxy=self.PSF_Nxy,Nz=self.Nz_box,
+                                frac_tol=self.frac_tol_conv,seed=self.seed,    
+                                LoS_taper=self.LoS_taper,image_taper=self.image_taper,
+                                wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
 
         recalc_co_fi_xx_fg=False
         recalc_co_fi_sy_fg=False
@@ -803,22 +803,22 @@ class beam_effects(object):
                 self.kpar_for_cosmo=   co_fi_sy_xx.kparbins
             self.P_co_fi_sy_xx=         co_fi_sy_xx.P_binned_MC_complete
             print("cosmo + fidu beam + syst      MC         complete")
-        # if recalc_co_xx_xx_fg:
-            # co_xx_xx_fg.power_Monte_Carlo(interfix="co_xx_xx_fg")
-            # if not recalc_co_fi_xx_fg:
-                # self.N_per_realization= co_xx_xx_fg.N_per_realization
-                # self.kperp_for_cosmo=  co_xx_xx_fg.kperpbins
-                # self.kpar_for_cosmo=   co_xx_xx_fg.kparbins
-            # self.P_co_xx_xx_fg= co_xx_xx_fg.P_binned_MC_complete
-            # print("cosmo +                    fg MC         complete")
-        # COSMOTEST=cosmo_stats(self.PSF_xy_ext,Lz=self.Lsurv_box_z,
-                            #   P_fid=P_cosmo,k_fid=self.ksph, 
-                            #   Nxy=self.PSF_Nxy,Nz=self.Nz_box,
-                            #   LoS_taper=self.LoS_taper,image_taper=self.image_taper,
-                            #   frac_tol=self.frac_tol_conv,seed=self.seed,nu_ctr=self.nu_ctr)
-        # COSMOTEST.power_Monte_Carlo(interfix="CO_XX_XX_XX_") # extra underscore is because numpy is fine with case-sensitive file names but MacOS is not :(
-        # self.P_CO_XX_XX_XX=COSMOTEST.P_binned_MC_complete
-        # print("COSMO                         MC         COMPLETE")
+        if recalc_co_xx_xx_fg:
+            co_xx_xx_fg.power_Monte_Carlo(interfix="co_xx_xx_fg")
+            if not recalc_co_fi_xx_fg:
+                self.N_per_realization= co_xx_xx_fg.N_per_realization
+                self.kperp_for_cosmo=  co_xx_xx_fg.kperpbins
+                self.kpar_for_cosmo=   co_xx_xx_fg.kparbins
+            self.P_co_xx_xx_fg= co_xx_xx_fg.P_binned_MC_complete
+            print("cosmo +                    fg MC         complete")
+        COSMOTEST=cosmo_stats(self.PSF_xy_ext,Lz=self.Lsurv_box_z,
+                              P_fid=P_cosmo,k_fid=self.ksph, 
+                              Nxy=self.PSF_Nxy,Nz=self.Nz_box,
+                              LoS_taper=self.LoS_taper,image_taper=self.image_taper,
+                              frac_tol=self.frac_tol_conv,seed=self.seed,nu_ctr=self.nu_ctr)
+        COSMOTEST.power_Monte_Carlo(interfix="CO_XX_XX_XX_") # extra underscore is because numpy is fine with case-sensitive file names but MacOS is not :(
+        self.P_CO_XX_XX_XX=COSMOTEST.P_binned_MC_complete
+        print("COSMO                         MC         COMPLETE")
 
         _,_,P_co_xx_xx_xx=self.unbin_to_Pcyl(self.pars_set_cosmo, 
                                              kperp_to_use=self.kperp_for_cosmo[:-1]+0.5*(self.kperp_for_cosmo[1]-self.kperp_for_cosmo[0]), 
@@ -1236,6 +1236,7 @@ class cosmo_stats(object):
             interpolator=RGI((eff_pri_domain),effective_primary_beam_for_effective_volume,
                              bounds_error=avoid_extrapolation,fill_value=None)
             eff_pri_this_domain=interpolator(self.to_eval_at).T # the constituent self.ii_grid are centre-origin, as intended
+            print("np.max(eff_pri_domain[0]),self.Lxy=",np.max(eff_pri_domain[0]),self.Lxy)
             comprehensive_slice_figure(effective_primary_beam_for_effective_volume,
                                        norm=LogNorm(vmax=1),
                                        name="effective_primary.png")
@@ -1245,10 +1246,10 @@ class cosmo_stats(object):
 
             self.effective_volume=np.sum((eff_pri_this_domain*self.taper_xyz_centre)**2*self.d3r)
         self.PSF=PSF
-        if (self.PSF is not None): # non-identity PSF
+        if (PSF is not None): # non-identity PSF
             # PSF_norm=TwoSlopeNorm(0,vmin=-1,vmax=1)
             PSF_norm=SymLogNorm(1e-3,vmin=-1,vmax=1)
-            comprehensive_slice_figure(self.PSF, 
+            comprehensive_slice_figure(PSF, 
                                        norm=PSF_norm,
                                        cmap="RdBu",
                                        name="beam_box_pre__interpolation.png")
@@ -1257,12 +1258,10 @@ class cosmo_stats(object):
         self.PSF_padded=None
         if PSF is not None:
             assert(not np.all(np.isclose(PSF,0))), "PSF should not be identically vanishing"
-            print("cosmo_stats.__init__: PSF.shape,self.Nxy,self.Nz =",PSF.shape,self.Nxy,self.Nz)
             pad_lo_xy,pad_hi_xy=get_padding(self.Nxy)
             pad_lo_z, pad_hi_z =get_padding(self.Nz)
             PSF_padded=np.pad(PSF,((pad_lo_xy,pad_hi_xy),(pad_lo_xy,pad_hi_xy),(pad_lo_z,pad_hi_z),),"wrap")
             self.PSF_padded=PSF_padded
-            assert(self.PSF_padded.shape==(2*self.Nxy-1,2*self.Nxy-1,2*self.Nz-1))
         
         # strictness control for realization averaging
         self.frac_tol=frac_tol
@@ -1316,10 +1315,10 @@ class cosmo_stats(object):
             T_use=None
             if self.T_beam is None:
                 if self.T_pristine is None:
-                    raise ValueError("not enough info")
+                    raise ValueError("T_beam is None, but it also cannot be formed because the T_pristine from which it needs to be formed is also None")
                 else:
-                    print("self.PSF_padded.shape,self.T_beam.shape =",self.PSF_padded.shape,self.T_beam.shape) # not sure from the ValueError whether they mean dimensions as in related to shape or related to units
-                    print("self.PSF_padded[0,0,0], self.T_beam[0,0,0] =",self.PSF_padded[0,0,0], self.T_beam[0,0,0])
+                    if self.PSF_padded is None:
+                        raise ValueError("attempted to form T_beam from T_pristine and PSF, but PSF_padded is None")
                     self.T_beam=convolve(self.PSF_padded,self.T_pristine.value,mode="valid")*self.temp_unit
             T_use=self.T_beam
         elif T_use.lower()=="pristine":
@@ -1387,8 +1386,6 @@ class cosmo_stats(object):
         
         self.T_pristine=T
         if self.PSF is not None:
-            print("self.PSF_padded.shape,T.shape =",self.PSF_padded.shape,T.shape) # not sure from the ValueError whether they mean dimensions as in related to shape or related to units
-            print("self.PSF_padded[0,0,0], T[0,0,0] =",self.PSF_padded[0,0,0], T[0,0,0])
             self.T_beam=convolve(self.PSF_padded,T.value,mode="valid")*self.temp_unit
 
     def power_Monte_Carlo(self,interfix:str=""): # since box generation is not deterministic
@@ -1762,8 +1759,6 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
                 
                 interpolator=RBS(self.CST_xy,self.CST_xy, beam_ij) # originally on CST-derived grid
                 beam_ij_interpolated=interpolator(self.PSF_xy,self.PSF_xy) # want to evaluate on image grid that is Fourier-dual to the uv grid
-                # interpolator=RBS(,, beam_ij)
-                # beam_ij_interpolated=interpolator()
                 implane+=gridded_im*beam_ij_interpolated # add the PSF for this baseline type
 
         plt.figure()
@@ -2183,7 +2178,7 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
         axs[i][j].set_ylabel("k$_{||}$")
         axs[i][j].tick_params(axis='x', labelrotation=30)
         axs[i][j].set_title(ensemble_ids[k])
-        axs[i][j].set_aspect("equal")
+        # axs[i][j].set_aspect("equal") # override just to look at the morphology
         if plot_log:
             neg_ticks = np.linspace(vminlog, 0., num=4, endpoint=False)
             pos_ticks = np.linspace(0., vmaxlog, num=4, endpoint=True)
