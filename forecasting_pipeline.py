@@ -126,12 +126,6 @@ def get_padding(n): # avoid edge effects in a convolution
     padding_lo=int(np.ceil(padding / 2))
     padding_hi=padding-padding_lo
     return padding_lo,padding_hi
-def synthesized_beam_crossing_time(nu,bmax,dec=30.*u.deg): # to accumulate rotation synthesis
-    synthesized_beam_width_rad=dif_lim_prefac*(c/nu)/bmax
-    beam_width_deg=synthesized_beam_width_rad*180/pi
-    crossing_time_hrs_no_dec=beam_width_deg/15
-    crossing_time_hrs= crossing_time_hrs_no_dec*np.cos(dec.to(u.rad))
-    return crossing_time_hrs
 def extrapolation_warning(regime,want,have):
     print("WARNING: if extrapolation is permitted in the interpolate_P call, it will be conducted for {:15s} (want {:9.4}, have{:9.4})".format(regime,want,have))
 def comoving_dist_arg(z,Omegam=Omegam,OmegaLambda=OmegaLambda): # this is 1/ E(z)
@@ -189,6 +183,7 @@ def comprehensive_slice_figure(box,                      # 3D box to plot slices
                                name="placeholder.png",   # name of the output figure
                                dpi=500,                  # resolution of the output figure
                                fracs=[0,1e-5,1/3,1/2,1], # fractions along each axis at which to slice the box
+                               exts=None,                # [[xlo, xhi], [ylo, yhi], [lzo, zhi]] for non-index axis labels
                                cmap=None                 # colour map for the imshow
                                                          # kind of hacky because pixel indices are baked in as the axis labels. but
                                ):
@@ -199,6 +194,17 @@ def comprehensive_slice_figure(box,                      # 3D box to plot slices
     axs[0,0].set_title("x index 0/"+str(Nx-1))
     axs[0,1].set_title("y index 0/"+str(Ny-1))
     axs[0,2].set_title("z index 0/"+str(Nz-1))
+    if exts is not None:
+        xext_vals,yext_vals,zext_vals=exts
+        xyext=np.concatenate(xext_vals,np.flip(yext_vals))
+        xzext=np.concatenate(xext_vals,np.flip(zext_vals))
+        yzext=np.concatenate(yext_vals,np.flip(zext_vals))
+        axis_label_suffix="val"
+    else:
+        xyext=None
+        xzext=None
+        yzext=None
+        axis_label_suffix="idx"
     for i,frac in enumerate(fracs):
         x_idx=int(frac*Nx)
         y_idx=int(frac*Ny)
@@ -217,22 +223,28 @@ def comprehensive_slice_figure(box,                      # 3D box to plot slices
             axs[i,2].set_title(str(z_idx )+"/"+str(Nz-1))
 
         sl0=box[x_idx,:,:]
-        img=axs[i,0].imshow(sl0.T,origin="lower",norm=norm,cmap=cmap)
+        img=axs[i,0].imshow(sl0.T,origin="lower",
+                            extent=yzext,
+                            norm=norm,cmap=cmap)
         plt.colorbar(img,ax=axs[i,0])
-        axs[i,0].set_xlabel("y idx")
-        axs[i,0].set_ylabel("z idx")
+        axs[i,0].set_xlabel("y "+axis_label_suffix)
+        axs[i,0].set_ylabel("z "+axis_label_suffix)
 
         sl1=box[:,y_idx,:]
-        img=axs[i,1].imshow(sl1.T,origin="lower",norm=norm,cmap=cmap)
+        img=axs[i,1].imshow(sl1.T,origin="lower",
+                            extent=xzext,
+                            norm=norm,cmap=cmap)
         plt.colorbar(img,ax=axs[i,1])
-        axs[i,1].set_xlabel("x idx")
-        axs[i,1].set_ylabel("z idx")
+        axs[i,1].set_xlabel("x "+axis_label_suffix)
+        axs[i,1].set_ylabel("z "+axis_label_suffix)
 
         sl2=box[:,:,z_idx]
-        img=axs[i,2].imshow(sl2.T,origin="lower",norm=norm,cmap=cmap)
+        img=axs[i,2].imshow(sl2.T,origin="lower",
+                            extent=xyext,
+                            norm=norm,cmap=cmap)
         plt.colorbar(img,ax=axs[i,2])
-        axs[i,2].set_xlabel("x idx")
-        axs[i,2].set_ylabel("y idx")
+        axs[i,2].set_xlabel("x "+axis_label_suffix)
+        axs[i,2].set_ylabel("y "+axis_label_suffix)
     plt.savefig(name, dpi=dpi)
     plt.close()
 
@@ -1011,12 +1023,12 @@ class cosmo_stats(object):
                  T_pristine:np.ndarray=None,T_beam:np.ndarray=None,                     # brightness temperature box realizations without ("_pristine") or with ("_beam") the beam applied (primary would be multiplied, but now the vanguard PA-CST approach uses convolution)
                  P_fid:np.ndarray=None,                                                 # power spectrum you want to window. probably comes from cosmo (like CAMB) or is flat (for a reference calculation)
                  k_fid:np.ndarray=None,                                                 # Fourier space points where the fiducial power spectrum is sampled
-                 Nxy:int=None,Nz:int=None,                                          # number of voxels in the x/y or z directions
-                 PSF:np.ndarray=None,                                            # version of the beam (box of values evaluated in config space)
-                 effective_primary_beam_for_effective_volume=None, eff_pri_domain=None,
+                 Nxy:int=None,Nz:int=None,                                              # number of voxels in the x/y or z directions
+                 PSF:np.ndarray=None,                                                   # PSF (box of values evaluated in config space)
+                 effective_primary_beam_for_effective_volume=None,                      # "average" primary beam with beam types weighted by the fraction of antennas with that beam type
+                 eff_pri_domain=None,                                                   # formatted as (x_vec, y_vec, z_vec)
                  Nkperp:int=0,Nkpar:int=0,                                              # number of k-bins in the sky plane and line of sight directions
-                 binning_mode:str="lin",                                                # bin linearly or logarithmically
-                 bin_each_realization:bool=False,                                       # bin each realization of the Monte Carlo? (with the current implementation there's no typical use case where this would be necessary, but the option is there)
+                 binning_mode:str="lin",                                                # bin linearly or logarithmically (TODO: de-trivialize this... it used to be implemented, but I guess I pruned enough intervening stuff that it got orphaned)
                  frac_tol:float=0.1,                                                    # fractional tolerance in cosmic variance of the Monte Carlo ensemble -> used to calculate the number of realizations
                  kperpbins_interp:np.ndarray=None,kparbins_interp:np.ndarray=None,      # bins where you want to know about the power spectrum (if you're interested in interpolating to some binning scheme other than what you get from chopping up the box)
                  P_MC_complete:np.ndarray=None,                                         # converged Monte Carlo power spectrum
@@ -1100,13 +1112,14 @@ class cosmo_stats(object):
         self.power_unit= self.temp_unit**2 *self.length_unit**3
         
         # config space
-        print("cosmo_stats.__init__: Nxy,Nz=",self.Nxy,self.Nz)
+        # print("cosmo_stats.__init__: Nxy,Nz=",self.Nxy,self.Nz)
         self.box_shape=(self.Nxy,self.Nxy,self.Nz) if self.Nz>1 else (self.Nxy,self.Nxy)
         self.Deltaxy=self.Lxy/self.Nxy                           # sky plane: voxel side length
         self.xy_vec_for_box=self.Lxy*fftshift(fftfreq(self.Nxy)) # sky plane Cartesian config space coordinate axis
         self.Deltaz= self.Lz/self.Nz                           # line of sight voxel side length
         self.z_vec_for_box= self.Lz*fftshift(fftfreq(self.Nz)) # line of sight Cartesian config space coordinate axis
         self.d3r=self.Deltaz*self.Deltaxy**2                      # volume element = voxel volume
+        # print("cosmo_stats.__init__: Deltaxy,Deltaz=",self.Deltaxy,self.Deltaz)
 
         self.xx_grid,self.yy_grid,self.zz_grid=np.meshgrid(self.xy_vec_for_box,
                                                            self.xy_vec_for_box,
@@ -1166,7 +1179,6 @@ class cosmo_stats(object):
                 assert 1==0, "not yet implemented"
         
         # binning considerations
-        self.bin_each_realization=bin_each_realization
         self.binning_mode=binning_mode
 
         bin_denom=2.2
@@ -1180,6 +1192,10 @@ class cosmo_stats(object):
         self.kmax_box_z=  pi/self.Deltaz
         self.kmin_box_xy= twopi/self.Lxy
         self.kmin_box_z=  twopi/self.Lz
+        # print("cosmo_stats.__init__: Lxy,Lz=",self.Lxy,self.Lz)
+        # print("cosmo_stats.__init__: Nxy,Nz=",self.Nxy,self.Nz)
+        # print("cosmo_stats.__init__: kmax_xy,kmax_z=",self.kmax_box_xy,self.kmax_box_z)
+        # print("cosmo_stats.__init__: kmin_xy,kmin_z=",self.kmin_box_xy,self.kmin_box_z)
         
         # voxel grids for cyl binning
         if (self.Nkpar is not None and self.Nkpar!=0):
@@ -1240,9 +1256,11 @@ class cosmo_stats(object):
             eff_pri_this_domain=interpolator(self.to_eval_at).T # the constituent self.ii_grid are centre-origin, as intended
             comprehensive_slice_figure(effective_primary_beam_for_effective_volume,
                                        norm=LogNorm(vmax=1),
+                                       exts=[[],[],[]],
                                        name="effective_primary.png")
             comprehensive_slice_figure(eff_pri_this_domain,
                                        norm=LogNorm(vmax=1),
+                                       exts=[[],[],[]],
                                        name="effective_primary_interpolated.png") # in the new paradigm, these shouldn't be visibly super different. as of 16:49 24/07/26, they aren't—nice!
 
             self.effective_volume=np.sum((eff_pri_this_domain*self.taper_xyz_centre)**2*self.d3r)
@@ -1337,9 +1355,6 @@ class cosmo_stats(object):
         P_unbinned=modsq_T_tilde/self.effective_volume # box-shaped, but calculated according to the power spectrum estimator equation
 
         self.P_unbinned=P_unbinned # centre-origin
-        
-        if self.bin_each_realization:
-            self.bin_power()
         
         self.P_unbinned_running_sum+=P_unbinned
 
@@ -2180,6 +2195,7 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
         axs[i][j].tick_params(axis='x', labelrotation=30)
         axs[i][j].set_title(ensemble_ids[k])
         # axs[i][j].set_aspect("equal") # override just to look at the morphology
+        axs[i][j].set_ylim(0,5*k_perp[-1]) # manual override to make the aspect ratio momentarily less crazy for inspection
         if plot_log:
             neg_ticks = np.linspace(vminlog, 0., num=4, endpoint=False)
             pos_ticks = np.linspace(0., vmaxlog, num=4, endpoint=True)
