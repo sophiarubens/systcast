@@ -85,7 +85,8 @@ CHORD_channel_width_MHz=0.1953125*u.MHz
 def_observing_dec=pi/60.
 def_offset=1.75*pi/180. # for this placeholder state where I build up the CHORD layout using rotation matrices instead of actual measurements. probably add Hans' mask at some point to punch the corners and receiver hut holes out...
 def_pbw_pert_frac=1e-2
-def_evol_restriction_threshold=1./15. # HERA 1/15 was made up. turn this down for a computationally less intense substitute. had been using 1/30 as of 2026 July 17th AM
+def_evol_restriction_threshold=0.11 # HERA 1/15 was made up—for round number appeal, probably
+                                      # 1/15 is turn this down for a computationally less intense substitute. had been using 1/30 as of 2026 July 17th AM
 img_bin_tol=5 # ringing is remarkably insensitive to turning this down; you get really bad scale mismatch by turning it up... the real solution was the "need good resolution in both Fourier and configuration space" thing
 def_PA_N_grid_pix=256
 N_fid_beam_types=1
@@ -674,6 +675,9 @@ class beam_effects(object):
                 fg_box_ingredient=self.get_pwr_law_FG_ingredient(Tref,nuref,alpha,sigma_alpha)
                 fg_box+=fg_box_ingredient
             self.fg_box=fg_box # centre-origin
+            print("beam_effects.calc_power_contamination: fg_box.shape =",fg_box.shape)
+            print("beam_effects.calc_power_contamination:")
+            np.savetxt("fg_column.txt",fg_box[0,0,:])
 
             fg=cosmo_stats(self.PSF_xy_ext,Lz=self.PSF_z_ext,
                            LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
@@ -1725,14 +1729,6 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
         self.uv_synth=uv_synth # units are wavelengths
         print("synthesized rotation")
 
-        # # last idea of the evening of Thurs 23rd Jul 2026
-        # uvmagmax=5*np.max(np.abs(self.uv_synth)) # pragmatic
-        # deltauv=uvmagmax/Npix
-        # thetamax=1/deltauv # these are 1/-convention Fourier duals, not 2pi/-convention Fourier duals
-        #                     # ideally, this thetamax would be pi for the horizon-to-horizon thing, but that leads to an unreasonably large number of pixels
-        # self.thetamax=thetamax
-        # self.PSF_xy=self.ctr_chan_comov_dist*np.sin(np.linspace(-thetamax,thetamax,Npix)) # this squishes the xy spacing = not a true grid; the converse would also misrepresent what uv things map to, albeit in a different way
-        
         # first idea of the morning of Fri 24th Jul 2026 -> v2 will be with a broader transverse box
         thetamax=np.arcsin((PSF_xy_max/self.ctr_chan_comov_dist).decompose()).value # I don't want astropy to put ghost radians places. I prefer to handle them myself.
         self.thetamax=thetamax
@@ -1814,7 +1810,6 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
         plt.savefig("FFT_PSF.png",dpi=500)
         plt.close()
 
-        implane/=np.max(implane)
         return implane
 
     def stack_to_box(self):
