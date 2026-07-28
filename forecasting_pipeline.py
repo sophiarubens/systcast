@@ -384,9 +384,23 @@ class beam_effects(object):
         else:
             N_pointing_errors=np.arange(0,len(pointing_errors)+1)
         N_pointing_errors_max=np.max(N_pointing_errors)
-            
+
+        CST_hi_safe=CST_hi.to(CST_deltanu.unit)
+        CST_lo_safe=CST_lo.to(CST_deltanu.unit)
+        CST_freqs=np.arange(CST_hi_safe.value,CST_lo_safe.value,-CST_deltanu.value,
+                               endpoint=True)*CST_deltanu.unit # here and in reconfigure_CST, now inclusive of both endpoints     
+        CST_redshifts=np.asarray([nu_HI_z0/freq-1 for freq in CST_freqs])
+        CST_redshifts=CST_redshifts.decompose()
+        CST_comoving=[comoving_distance(z) for z in CST_redshifts]
+        N_CST_freqs=len(CST_comoving)
+        CST_comoving_mid=CST_comoving[int(N_CST_freqs//2)]
+        CST_xy_vec= CST_comoving_mid*fftshift(fftfreq(Npix)) # horizon limit baked in here, as it should be
+        CST_z_vec=CST_comoving-CST_comoving_mid
+
         already_imported_fidu_CST=Path("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy").is_file()
         already_imported_syst_CST=Path("syst_boxes_"+ioname+".npy").is_file()
+        if N_CST_types==1: # missing piece of the puzzle to prevent redundant CST translation
+            already_imported_syst_CST=True
         if heavy_beam_recalc and not already_imported_fidu_CST:
             fidu=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=Npix,
                                         beam_sim_directory=beam_sim_directory,f_head=CST_f_head_fidu,
@@ -394,18 +408,12 @@ class beam_effects(object):
             fidu.construct_CST_box()
             print("generated fidu beam box\n")
             fidu_box=fidu.box
-            CST_xy_vec=np.asarray(fidu.xy_for_box)*u.Mpc
-            CST_z_vec=np.asarray(fidu.CST_z_vec)*u.Mpc # by construction = not brittle
             np.save("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy",fidu_box)
-            np.save("CST_xy_vec.npy",CST_xy_vec.value)
-            np.save("CST_z_vec.npy",CST_z_vec.value)
         else:
             fidu_box=  np.load("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy")
 
             ioname_base_case=ioname.replace("N_CST_types_"+str(N_CST_types),"N_CST_types_1")
             ioname_base_case=ioname_base_case.replace("N_ptg_err_"+str(N_pointing_errors_max),"N_ptg_err_0")
-            CST_xy_vec=np.load("CST_xy_vec.npy")*u.Mpc
-            CST_z_vec=np.load("CST_z_vec.npy")*u.Mpc # by construction = not brittle
         N_CST_z=len(CST_z_vec)
 
         syst_boxes=np.zeros((N_CST_types,Npix,Npix,N_CST_z)) # this needs to be 4D to be forward-compatible with the new iteration strategy in generate_PSF
@@ -1860,7 +1868,8 @@ class reconfigure_CST_beam(object):
         freq_hi=freq_hi.to(u.GHz)
         freq_lo=freq_lo.to(u.GHz)
         delta_nu_CST=delta_nu_CST.to(u.GHz)
-        freqs_GHz=np.arange(freq_hi.value,freq_lo.value,-delta_nu_CST.value)*delta_nu_CST.unit # descending; usually still in GHz
+        freqs_GHz=np.arange(freq_hi.value,freq_lo.value,-delta_nu_CST.value,
+                            endpoint=True)*delta_nu_CST.unit # descending; usually still in GHz
         freqs=freqs_GHz.to(u.MHz) # descending; MHz
         self.freqs=freqs
         Nfreqs=len(freqs)
