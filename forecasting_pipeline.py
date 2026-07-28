@@ -60,18 +60,13 @@ dpar_default[3]*=1e-9
 # physical
 nu_HI_z0=1420.405751768*u.MHz
 c=const.c
-dif_lim_prefac=1.029
 
 # mathematical
 pi=np.pi
 twopi=2.*pi
-ln2=np.log(2)
 
 # numerical
-maxint=   np.iinfo(np.int64  ).max
-BasicAiryHWHM=1.616339948310703178119139753683896309743121097215461023581 # intentionally preposterous number of sig figs from Mathematica
 eps=1e-15
-dpi_to_use=250
 
 # CHORD
 N_NS_full=24
@@ -84,12 +79,9 @@ D=6.*u.m
 CHORD_channel_width_MHz=0.1953125*u.MHz
 def_observing_dec=pi/60.
 def_offset=1.75*pi/180. # for this placeholder state where I build up the CHORD layout using rotation matrices instead of actual measurements. probably add Hans' mask at some point to punch the corners and receiver hut holes out...
-def_pbw_pert_frac=1e-2
 def_evol_restriction_threshold=0.11 # HERA 1/15 was made up—for round number appeal, probably
                                       # 1/15 is turn this down for a computationally less intense substitute. had been using 1/30 as of 2026 July 17th AM
-img_bin_tol=5 # ringing is remarkably insensitive to turning this down; you get really bad scale mismatch by turning it up... the real solution was the "need good resolution in both Fourier and configuration space" thing
 def_PA_N_grid_pix=256
-N_fid_beam_types=1
 integration_s=10*u.s # seconds
 hrs_per_night=8*u.hr # borrowed from Debanjan / 21cmSense
 # N_nights=100 # also borrowed from Debanjan / 21cmSense
