@@ -85,7 +85,7 @@ CHORD_channel_width_MHz=0.1953125*u.MHz
 def_observing_dec=pi/60.
 def_offset=1.75*pi/180. # for this placeholder state where I build up the CHORD layout using rotation matrices instead of actual measurements. probably add Hans' mask at some point to punch the corners and receiver hut holes out...
 def_pbw_pert_frac=1e-2
-def_evol_restriction_threshold=1./60. # HERA 1/15 was made up. turn this down for a computationally less intense substitute. had been using 1/30 as of 2026 July 17th AM
+def_evol_restriction_threshold=1./15. # HERA 1/15 was made up. turn this down for a computationally less intense substitute. had been using 1/30 as of 2026 July 17th AM
 img_bin_tol=5 # ringing is remarkably insensitive to turning this down; you get really bad scale mismatch by turning it up... the real solution was the "need good resolution in both Fourier and configuration space" thing
 def_PA_N_grid_pix=256
 N_fid_beam_types=1
@@ -142,7 +142,7 @@ def z2freq(nu_rest=600.*u.MHz,z=nu_HI_z0/(600*u.MHz)-1.):
     return nu_rest/(z+1)
 
 # Fourier space
-def kpar(nu_ctr=600*u.MHz,chan_width=0.1953125*u.MHz,N_chan=300,H0=H0): # not pure cosmo. relies on LoS details of survey
+def kpar(nu_ctr=600*u.MHz,chan_width=CHORD_channel_width_MHz,N_chan=300,H0=H0): # not pure cosmo. relies on LoS details of survey
     prefac=1e3*twopi*H0.value*nu_HI_z0.value/c.value # 1e3 to account for units of H0/c ... assumes nu_HI_z0 and chan_width have the same units
     z_ctr=freq2z(nu_HI_z0,nu_ctr)
     Ez=1/comoving_dist_arg(z_ctr)
@@ -196,9 +196,9 @@ def comprehensive_slice_figure(box,                      # 3D box to plot slices
     axs[0,2].set_title("z index 0/"+str(Nz-1))
     if exts is not None:
         xext_vals,yext_vals,zext_vals=exts
-        xyext=np.concatenate(xext_vals,np.flip(yext_vals))
-        xzext=np.concatenate(xext_vals,np.flip(zext_vals))
-        yzext=np.concatenate(yext_vals,np.flip(zext_vals))
+        xyext=np.concatenate((xext_vals,np.flip(yext_vals)))
+        xzext=np.concatenate((xext_vals,np.flip(zext_vals)))
+        yzext=np.concatenate((yext_vals,np.flip(zext_vals)))
         axis_label_suffix="val"
     else:
         xyext=None
@@ -298,7 +298,7 @@ class beam_effects(object):
                  ftol_deriv:float=1e-16,              # this numerical tolerance factor * the function you are trying to differentiate gives a pointwise comparison for whether the derivative computation is accurate enough with the current step size
                  maxiter:int=5,                       # maximum number of times the partial derivative computation can recurse with an updated step size estimate
                  Npix:int=def_PA_N_grid_pix, # number of pixels per side of gridded uv plane
-                 LoS_taper=False,image_taper=False,   # apply apodization along the line of sight or transverse directions?
+                 LoS_apo=False,transverse_apo=False,   # apply apodization along the line of sight or transverse directions?
                  N_timesteps=def_N_timesteps,
 
                  # CONVENIENCE
@@ -326,6 +326,7 @@ class beam_effects(object):
         self.nu_hi=self.nu_ctr+self.bw/2.
         self.z_lo=freq2z(nu_HI_z0,self.nu_hi)
         self.Dc_lo=comoving_distance(self.z_lo)
+        print("beam_effects.__init__: comoving distance range:",self.Dc_lo,self.Dc_hi)
         self.deltaz=self.z_hi-self.z_lo
         self.surv_channels=np.arange(self.nu_lo.value,self.nu_hi.value,self.Deltanu.value)*self.Deltanu.unit
         self.r0=comoving_distance(self.z_ctr)
@@ -449,6 +450,7 @@ class beam_effects(object):
             fidu_synthesis=generate_PSF(array_version=array_version,N_timesteps=self.N_timesteps,
                                                 N_pbws_pert=0,nu_ctr=nu_ctr,
                                                 distribution="random",Npix=def_PA_N_grid_pix,
+                                                Delta_nu=delta_nu,
                                                 sub_ensemble_of_CST_beams=fidu_box,
                                                 CST_xy=CST_xy_vec,CST_freqs=CST_freqs,
                                                 PSF_xy_max=CST_xy_ext/2,
@@ -461,6 +463,7 @@ class beam_effects(object):
             syst_synthesis=generate_PSF(array_version=array_version,N_timesteps=self.N_timesteps,
                                                 N_pbws_pert=N_pbws_pert,nu_ctr=nu_ctr,
                                                 distribution=antenna_distribution,Npix=def_PA_N_grid_pix,
+                                                Delta_nu=delta_nu,
                                                 sub_ensemble_of_CST_beams=[fidu_box,CST_syst_ensemble],
                                                 CST_xy=CST_xy_vec,CST_freqs=CST_freqs,
                                                 PSF_xy_max=CST_xy_ext/2,
@@ -485,7 +488,6 @@ class beam_effects(object):
             weights_PSF=np.load("weights_PSF_"+ioname+".npy")
             print("loaded synthesized beam")
         print("finished importing/constructing synthesized CST beam")
-        print("beam_effects.__init__: fidu_box_PSF.shape =",fidu_box_PSF.shape)
         
         self.fi_eff_primary_box=fidu_box
         weighted_sum_syst_primary=np.zeros_like(fidu_box)
@@ -503,11 +505,13 @@ class beam_effects(object):
             self.sy_eff_primary_box=np.copy(self.fi_eff_primary_box)
         
         self.fidu=fidu_box_PSF
-        self.real=fidu_box_PSF
-        self.thgt=syst_box_PSF
+        self.syst=syst_box_PSF
 
         self.PSF_xy_ext=PSF_xy_vec[-1]-PSF_xy_vec[0]
         self.PSF_Nxy=len(PSF_xy_vec)
+        self.PSF_z_ext=PSF_z_vec[-1]-PSF_z_vec[0]
+        self.PSF_Nz=len(PSF_z_vec)
+        self.CST_Delta_z=self.PSF_z_ext/self.PSF_Nz
 
         # groundwork-informed forecasting considerations
         self.P_fid_for_cont_pwr=P_fid_for_cont_pwr
@@ -522,8 +526,8 @@ class beam_effects(object):
         self.ksph=ksph/u.Mpc # by construction
         self.Deltabox_xy=self.Lsurv_box_xy/self.Nxy_box
         self.Deltabox_z= self.Lsurv_box_z/ self.Nz_box
-        self.LoS_taper=LoS_taper
-        self.image_taper=image_taper
+        self.LoS_apo=LoS_apo
+        self.transverse_apo=transverse_apo
 
         # precision control for numerical derivatives
         self.ftol_deriv=ftol_deriv
@@ -621,7 +625,7 @@ class beam_effects(object):
                                   rngseed=438): 
         
         # generate a slice of white noise
-        fg=cosmo_stats(self.PSF_xy_ext,Lz=self.Deltabox_z,
+        fg=cosmo_stats(self.PSF_xy_ext,Lz=self.CST_Delta_z,
                        P_fid=self.P_flat,k_fid=self.k_for_flat,
                        Nxy=self.PSF_Nxy,Nz=1,
                        seed=rngseed,nu_ctr=self.nu_ctr) 
@@ -665,76 +669,76 @@ class beam_effects(object):
             fg_box=np.zeros((self.PSF_Nxy,self.PSF_Nxy,self.Nz_box))*u.mK
             fg_info_cases=[ [335.4*foreground_temp_unit, 150*u.MHz, -2.8,  0.1],   # synchrotron
                             [33.5 *foreground_temp_unit, 150*u.MHz, -2.15, 0.01] ] # free-free
-            # fg_info_cases=[[335.4*foreground_temp_unit, 150*u.MHz, -2.8,  0.1]]
             for fg_info in fg_info_cases:
                 Tref,nuref,alpha,sigma_alpha=fg_info
                 fg_box_ingredient=self.get_pwr_law_FG_ingredient(Tref,nuref,alpha,sigma_alpha)
                 fg_box+=fg_box_ingredient
             self.fg_box=fg_box # centre-origin
 
-            fg=cosmo_stats(self.PSF_xy_ext,Lz=self.Lsurv_box_z,
-                           LoS_taper=self.LoS_taper,image_taper=self.image_taper,
+            fg=cosmo_stats(self.PSF_xy_ext,Lz=self.PSF_z_ext,
+                           LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                            T_pristine=fg_box)
             fg.generate_P()
             fg.bin_power()
             self.P_xx_xx_xx_fg=fg.P_binned *fg_box.unit**2 *self.Lsurv_box_xy.unit**3
             print("                           fg power calc complete")
 
-        co_fi_xx_fg=cosmo_stats(self.PSF_xy_ext,Lz=self.Lsurv_box_z,
+        print("Lz that will be used to initialize cosmo_stats: ",self.PSF_z_ext)
+        co_fi_xx_fg=cosmo_stats(self.PSF_xy_ext,Lz=self.PSF_z_ext,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
-                                Nxy=self.PSF_Nxy,Nz=self.Nz_box,
+                                Nxy=self.PSF_Nxy,Nz=self.PSF_Nz,
                                 effective_primary_beam_for_effective_volume=self.fi_eff_primary_box, eff_pri_domain=self.CST_domain,
                                 PSF=self.fidu,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
-                                LoS_taper=self.LoS_taper,image_taper=self.image_taper,
+                                LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
         self.kperpbins_internal=co_fi_xx_fg.kperpbins
         self.kparbins_internal=co_fi_xx_fg.kparbins
-        co_fi_sy_fg=cosmo_stats(self.PSF_xy_ext,Lz=self.Lsurv_box_z,
+        co_fi_sy_fg=cosmo_stats(self.PSF_xy_ext,Lz=self.PSF_z_ext,
                                 P_fid=P_cosmo,k_fid=self.ksph,
-                                Nxy=self.PSF_Nxy,Nz=self.Nz_box,
+                                Nxy=self.PSF_Nxy,Nz=self.PSF_Nz,
                                 effective_primary_beam_for_effective_volume=self.sy_eff_primary_box, eff_pri_domain=self.CST_domain,
-                                PSF=self.thgt,
+                                PSF=self.syst,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
-                                LoS_taper=self.LoS_taper,image_taper=self.image_taper,
+                                LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
-        xx_fi_sy_fg=cosmo_stats(self.PSF_xy_ext,Lz=self.Lsurv_box_z,
-                                Nxy=self.PSF_Nxy,Nz=self.Nz_box,
+        xx_fi_sy_fg=cosmo_stats(self.PSF_xy_ext,Lz=self.PSF_z_ext,
+                                Nxy=self.PSF_Nxy,Nz=self.PSF_Nz,
                                 effective_primary_beam_for_effective_volume=self.sy_eff_primary_box, eff_pri_domain=self.CST_domain,
                                 T_pristine=fg_box,
-                                PSF=self.thgt,
+                                PSF=self.syst,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
-                                LoS_taper=self.LoS_taper,image_taper=self.image_taper,
+                                LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
-        xx_fi_xx_fg=cosmo_stats(self.PSF_xy_ext,Lz=self.Lsurv_box_z,
-                                Nxy=self.PSF_Nxy,Nz=self.Nz_box,
+        xx_fi_xx_fg=cosmo_stats(self.PSF_xy_ext,Lz=self.PSF_z_ext,
+                                Nxy=self.PSF_Nxy,Nz=self.PSF_Nz,
                                 effective_primary_beam_for_effective_volume=self.fi_eff_primary_box, eff_pri_domain=self.CST_domain,
                                 T_pristine=fg_box,
                                 PSF=self.fidu,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
-                                LoS_taper=self.LoS_taper,image_taper=self.image_taper,
+                                LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
-        co_fi_xx_xx=cosmo_stats(self.PSF_xy_ext,Lz=self.Lsurv_box_z,
+        co_fi_xx_xx=cosmo_stats(self.PSF_xy_ext,Lz=self.PSF_z_ext,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
-                                Nxy=self.PSF_Nxy,Nz=self.Nz_box,
+                                Nxy=self.PSF_Nxy,Nz=self.PSF_Nz,
                                 effective_primary_beam_for_effective_volume=self.fi_eff_primary_box, eff_pri_domain=self.CST_domain,
                                 PSF=self.fidu,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
-                                LoS_taper=self.LoS_taper,image_taper=self.image_taper,
+                                LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
-        co_fi_sy_xx=cosmo_stats(self.PSF_xy_ext,Lz=self.Lsurv_box_z,
+        co_fi_sy_xx=cosmo_stats(self.PSF_xy_ext,Lz=self.PSF_z_ext,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
-                                Nxy=self.PSF_Nxy,Nz=self.Nz_box,
+                                Nxy=self.PSF_Nxy,Nz=self.PSF_Nz,
                                 effective_primary_beam_for_effective_volume=self.sy_eff_primary_box, eff_pri_domain=self.CST_domain,
-                                PSF=self.thgt,
+                                PSF=self.syst,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
-                                LoS_taper=self.LoS_taper,image_taper=self.image_taper,
+                                LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
-        co_xx_xx_fg=cosmo_stats(self.PSF_xy_ext,Lz=self.Lsurv_box_z,
+        co_xx_xx_fg=cosmo_stats(self.PSF_xy_ext,Lz=self.PSF_z_ext,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
-                                Nxy=self.PSF_Nxy,Nz=self.Nz_box,
+                                Nxy=self.PSF_Nxy,Nz=self.PSF_Nz,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
-                                LoS_taper=self.LoS_taper,image_taper=self.image_taper,
+                                LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
 
         recalc_co_fi_xx_fg=False
@@ -825,10 +829,10 @@ class beam_effects(object):
                 self.kpar_for_cosmo=   co_xx_xx_fg.kparbins
             self.P_co_xx_xx_fg= co_xx_xx_fg.P_binned_MC_complete
             print("cosmo +                    fg MC         complete")
-        COSMOTEST=cosmo_stats(self.PSF_xy_ext,Lz=self.Lsurv_box_z,
+        COSMOTEST=cosmo_stats(self.PSF_xy_ext,Lz=self.PSF_z_ext,
                               P_fid=P_cosmo,k_fid=self.ksph, 
-                              Nxy=self.PSF_Nxy,Nz=self.Nz_box,
-                              LoS_taper=self.LoS_taper,image_taper=self.image_taper,
+                              Nxy=self.PSF_Nxy,Nz=self.PSF_Nz,
+                              LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                               frac_tol=self.frac_tol_conv,seed=self.seed,nu_ctr=self.nu_ctr)
         COSMOTEST.power_Monte_Carlo(interfix="CO_XX_XX_XX_") # extra underscore is because numpy is fine with case-sensitive file names but MacOS is not :(
         self.P_CO_XX_XX_XX=COSMOTEST.P_binned_MC_complete
@@ -1034,7 +1038,7 @@ class cosmo_stats(object):
                  P_MC_complete:np.ndarray=None,                                         # converged Monte Carlo power spectrum
                  avoid_extrapolation:bool=False,                                        # whether or not to avoid extrapolation
                  seed=None,                                                             # Monte Carlo realization logistics: whether or not to subtract the monopole moment when you generate boxes (the option is mostly there if you're interested in off-label uses of this code to compute power spectra from fields that are not cosmological overdensity fields); RNG seed for predictable ensemble behaviour
-                 LoS_taper=False,image_taper=False,                                     # apodize along the sky plane or line-of-sight directions to suppress ringing originating from features that cut off sharply?
+                 LoS_apo=False,transverse_apo=False,                                     # apodize along the sky plane or line-of-sight directions to suppress ringing originating from features that cut off sharply?
                  wedge_cut:bool=False,nu_ctr=None,                                      # throw away info from k-modes inside the foreground wedge?; when using synchrotron foregrounds AND performing a wedge cut, the calling routine should specify the central frequency of the survey in question to have a physical anchor for the foregrounds. also need central freq for FoG
                  fg_box:np.ndarray=None):                                               # foregrounds to add to the signal-of-interest map (T)
         
@@ -1112,14 +1116,12 @@ class cosmo_stats(object):
         self.power_unit= self.temp_unit**2 *self.length_unit**3
         
         # config space
-        # print("cosmo_stats.__init__: Nxy,Nz=",self.Nxy,self.Nz)
         self.box_shape=(self.Nxy,self.Nxy,self.Nz) if self.Nz>1 else (self.Nxy,self.Nxy)
         self.Deltaxy=self.Lxy/self.Nxy                           # sky plane: voxel side length
         self.xy_vec_for_box=self.Lxy*fftshift(fftfreq(self.Nxy)) # sky plane Cartesian config space coordinate axis
         self.Deltaz= self.Lz/self.Nz                           # line of sight voxel side length
         self.z_vec_for_box= self.Lz*fftshift(fftfreq(self.Nz)) # line of sight Cartesian config space coordinate axis
         self.d3r=self.Deltaz*self.Deltaxy**2                      # volume element = voxel volume
-        # print("cosmo_stats.__init__: Deltaxy,Deltaz=",self.Deltaxy,self.Deltaz)
 
         self.xx_grid,self.yy_grid,self.zz_grid=np.meshgrid(self.xy_vec_for_box,
                                                            self.xy_vec_for_box,
@@ -1180,22 +1182,17 @@ class cosmo_stats(object):
         
         # binning considerations
         self.binning_mode=binning_mode
-
         bin_denom=2.2
         if Nkperp==0:
             Nkperp=int(Nxy/bin_denom)
         if Nkpar==0:
             Nkpar=int(Nz/bin_denom)
-        self.Nkperp=Nkperp # the number of bins to put in power spec realizations you construct
+        self.Nkperp=Nkperp # for power spec binning
         self.Nkpar=Nkpar
         self.kmax_box_xy= pi/self.Deltaxy
         self.kmax_box_z=  pi/self.Deltaz
         self.kmin_box_xy= twopi/self.Lxy
         self.kmin_box_z=  twopi/self.Lz
-        # print("cosmo_stats.__init__: Lxy,Lz=",self.Lxy,self.Lz)
-        # print("cosmo_stats.__init__: Nxy,Nz=",self.Nxy,self.Nz)
-        # print("cosmo_stats.__init__: kmax_xy,kmax_z=",self.kmax_box_xy,self.kmax_box_z)
-        # print("cosmo_stats.__init__: kmin_xy,kmin_z=",self.kmin_box_xy,self.kmin_box_z)
         
         # voxel grids for cyl binning
         if (self.Nkpar is not None and self.Nkpar!=0):
@@ -1229,10 +1226,10 @@ class cosmo_stats(object):
         taper_xy=np.ones(self.Nxy)
         taper_z=np.ones(self.Nz)
         fftshift_axes=()
-        if image_taper:
+        if transverse_apo:
             taper_xy=Blackman_Harris_safe_for_FFT(Nxy)
             fftshift_axes=(0,1)
-        if LoS_taper:
+        if LoS_apo:
             taper_z= Blackman_Harris_safe_for_FFT(Nz) # confirmed to be centre-, not corner-origin
             fftshift_axes+=(2,)
         if self.Nz>1:
@@ -1251,23 +1248,35 @@ class cosmo_stats(object):
             else:
                 self.effective_volume=np.sum(self.taper_xyz_centre**2*self.d3r)
         else:
+            # epsilon=1e-10
+            # re_conditioned_log_beam=np.log10(effective_primary_beam_for_effective_volume + epsilon)
+            # interpolator=RGI((eff_pri_domain),re_conditioned_log_beam,
+            #                  bounds_error=avoid_extrapolation,fill_value=None)
+            # log10_interpolated=interpolator(self.to_eval_at).T # the constituent self.ii_grid are centre-origin, as intended
+            # eff_pri_this_domain = 10**log10_interpolated - epsilon
             interpolator=RGI((eff_pri_domain),effective_primary_beam_for_effective_volume,
                              bounds_error=avoid_extrapolation,fill_value=None)
             eff_pri_this_domain=interpolator(self.to_eval_at).T # the constituent self.ii_grid are centre-origin, as intended
             comprehensive_slice_figure(effective_primary_beam_for_effective_volume,
                                        norm=LogNorm(vmax=1),
-                                       exts=[[],[],[]],
+                                       exts=[[eff_pri_domain[ 0][0],eff_pri_domain[ 0][-1]],
+                                             [eff_pri_domain[ 1][0],eff_pri_domain[ 1][-1]],
+                                             [eff_pri_domain[-1][0],eff_pri_domain[-1][-1]]  ],
                                        name="effective_primary.png")
             comprehensive_slice_figure(eff_pri_this_domain,
                                        norm=LogNorm(vmax=1),
-                                       exts=[[],[],[]],
+                                       exts=[[self.xy_vec_for_box[0].value,self.xy_vec_for_box[-1].value],
+                                             [self.xy_vec_for_box[0].value,self.xy_vec_for_box[-1].value],
+                                             [self.z_vec_for_box[ 0].value,self.z_vec_for_box[-1].value]  ],
                                        name="effective_primary_interpolated.png") # in the new paradigm, these shouldn't be visibly super different. as of 16:49 24/07/26, they aren't—nice!
 
             self.effective_volume=np.sum((eff_pri_this_domain*self.taper_xyz_centre)**2*self.d3r)
+        print("cosmo_stats: self.effective_volume=",self.effective_volume)
         self.PSF=PSF
         if (PSF is not None): # non-identity PSF
-            # PSF_norm=TwoSlopeNorm(0,vmin=-1,vmax=1)
-            PSF_norm=SymLogNorm(1e-3,vmin=-1,vmax=1)
+            # PSF_norm=SymLogNorm(1e-3,vmin=-1,vmax=1)
+            PSFext=np.max(np.abs(PSF))
+            PSF_norm=SymLogNorm(1e-3,vmin=-PSFext,vmax=PSFext)
             comprehensive_slice_figure(PSF, 
                                        norm=PSF_norm,
                                        cmap="RdBu",
@@ -1325,12 +1334,12 @@ class cosmo_stats(object):
         self.P_fid_box=P_fid_box*FoG_modulation
             
     def generate_P(self,T_use=None): # from a box of temperature field values
-        if T_use is None:
+        if T_use is None:            # establish common string flags
             if self.PSF is None:
                 T_use="pristine"
             else:
                 T_use="beam"
-        if (T_use.lower()=="beam"):
+        if (T_use.lower()=="beam"):  # do the correct thing based on the updated string flag
             T_use=None
             if self.T_beam is None:
                 if self.T_pristine is None:
@@ -1572,7 +1581,6 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
         N_bl=N_ant*(N_ant-1)//2 # idem
         self.nu_ctr_MHz=nu_ctr.to(u.MHz)
         self.nu_ctr_Hz=nu_ctr.to(u.Hz)
-        self.Dc_ctr=comoving_distance(nu_HI_z0/nu_ctr-1)
         self.N_hrs=hrs_per_night
         
         # antenna positions xyz
@@ -1605,7 +1613,7 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
         
         # line-of-sight quantities
         bw_MHz=2*self.nu_ctr_MHz*evol_restriction_threshold # I think this missing factor of two was making me compute not enough PSF
-        N_chan=int(bw_MHz/self.Delta_nu)
+        N_chan=int((bw_MHz/self.Delta_nu).decompose())
         self.N_chan=N_chan
         nu_lo=self.nu_ctr_MHz-bw_MHz/2.
         nu_hi=self.nu_ctr_MHz+bw_MHz/2.
@@ -1806,8 +1814,7 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
         plt.savefig("FFT_PSF.png",dpi=500)
         plt.close()
 
-        norm=np.max(implane) # this is what I meant to override on the AM of July 15th 2026 but actually left uncommented somewhere else. maybe it doesn't lead to such crazy artifacts... and if it didn't, that would be convenient... because it would be robust against division-by-zero errors
-        implane/=norm
+        implane/=np.max(implane)
         return implane
 
     def stack_to_box(self):
@@ -1831,6 +1838,7 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
         # generate a box of r-values (necessary for interpolation to survey domain in cosmo_stats as called by beam_effects)
         xy_vec=self.PSF_xy
         z_vec=self.comoving_distances_channels-self.ctr_chan_comov_dist 
+        print("generate_PSF.stack_to_box: z_vec min,max =",np.min(z_vec),np.max(z_vec))
         self.xy_vec=xy_vec
         self.z_vec=z_vec
 ####################################################################################################################################################################################################################################
@@ -1952,6 +1960,7 @@ class CHORD_sense(object): # modified from a notebook helpfully shared by Debanj
         coherent:bool = False,                        # add baselines coherently if they are not instantaneously redundant?
         tsky_ref_freq:float = 400.*u.MHz,             # frequency to which the sky temp is referenced
         tsky_amplitude:float = 25.*u.K,               # sky temp
+        channel_width=CHORD_channel_width_MHz,
         
         horizon_buffer:float = 0.1*littleh/u.Mpc, # how many near-the-horizon modes to exclude
         foreground_model:str = "optimistic",      # foreground model for sensitivity calculations
@@ -1981,7 +1990,7 @@ class CHORD_sense(object): # modified from a notebook helpfully shared by Debanj
         self.integration_time = integration_time
         self.time_per_day = time_per_day
         self.n_days = n_days
-        n_channels = bandwidth.value/CHORD_channel_width_MHz
+        n_channels = bandwidth.value/channel_width
         self.n_channels = n_channels
         self.bandwidth = bandwidth
         self.coherent = coherent
@@ -2194,8 +2203,8 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
         axs[i][j].set_ylabel("k$_{||}$")
         axs[i][j].tick_params(axis='x', labelrotation=30)
         axs[i][j].set_title(ensemble_ids[k])
-        # axs[i][j].set_aspect("equal") # override just to look at the morphology
-        axs[i][j].set_ylim(0,5*k_perp[-1]) # manual override to make the aspect ratio momentarily less crazy for inspection
+        axs[i][j].set_aspect("equal")
+        # axs[i][j].set_ylim(k_par[0].value,5*k_perp[-1].value) # manual override to make the aspect ratio momentarily less crazy for inspection
         if plot_log:
             neg_ticks = np.linspace(vminlog, 0., num=4, endpoint=False)
             pos_ticks = np.linspace(0., vmaxlog, num=4, endpoint=True)
@@ -2265,7 +2274,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                   
               wedge_cut=False, layer_foregrounds=True, pointing_errors=[0.,0.,0.],
                   
-              freq_bin_width=0.1953125*u.MHz,
+              freq_bin_width=CHORD_channel_width_MHz,
               N_timesteps=def_N_timesteps,
 
               CST_lo=None,CST_hi=None,CST_deltanu=None,
@@ -2376,7 +2385,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         antdist=antenna_dist
         if Npoint_i==0 and NCST_i==1:
             CST_f_head_syst_i=[CST_f_head_fidu] # literally just use fiducial for both num and denom everywhere
-        windowed_survey=beam_effects(# SCIENCE
+        observation=beam_effects(# SCIENCE
                                     # the observation
                                     bminCHORD,bmaxCHORD,                                                       
                                     nu_ctr,freq_bin_width,                                                 
@@ -2400,7 +2409,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                     init_and_box_tol=0.05,CAMB_tol=0.05,                                 
                                     frac_tol_conv=frac_tol_conv,seed=seed,                                         
                                     ftol_deriv=1e-16,maxiter=5,   
-                                    LoS_taper=True,image_taper=False,
+                                    # LoS_apo=True,transverse_apo=False,
+                                    LoS_apo=True,transverse_apo=True,
                                     N_timesteps=N_timesteps,
 
                                     # CONVENIENCE
@@ -2440,47 +2450,47 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             recalc_co_xx_xx_fg=True
 
         print("about to perform or load Monte Carlos")
-        P_unit=u.mK**2 *windowed_survey.Deltabox_xy.unit**3
+        P_unit=u.mK**2 *observation.Deltabox_xy.unit**3
         if not from_incomplete_MC:
             if redo_window_calc:
                 t0=time.time()
-                windowed_survey.calc_power_contamination(isolated=isolated) # loops over complexity
-                P_co_xx_xx_xx=windowed_survey.P_co_xx_xx_xx
+                observation.calc_power_contamination(isolated=isolated) # loops over complexity
+                P_co_xx_xx_xx=observation.P_co_xx_xx_xx
                 np.save("P_co_xx_xx_xx_"+ioname+".npy",P_co_xx_xx_xx.value)
-                P_xx_xx_xx_fg=windowed_survey.P_xx_xx_xx_fg
+                P_xx_xx_xx_fg=observation.P_xx_xx_xx_fg
                 np.save("P_xx_xx_xx_fg_"+ioname+".npy",P_xx_xx_xx_fg.value)
                 t1=time.time()
                 print("Pcont calculation time was",t1-t0)
 
                 if recalc_co_fi_xx_fg:
-                    P_co_fi_xx_fg=windowed_survey.P_co_fi_xx_fg
+                    P_co_fi_xx_fg=observation.P_co_fi_xx_fg
                     np.save("P_co_fi_xx_fg_"+ioname+".npy",P_co_fi_xx_fg.value)
                 if recalc_co_fi_sy_fg:
-                    P_co_fi_sy_fg=windowed_survey.P_co_fi_sy_fg
+                    P_co_fi_sy_fg=observation.P_co_fi_sy_fg
                     np.save("P_co_fi_sy_fg_"+ioname+".npy",P_co_fi_sy_fg.value)
                 if recalc_xx_fi_sy_fg:
-                    P_xx_fi_sy_fg=windowed_survey.P_xx_fi_sy_fg
+                    P_xx_fi_sy_fg=observation.P_xx_fi_sy_fg
                     np.save("P_xx_fi_sy_fg_"+ioname+".npy",P_xx_fi_sy_fg.value)
                 if recalc_xx_fi_xx_fg:
-                    P_xx_fi_xx_fg=windowed_survey.P_xx_fi_xx_fg
+                    P_xx_fi_xx_fg=observation.P_xx_fi_xx_fg
                     np.save("P_xx_fi_xx_fg_"+ioname+".npy",P_xx_fi_xx_fg.value)
                 if recalc_co_fi_xx_xx:
-                    P_co_fi_xx_xx=windowed_survey.P_co_fi_xx_xx
+                    P_co_fi_xx_xx=observation.P_co_fi_xx_xx
                     np.save("P_co_fi_xx_xx_"+ioname+".npy",P_co_fi_xx_xx.value)
                 if recalc_co_fi_sy_xx:
-                    P_co_fi_sy_xx=windowed_survey.P_co_fi_sy_xx
+                    P_co_fi_sy_xx=observation.P_co_fi_sy_xx
                     np.save("P_co_fi_sy_xx_"+ioname+".npy",P_co_fi_sy_xx.value)
                 if recalc_co_xx_xx_fg:
-                    P_co_xx_xx_fg=windowed_survey.P_co_xx_xx_fg
+                    P_co_xx_xx_fg=observation.P_co_xx_xx_fg
                     np.save("P_co_xx_xx_fg_"+ioname+".npy",P_co_xx_xx_fg.value)
 
-                P_CO_XX_XX_XX=windowed_survey.P_CO_XX_XX_XX
+                P_CO_XX_XX_XX=observation.P_CO_XX_XX_XX
                 np.save("P_CO_XX_XX_XX__"+ioname+".npy",P_CO_XX_XX_XX.value)
 
-                N_per_realization=windowed_survey.N_per_realization
+                N_per_realization=observation.N_per_realization
                 np.save("N_per_realization_"+ioname+".npy",N_per_realization)
-                kperp_internal=windowed_survey.kperpbins_internal[:-1]
-                kpar_internal=windowed_survey.kparbins_internal[:-1]
+                kperp_internal=observation.kperpbins_internal[:-1]
+                kpar_internal=observation.kparbins_internal[:-1]
                 np.save("kpar_internal_"+ioname+".npy",kpar_internal.value)
                 np.save("kperp_internal_"+ioname+".npy",kperp_internal.value)
                 if isolated is not False: # break early if you just calculate one windowed power spectrum at a time
