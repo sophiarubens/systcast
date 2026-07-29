@@ -319,6 +319,7 @@ class beam_effects(object):
         self.Deltanu=delta_nu
         self.bw=nu_ctr*evol_restriction_threshold
         self.Nchan=int(self.bw/self.Deltanu)
+        print("beam_effects.__init__: self.bw,self.Deltanu,self.Nchan=",self.bw,self.Deltanu,self.Nchan)
         self.z_ctr=freq2z(nu_HI_z0,nu_ctr)
         self.nu_lo=self.nu_ctr-self.bw/2.
         self.z_hi=freq2z(nu_HI_z0,self.nu_lo)
@@ -370,7 +371,7 @@ class beam_effects(object):
         self.Nxy_box=int(self.Lsurv_box_xy*kperpmax_surv/pi)
         self.Lsurv_box_z=twopi/kparmin_surv
         self.Nz_box=int(self.Lsurv_box_z*kparmax_surv/pi)
-        PSF_z_vec=self.Lsurv_box_z*fftshift(fftfreq(self.Nz_box))
+        PSF_z_vec=(self.Dc_hi-self.Dc_lo)*fftshift(fftfreq(self.Nchan))
         print("beam_effects.__init__: Nxy,Nz =",self.Nxy_box,self.Nz_box)
 
         self.fgfreqs=np.asarray([self.nu_lo.value,self.nu_hi.value])*self.nu_ctr.unit
@@ -388,6 +389,7 @@ class beam_effects(object):
         CST_lo_safe=CST_lo.to(CST_deltanu.unit)
         CST_freqs=np.arange(CST_hi_safe.value,CST_lo_safe.value,
                             -CST_deltanu.value)*CST_deltanu.unit # here and in reconfigure_CST, now inclusive of both endpoints     
+        print("len(CST_freqs)=",len(CST_freqs))
         CST_redshifts=np.asarray([nu_HI_z0/freq-1 for freq in CST_freqs]) # checked = no frequency units that remain unconverted as of 29th Jul 2026 12:23
         CST_comoving=np.asarray([comoving_distance(z).value for z in CST_redshifts])*u.Mpc
         N_CST_freqs=len(CST_comoving)
@@ -500,6 +502,7 @@ class beam_effects(object):
             weights_PSF=np.load("weights_PSF_"+ioname+".npy")
             print("loaded synthesized beam")
         print("finished importing/constructing synthesized CST beam")
+        print("fidu_box_PSF.shape=",fidu_box_PSF.shape)
         
         self.fi_eff_primary_box=fidu_box
         weighted_sum_syst_primary=np.zeros_like(fidu_box)
@@ -699,7 +702,6 @@ class beam_effects(object):
 
         print("Lz that will be used to initialize cosmo_stats: ",self.PSF_z_ext)
         print("fg_box.shape, self.Npix, self.PSF_Nz =",fg_box.shape, self.Npix, self.PSF_Nz)
-        assert 1==0, "consistency check"
         co_fi_xx_fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_z_ext,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
@@ -1292,6 +1294,7 @@ class cosmo_stats(object):
         self.PSF=PSF
         self.PSF_padded=None
         if PSF is not None: # non-identity PSF
+            print("self.PSF.shape =",self.PSF.shape)
             PSFext=np.max(np.abs(PSF))
             PSF_norm=SymLogNorm(1e-3,vmin=-PSFext,vmax=PSFext)
             comprehensive_slice_figure(PSF, 
@@ -1305,8 +1308,7 @@ class cosmo_stats(object):
             print("pad_lo_xy,pad_hi_xy,pad_lo_z,pad_hi_z =",pad_lo_xy,pad_hi_xy,pad_lo_z,pad_hi_z)
             PSF_padded=np.pad(PSF,((pad_lo_xy,pad_hi_xy),(pad_lo_xy,pad_hi_xy),(pad_lo_z,pad_hi_z),),"wrap")
             self.PSF_padded=PSF_padded
-            assert self.PSF_padded.shape==(2*self.Nxy-1,2*self.Nxy-1,2*self.Nz-1)
-            print("PSF_padded.shape=",PSF_padded.shape)
+            print("self.PSF_padded.shape, (2*self.Nxy-1,2*self.Nxy-1,2*self.Nz-1) =",self.PSF_padded.shape, (2*self.Nxy-1,2*self.Nxy-1,2*self.Nz-1))
         
         # strictness control for realization averaging
         self.frac_tol=frac_tol
@@ -1444,7 +1446,9 @@ class cosmo_stats(object):
         t0=time.time()
         for i in range(self.N_realizations):
             self.generate_GRF()
+            print("self.T_pristine.shape",self.T_pristine.shape)
             self.generate_P(T_use=T_use)
+            print("self.P_unbinned.shape",self.P_unbinned.shape)
             ti=time.time()
             if ((ti-t0)>3600): # actually save the realizations every hour
                 np.save("P_"+interfix+"_MC_incomplete.npy",self.P_unbinned_running_sum.value/i)
@@ -1633,6 +1637,7 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
         # line-of-sight quantities
         bw_MHz=self.nu_ctr_MHz*evol_restriction_threshold # ongoing investigation into factor of two
         N_chan=int((bw_MHz/self.Delta_nu).decompose())
+        print("generate_PSF.__init__: bw_MHz,self.Delta_nu,N_chan=",bw_MHz,self.Delta_nu,N_chan)
         self.N_chan=N_chan
         nu_lo=self.nu_ctr_MHz-bw_MHz/2.
         nu_hi=self.nu_ctr_MHz+bw_MHz/2.
