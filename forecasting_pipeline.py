@@ -190,7 +190,13 @@ def comprehensive_slice_figure(box,                      # 3D box to plot slices
     axs[0,2].set_title("z index 0/"+str(Nz-1))
     if exts is not None:
         xext_vals,yext_vals,zext_vals=exts
-        xyext=np.concatenate((xext_vals,np.flip(yext_vals)))
+        if isinstance(xext_vals[0],Quantity):
+            print("about to strip units of extent vectors for a comprehensive slice figure")
+            xext_vals=[val.value for val in xext_vals]
+            yext_vals=[val.value for val in yext_vals]
+            zext_vals=[val.value for val in zext_vals]
+        print("xext_vals[0]=",xext_vals)
+        xyext=np.concatenate((xext_vals,np.flip(yext_vals))) # supposed to be min0,max0,max1,min1
         xzext=np.concatenate((xext_vals,np.flip(zext_vals)))
         yzext=np.concatenate((yext_vals,np.flip(zext_vals)))
         axis_label_suffix="val"
@@ -388,6 +394,8 @@ class beam_effects(object):
         comoving_mid=CST_comoving[int(N_CST_freqs//2)]
         CSTPSF_xy_ext=2*flat_enough*comoving_mid # stricter than the horizon limit. 2x is to account for +/- approved-small-angle from boresight
         CSTPSF_xy_vec= CSTPSF_xy_ext*fftshift(fftfreq(Npix))
+        print("unit check: CSTPSF_xy_vec[0]=",CSTPSF_xy_vec[0])
+        self.Npix=Npix
         CST_z_vec=CST_comoving-comoving_mid
         print("beam_effects.__init__: PSF/box Lxy,Lz=",CSTPSF_xy_ext,self.Lsurv_box_z)
         kperpmin_PSFCST=twopi/CSTPSF_xy_ext
@@ -431,10 +439,13 @@ class beam_effects(object):
             else:
                 syst_boxes[0,:,:,:]=fidu_box
         
-        CST_domain=(CSTPSF_xy_vec.value,CSTPSF_xy_vec.value,CST_z_vec.value)
-        PSF_domain=(CSTPSF_xy_vec.value,CSTPSF_xy_vec.value,PSF_z_vec.value)
+        CST_domain=(CSTPSF_xy_vec,CSTPSF_xy_vec,CST_z_vec) # TODO verify not brittle to leave unitified. was the only problem 
+        PSF_domain=(CSTPSF_xy_vec.value,CSTPSF_xy_vec.value,PSF_z_vec.value) # TODO verify not brittle to leave deunitified
         CSTPSF_xy_ext=CSTPSF_xy_vec[-1]-CSTPSF_xy_vec[0]
+        self.CSTPSF_xy_ext=CSTPSF_xy_ext
         print("beam_effects.__init__: extrema of xy vec",np.min(CSTPSF_xy_vec),np.max(CSTPSF_xy_vec))
+        print("beam_effects.__init__: extrema of CST z vec:",np.min(CST_z_vec),np.max(CST_z_vec))
+        print("beam_effects.__init__: extrema of PSF z vec:",np.min(PSF_z_vec),np.max(PSF_z_vec))
         self.CST_domain=CST_domain
         self.PSF_domain=PSF_domain
 
@@ -462,7 +473,6 @@ class beam_effects(object):
                                                 Delta_nu=delta_nu,
                                                 sub_ensemble_of_CST_beams=fidu_box,
                                                 CSTPSF_xy=CSTPSF_xy_vec,CST_freqs=CST_freqs,
-                                                CSTPSF_xy_max=CSTPSF_xy_ext/2,
                                                 supplementary_name=ioname)
             fidu_synthesis.stack_to_box()
             print("finished synthesizing fiducial CST PSF")
@@ -473,7 +483,6 @@ class beam_effects(object):
                                                 Delta_nu=delta_nu,
                                                 sub_ensemble_of_CST_beams=[fidu_box,CST_syst_ensemble],
                                                 CSTPSF_xy=CSTPSF_xy_vec,CST_freqs=CST_freqs,
-                                                PSF_xy_max=CSTPSF_xy_ext/2,
                                                 supplementary_name=ioname)
             syst_synthesis.stack_to_box()
             print("finished synthesizing systematic-laden CST PSF")
@@ -512,8 +521,9 @@ class beam_effects(object):
 
         self.CST_z_ext=CST_z_vec[-1]-CST_z_vec[0]
         self.CST_Nz=len(CST_z_vec)
-        self.PSF_Nz=np.copy(self.Nz_box)
-        self.PSF_z_ext=self.z_hi-self.z_lo
+        self.PSF_Nz=self.Nz_box
+        print("self.PSF_Nz=",self.PSF_Nz)
+        self.PSF_z_ext=self.Dc_hi-self.Dc_lo
         self.PSF_Delta_z=self.PSF_z_ext/self.PSF_Nz
 
         # groundwork-informed forecasting considerations
@@ -628,19 +638,19 @@ class beam_effects(object):
                                   rngseed=438): 
         
         # generate a slice of white noise
-        fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.CSTPSF_Delta_z,
+        fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_Delta_z,
                        P_fid=self.P_flat,k_fid=self.k_for_flat,
-                       Nxy=self.CSTPSF_Nxy,Nz=1,
+                       Nxy=self.Npix,Nz=1,
                        seed=rngseed,nu_ctr=self.nu_ctr) 
         fg.generate_GRF()
         white_noise_slice=fg.T_pristine.to(Tref.unit).value
 
         # bookkeeping to prep for power law
         freqs_in_ref_unit=self.freqs_for_fg.to(nuref.unit) 
-        fg_box_this_ingredient=np.zeros((self.CSTPSF_Nxy,self.CSTPSF_Nxy,self.Nz_box))
+        fg_box_this_ingredient=np.zeros((self.Npix,self.Npix,self.Nz_box))
         rng=np.random.default_rng(rngseed+1)
         freq_ratios=freqs_in_ref_unit/nuref
-        slice_of_alphas=rng.normal(loc=alpha, scale=sigma_alpha, size=(self.CSTPSF_Nxy,self.CSTPSF_Nxy))
+        slice_of_alphas=rng.normal(loc=alpha, scale=sigma_alpha, size=(self.Npix,self.Npix))
 
         # apply LoS power law renormalization to each slice  
         for i,freq_ratio_i in enumerate(freq_ratios):
@@ -669,7 +679,7 @@ class beam_effects(object):
         if self.layer_foregrounds:
             self.freqs_for_fg= np.linspace(self.nu_hi.value,self.nu_lo.value, # descending in frequency to match the iteration over increasing redshift
                                            self.Nz_box,endpoint=True)*self.Deltanu.unit
-            fg_box=np.zeros((self.CSTPSF_Nxy,self.CSTPSF_Nxy,self.Nz_box))*u.mK
+            fg_box=np.zeros((self.Npix,self.Npix,self.Nz_box))*u.mK
             fg_info_cases=[ [335.4*foreground_temp_unit, 150*u.MHz, -2.8,  0.1],   # synchrotron
                             [33.5 *foreground_temp_unit, 150*u.MHz, -2.15, 0.01] ] # free-free
             for fg_info in fg_info_cases:
@@ -678,8 +688,6 @@ class beam_effects(object):
                 fg_box+=fg_box_ingredient
             self.fg_box=fg_box # centre-origin
             print("beam_effects.calc_power_contamination: fg_box.shape =",fg_box.shape)
-            print("beam_effects.calc_power_contamination:")
-            np.savetxt("fg_column.txt",fg_box[0,0,:])
 
             fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_z_ext,
                            LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
@@ -690,10 +698,12 @@ class beam_effects(object):
             print("                           fg power calc complete")
 
         print("Lz that will be used to initialize cosmo_stats: ",self.PSF_z_ext)
+        print("fg_box.shape, self.Npix, self.PSF_Nz =",fg_box.shape, self.Npix, self.PSF_Nz)
+        assert 1==0, "consistency check"
         co_fi_xx_fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_z_ext,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
-                                Nxy=self.CSTPSF_Nxy,Nz=self.PSF_Nz,
-                                effective_primary_beam_for_effective_volume=self.fi_eff_primary_box, eff_pri_domain=self.CSTPSF_domain,
+                                Nxy=self.Npix,Nz=self.PSF_Nz,
+                                effective_primary_beam_for_effective_volume=self.fi_eff_primary_box, eff_pri_domain=self.CST_domain,
                                 PSF=self.fidu,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
@@ -702,23 +712,23 @@ class beam_effects(object):
         self.kparbins_internal=co_fi_xx_fg.kparbins
         co_fi_sy_fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_z_ext,
                                 P_fid=P_cosmo,k_fid=self.ksph,
-                                Nxy=self.CSTPSF_Nxy,Nz=self.PSF_Nz,
-                                effective_primary_beam_for_effective_volume=self.sy_eff_primary_box, eff_pri_domain=self.CSTPSF_domain,
+                                Nxy=self.Npix,Nz=self.PSF_Nz,
+                                effective_primary_beam_for_effective_volume=self.sy_eff_primary_box, eff_pri_domain=self.CST_domain,
                                 PSF=self.syst,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
         xx_fi_sy_fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_z_ext,
-                                Nxy=self.CSTPSF_Nxy,Nz=self.PSF_Nz,
-                                effective_primary_beam_for_effective_volume=self.sy_eff_primary_box, eff_pri_domain=self.CSTPSF_domain,
+                                Nxy=self.Npix,Nz=self.PSF_Nz,
+                                effective_primary_beam_for_effective_volume=self.sy_eff_primary_box, eff_pri_domain=self.CST_domain,
                                 T_pristine=fg_box,
                                 PSF=self.syst,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
         xx_fi_xx_fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_z_ext,
-                                Nxy=self.CSTPSF_Nxy,Nz=self.PSF_Nz,
-                                effective_primary_beam_for_effective_volume=self.fi_eff_primary_box, eff_pri_domain=self.CSTPSF_domain,
+                                Nxy=self.Npix,Nz=self.PSF_Nz,
+                                effective_primary_beam_for_effective_volume=self.fi_eff_primary_box, eff_pri_domain=self.CST_domain,
                                 T_pristine=fg_box,
                                 PSF=self.fidu,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
@@ -726,23 +736,23 @@ class beam_effects(object):
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
         co_fi_xx_xx=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_z_ext,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
-                                Nxy=self.CSTPSF_Nxy,Nz=self.PSF_Nz,
-                                effective_primary_beam_for_effective_volume=self.fi_eff_primary_box, eff_pri_domain=self.CSTPSF_domain,
+                                Nxy=self.Npix,Nz=self.PSF_Nz,
+                                effective_primary_beam_for_effective_volume=self.fi_eff_primary_box, eff_pri_domain=self.CST_domain,
                                 PSF=self.fidu,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
         co_fi_sy_xx=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_z_ext,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
-                                Nxy=self.CSTPSF_Nxy,Nz=self.PSF_Nz,
-                                effective_primary_beam_for_effective_volume=self.sy_eff_primary_box, eff_pri_domain=self.CSTPSF_domain,
+                                Nxy=self.Npix,Nz=self.PSF_Nz,
+                                effective_primary_beam_for_effective_volume=self.sy_eff_primary_box, eff_pri_domain=self.CST_domain,
                                 PSF=self.syst,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
         co_xx_xx_fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_z_ext,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
-                                Nxy=self.CSTPSF_Nxy,Nz=self.PSF_Nz,
+                                Nxy=self.Npix,Nz=self.PSF_Nz,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
@@ -837,7 +847,7 @@ class beam_effects(object):
             print("cosmo +                    fg MC         complete")
         COSMOTEST=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_z_ext,
                               P_fid=P_cosmo,k_fid=self.ksph, 
-                              Nxy=self.CSTPSF_Nxy,Nz=self.PSF_Nz,
+                              Nxy=self.Npix,Nz=self.PSF_Nz,
                               LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                               frac_tol=self.frac_tol_conv,seed=self.seed,nu_ctr=self.nu_ctr)
         COSMOTEST.power_Monte_Carlo(interfix="CO_XX_XX_XX_") # extra underscore is because numpy is fine with case-sensitive file names but MacOS is not :(
@@ -1131,10 +1141,6 @@ class cosmo_stats(object):
         self.d3r=self.Deltaz*self.Deltaxy**2                      # volume element = voxel volume
 
         print("cosmo_stats.__init__: extrema of xy vec for box",np.min(self.xy_vec_for_box),np.max(self.xy_vec_for_box))
-        self.xx_grid,self.yy_grid,self.zz_grid=np.meshgrid(self.xy_vec_for_box,
-                                                           self.xy_vec_for_box,
-                                                           self.z_vec_for_box, indexing="ij")      # box-shaped Cartesian coords CENTRE-ORIGIN
-        self.to_eval_at=np.array([self.xx_grid.value,self.yy_grid.value,self.zz_grid.value]).T
 
         # Fourier space
         self.Deltakxy=twopi/self.Lxy                                        # voxel side length
@@ -1261,10 +1267,11 @@ class cosmo_stats(object):
             # TODO: now that these domains are the same, just pass the CST z vec to cosmo_stats instead of a bundle including redundant copies of the common PSF-box xy vec
             print("cosmo_stats.__init__: extrema of passed domain for effective primary:",np.min(eff_pri_domain[0]),np.max(eff_pri_domain[0]))
             eff_pri_this_domain=np.zeros(self.box_shape)
-            for i,z_CST_i in enumerate(z_vec_from_CST):
-                LoS_1st,LoS_2nd=np.argsort(np.abs(self.z_vec_for_box-z_CST_i))[:2]
-                weight_1st=np.abs(z_CST_i-self.z_vec_for_box[LoS_1st])/CST_Deltaz
-                weight_2nd=np.abs(z_CST_i-self.z_vec_for_box[LoS_2nd])/CST_Deltaz
+            print("cosmo_stats.__init__: extrema of z_vec_from_CST: ",np.min(z_vec_from_CST),np.max(z_vec_from_CST))
+            for i,z_PSF_i in enumerate(self.z_vec_for_box):
+                LoS_1st,LoS_2nd=np.argsort(np.abs(z_PSF_i-z_vec_from_CST))[:2]
+                weight_1st=np.abs(z_PSF_i-self.z_vec_for_box[LoS_1st])/CST_Deltaz
+                weight_2nd=np.abs(z_PSF_i-self.z_vec_for_box[LoS_2nd])/CST_Deltaz
                 eff_pri_this_domain[:,:,i]=effective_primary_beam_for_effective_volume[:,:,LoS_2nd]*weight_1st +\
                                            effective_primary_beam_for_effective_volume[:,:,LoS_2nd]*weight_2nd
             comprehensive_slice_figure(effective_primary_beam_for_effective_volume,
@@ -1295,8 +1302,11 @@ class cosmo_stats(object):
             assert(not np.all(np.isclose(PSF,0))), "PSF should not be identically vanishing"
             pad_lo_xy,pad_hi_xy=get_padding(self.Nxy)
             pad_lo_z, pad_hi_z =get_padding(self.Nz)
+            print("pad_lo_xy,pad_hi_xy,pad_lo_z,pad_hi_z =",pad_lo_xy,pad_hi_xy,pad_lo_z,pad_hi_z)
             PSF_padded=np.pad(PSF,((pad_lo_xy,pad_hi_xy),(pad_lo_xy,pad_hi_xy),(pad_lo_z,pad_hi_z),),"wrap")
             self.PSF_padded=PSF_padded
+            assert self.PSF_padded.shape==(2*self.Nxy-1,2*self.Nxy-1,2*self.Nz-1)
+            print("PSF_padded.shape=",PSF_padded.shape)
         
         # strictness control for realization averaging
         self.frac_tol=frac_tol
@@ -1334,7 +1344,9 @@ class cosmo_stats(object):
             sigma_FoG=(1.93-1.48*(self.z_ctr-1)+0.81*(self.z_ctr-1)**2)*self.h.value # cf. eq. 11 of the CHIME/cosmology 2026 interpretation paper
             kmag_safe=np.copy(self.kmag_grid_corner)
             kmag_safe[kmag_safe==0]=1./u.Mpc # try inf (bad), 1., 0...
-            kmu=np.abs(self.kz_grid_corner)/kmag_safe # k-par/k
+            kmu=np.abs(self.kz_grid_corner)*self.kz_grid_corner/kmag_safe # k-par/k
+            if isinstance(kmu, Quantity):
+                kmu=kmu.value
             D_FoG_HI=1/(1+ 0.5*(kmu*alpha_FoG*sigma_FoG)**2 ) # cf. eq. 10 of the CHIME/cosmology 2026 interpretation paper
             FoG_modulation=D_FoG_HI**2
             FoG_modulation=1
@@ -1361,7 +1373,8 @@ class cosmo_stats(object):
         else:
             raise ValueError("invalid state of box beam knowledge. try again with pristine or beam!")
         T_use=T_use.to(u.mK)
-        
+
+        print("cosmo_stats.generate_P: T_use.shape, self.taper_xyz_centre.shape =",T_use.shape, self.taper_xyz_centre.shape)
         T_tilde=fftshift( fftn( 
                                 ifftshift(T_use*self.taper_xyz_centre)*self.d3r,
                                 s=self.box_shape, axes=self.transform_axes, norm="backward"        
@@ -1569,7 +1582,6 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
 
                  sub_ensemble_of_CST_beams=None,                                   # array-like with shape (N_CST_types, N_pointing_errors+1, N_CST_xy, N_CST_xy, N_CST_freqs)
                  CSTPSF_xy=None,CST_freqs=None,                                       # domain of each CST box in the ensemble. this domain is currently assumed to be the same for each box (not very rigorous/robust, but in practice, if you're running a simulation for a given survey frequency, it would be fairly pathological/ unintuitive/ anti–Occam's razor to get these boxes from CST slices at different frequencies. I guess the practical guidance/takeaway here is that my initial implementation will not support getting different boxes from different CST box resolutions)
-                 CSTPSF_xy_max=None,
                  supplementary_name=None # literally just for the July 16th 2026 histogram validation
                  ): 
         # array and observation geometry
@@ -1619,7 +1631,7 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
         antennas_xyz=antennas_ENU@lat_mat.T
         
         # line-of-sight quantities
-        bw_MHz=2*self.nu_ctr_MHz*evol_restriction_threshold # I think this missing factor of two was making me compute not enough PSF
+        bw_MHz=self.nu_ctr_MHz*evol_restriction_threshold # ongoing investigation into factor of two
         N_chan=int((bw_MHz/self.Delta_nu).decompose())
         self.N_chan=N_chan
         nu_lo=self.nu_ctr_MHz-bw_MHz/2.
@@ -1700,7 +1712,7 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
         
         uvw_inst=np.vstack((uvw_inst,-uvw_inst))
         self.uvw_inst=uvw_inst
-        indices_of_constituent_ant_pb_types=np.vstack((indices_of_constituent_ant_pb_types,indices_of_constituent_ant_pb_types)) # get the opposite-permutation baselines for free
+        indices_of_constituent_ant_pb_types=np.vstack((indices_of_constituent_ant_pb_types,indices_of_constituent_ant_pb_types)) # get the opposite-permutation baselines basically for free
         self.indices_of_constituent_ant_pb_types=indices_of_constituent_ant_pb_types
         self.N_baselines=indices_of_constituent_ant_pb_types.shape[0]
         print("computed ungridded instantaneous uv-coverage")
@@ -1729,21 +1741,18 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
                                           [ 0,            0,            1]])
             uvw_rotated=uvw_inst@accumulate_rotation
             uvw_projected=uvw_rotated@project_to_dec.T
-            uv_synth[:,:,i]=uvw_projected/self.lambda_obs # ok for this to be the first LoS slice!! this *is* just for one LoS slice
+            uv_synth[:,:,i]=uvw_projected/self.lambda_obs # this is just for one LoS slice, as intended
         self.uv_synth=uv_synth # units are wavelengths
         print("synthesized rotation")
 
-        # first idea of the morning of Fri 24th Jul 2026 -> v2 will be with a broader transverse box
-        thetamax=np.arcsin((CSTPSF_xy_max/self.ctr_chan_comov_dist).decompose()).value # I don't want astropy to put ghost radians places. I prefer to handle them myself.
-        self.thetamax=thetamax
+        # Wed 29th Jul 2026 edition
+        thetamax=flat_enough
         print("thetamax=",thetamax)
         deltauv=1/thetamax
         uvmagmax=deltauv*Npix
-        # self.CSTPSF_xy=self.ctr_chan_comov_dist*np.sin(np.linspace(-thetamax,thetamax,Npix)) # introduces the mismatch due to nonlinearity far from boresight
-        # self.CSTPSF_xy=self.ctr_chan_comov_dist*np.linspace(-flat_enough,flat_enough,Npix)
-        self.CSTPSF_xy=2*flat_enough*self.ctr_chan_comov_dist*fftshift(fftfreq(Npix))
+        self.CSTPSF_xy=2*thetamax*self.ctr_chan_comov_dist*fftshift(fftfreq(Npix))
 
-        self.uvbins_use=np.linspace(-uvmagmax,uvmagmax+deltauv,Npix+1) # promote symmetry more than with the old implementation
+        self.uvbins_use=np.linspace(-uvmagmax,uvmagmax+deltauv,Npix+1)
         self.d2u=deltauv**2
 
     def calc_uv_slice(self):
