@@ -88,30 +88,13 @@ hrs_per_night=8*u.hr # borrowed from Debanjan / 21cmSense
 # N_nights=100 # also borrowed from Debanjan / 21cmSense
 N_nights=1
 def_N_timesteps=1 # for local tests
-CHORD_antenna_mask=np.asarray([ [0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-                                [1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1],
-                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-                                [1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,0],
-                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0],
-                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0],
-                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0],
-                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0],
-                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0],
-                                [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0]  ], dtype=bool) # courtesy of Hans (CHORD Slack)
+CHORD_antenna_mask=np.ones((24,22),dtype="bool")
+CHORD_antenna_mask[   0 ,   0  ]=False # NW corner observatory access road gap
+CHORD_antenna_mask[   6 ,  10  ]=False # N receiver hut
+CHORD_antenna_mask[  17 ,  10  ]=False # S receiver hut
+CHORD_antenna_mask[ - 6:, - 2: ]=False # SE corner too steep for antennas
+CHORD_antenna_mask[  17 , - 1  ]=False # extra antenna missing from SE corner
+
 CHORD_antenna_mask_1d=np.reshape(CHORD_antenna_mask, (N_NS_full*N_EW_full,))
 
 # side calculations
@@ -327,6 +310,7 @@ class beam_effects(object):
         self.nu_hi=self.nu_ctr+self.bw/2.
         self.z_lo=freq2z(nu_HI_z0,self.nu_hi)
         self.Dc_lo=comoving_distance(self.z_lo)
+        self.DeltaDc=self.Dc_hi-self.Dc_lo
         self.deltaz=self.z_hi-self.z_lo
         self.surv_channels=np.arange(self.nu_lo.value,self.nu_hi.value,self.Deltanu.value)*self.Deltanu.unit
         self.r0=comoving_distance(self.z_ctr)
@@ -371,8 +355,8 @@ class beam_effects(object):
         self.Nxy_box=int(self.Lsurv_box_xy*kperpmax_surv/pi)
         self.Lsurv_box_z=twopi/kparmin_surv
         self.Nz_box=int(self.Lsurv_box_z*kparmax_surv/pi)
-        PSF_z_vec=(self.Dc_hi-self.Dc_lo)*fftshift(fftfreq(self.Nchan))
-        print("beam_effects.__init__: Nxy,Nz =",self.Nxy_box,self.Nz_box)
+        PSF_z_vec=self.DeltaDc*fftshift(fftfreq(self.Nchan))
+        print("beam_effects.__init__: Nxy_box,Nz_box =",self.Nxy_box,self.Nz_box)
 
         self.fgfreqs=np.asarray([self.nu_lo.value,self.nu_hi.value])*self.nu_ctr.unit
 
@@ -402,8 +386,10 @@ class beam_effects(object):
         print("beam_effects.__init__: PSF/box Lxy,Lz=",CSTPSF_xy_ext,self.Lsurv_box_z)
         kperpmin_PSFCST=twopi/CSTPSF_xy_ext
         kperpmax_PSFCST=Npix/CSTPSF_xy_ext*pi
+        kparmin_PSF=twopi/self.DeltaDc
+        kparmax_PSF=self.Nchan/self.DeltaDc*pi
         print("simulated k-perp extent:",kperpmin_PSFCST,kperpmax_PSFCST)
-        print("simulated k-par  extent:",kparmin_surv,kparmax_surv)
+        print("simulated k-par  extent:",kparmin_PSF,kparmax_PSF)
 
         already_imported_fidu_CST=Path("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy").is_file()
         already_imported_syst_CST=Path("syst_boxes_"+ioname+".npy").is_file()
@@ -524,7 +510,7 @@ class beam_effects(object):
 
         self.CST_z_ext=CST_z_vec[-1]-CST_z_vec[0]
         self.CST_Nz=len(CST_z_vec)
-        self.PSF_Nz=self.Nz_box
+        self.PSF_Nz=self.Nchan
         print("self.PSF_Nz=",self.PSF_Nz)
         self.PSF_z_ext=self.Dc_hi-self.Dc_lo
         self.PSF_Delta_z=self.PSF_z_ext/self.PSF_Nz
@@ -650,7 +636,7 @@ class beam_effects(object):
 
         # bookkeeping to prep for power law
         freqs_in_ref_unit=self.freqs_for_fg.to(nuref.unit) 
-        fg_box_this_ingredient=np.zeros((self.Npix,self.Npix,self.Nz_box))
+        fg_box_this_ingredient=np.zeros((self.Npix,self.Npix,self.Nchan))
         rng=np.random.default_rng(rngseed+1)
         freq_ratios=freqs_in_ref_unit/nuref
         slice_of_alphas=rng.normal(loc=alpha, scale=sigma_alpha, size=(self.Npix,self.Npix))
@@ -681,8 +667,8 @@ class beam_effects(object):
         self.k_for_flat=np.linspace(self.kparmin_surv,self.kparmax_surv,10*self.Nkpar_surv)
         if self.layer_foregrounds:
             self.freqs_for_fg= np.linspace(self.nu_hi.value,self.nu_lo.value, # descending in frequency to match the iteration over increasing redshift
-                                           self.Nz_box,endpoint=True)*self.Deltanu.unit
-            fg_box=np.zeros((self.Npix,self.Npix,self.Nz_box))*u.mK
+                                           self.Nchan,endpoint=True)*self.Deltanu.unit
+            fg_box=np.zeros((self.Npix,self.Npix,self.Nchan))*u.mK
             fg_info_cases=[ [335.4*foreground_temp_unit, 150*u.MHz, -2.8,  0.1],   # synchrotron
                             [33.5 *foreground_temp_unit, 150*u.MHz, -2.15, 0.01] ] # free-free
             for fg_info in fg_info_cases:
@@ -696,6 +682,7 @@ class beam_effects(object):
                            LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                            T_pristine=fg_box)
             fg.generate_P()
+            print("fg.P_unbinned.shape=",fg.P_unbinned.shape)
             fg.bin_power()
             self.P_xx_xx_xx_fg=fg.P_binned *fg_box.unit**2 *self.Lsurv_box_xy.unit**3
             print("                           fg power calc complete")
