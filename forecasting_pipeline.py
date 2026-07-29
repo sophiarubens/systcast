@@ -80,7 +80,7 @@ D=6.*u.m
 CHORD_channel_width_MHz=0.1953125*u.MHz
 def_observing_dec=pi/60.
 def_offset=1.75*pi/180. # for this placeholder state where I build up the CHORD layout using rotation matrices instead of actual measurements. probably add Hans' mask at some point to punch the corners and receiver hut holes out...
-def_evol_restriction_threshold=0.11 # HERA 1/15 was made up—for round number appeal, probably
+def_evol_restriction_threshold=1/30 # HERA 1/15 was made up—for round number appeal, probably
                                       # 1/15 is turn this down for a computationally less intense substitute. had been using 1/30 as of 2026 July 17th AM
 def_PA_N_grid_pix=256
 integration_s=10*u.s # seconds
@@ -320,7 +320,6 @@ class beam_effects(object):
         self.nu_hi=self.nu_ctr+self.bw/2.
         self.z_lo=freq2z(nu_HI_z0,self.nu_hi)
         self.Dc_lo=comoving_distance(self.z_lo)
-        print("beam_effects.__init__: comoving distance range:",self.Dc_lo,self.Dc_hi)
         self.deltaz=self.z_hi-self.z_lo
         self.surv_channels=np.arange(self.nu_lo.value,self.nu_hi.value,self.Deltanu.value)*self.Deltanu.unit
         self.r0=comoving_distance(self.z_ctr)
@@ -381,17 +380,20 @@ class beam_effects(object):
 
         CST_hi_safe=CST_hi.to(CST_deltanu.unit)
         CST_lo_safe=CST_lo.to(CST_deltanu.unit)
-        CST_freqs=np.arange(CST_hi_safe.value,CST_lo_safe.value,-CST_deltanu.value,
-                               endpoint=True)*CST_deltanu.unit # here and in reconfigure_CST, now inclusive of both endpoints     
-        CST_redshifts=np.asarray([nu_HI_z0/freq-1 for freq in CST_freqs])
-        CST_redshifts=CST_redshifts.decompose()
-        CST_comoving=[comoving_distance(z) for z in CST_redshifts]
+        CST_freqs=np.arange(CST_hi_safe.value,CST_lo_safe.value,
+                            -CST_deltanu.value)*CST_deltanu.unit # here and in reconfigure_CST, now inclusive of both endpoints     
+        CST_redshifts=np.asarray([nu_HI_z0/freq-1 for freq in CST_freqs]) # checked = no frequency units that remain unconverted as of 29th Jul 2026 12:23
+        CST_comoving=np.asarray([comoving_distance(z).value for z in CST_redshifts])*u.Mpc
         N_CST_freqs=len(CST_comoving)
         comoving_mid=CST_comoving[int(N_CST_freqs//2)]
         CSTPSF_xy_ext=2*flat_enough*comoving_mid # stricter than the horizon limit. 2x is to account for +/- approved-small-angle from boresight
         CSTPSF_xy_vec= CSTPSF_xy_ext*fftshift(fftfreq(Npix))
         CST_z_vec=CST_comoving-comoving_mid
         print("beam_effects.__init__: PSF/box Lxy,Lz=",CSTPSF_xy_ext,self.Lsurv_box_z)
+        kperpmin_PSFCST=twopi/CSTPSF_xy_ext
+        kperpmax_PSFCST=Npix/CSTPSF_xy_ext*pi
+        print("simulated k-perp extent:",kperpmin_PSFCST,kperpmax_PSFCST)
+        print("simulated k-par  extent:",kparmin_surv,kparmax_surv)
 
         already_imported_fidu_CST=Path("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy").is_file()
         already_imported_syst_CST=Path("syst_boxes_"+ioname+".npy").is_file()
@@ -432,6 +434,7 @@ class beam_effects(object):
         CST_domain=(CSTPSF_xy_vec.value,CSTPSF_xy_vec.value,CST_z_vec.value)
         PSF_domain=(CSTPSF_xy_vec.value,CSTPSF_xy_vec.value,PSF_z_vec.value)
         CSTPSF_xy_ext=CSTPSF_xy_vec[-1]-CSTPSF_xy_vec[0]
+        print("beam_effects.__init__: extrema of xy vec",np.min(CSTPSF_xy_vec),np.max(CSTPSF_xy_vec))
         self.CST_domain=CST_domain
         self.PSF_domain=PSF_domain
 
@@ -1111,7 +1114,7 @@ class cosmo_stats(object):
                 else:
                     raise ValueError("unsupported binning mode")
                 
-        # units! branching is safe now that eval reaching here has been confirmed to not be missing necessary info
+        # units
         self.length_unit=  Lxy.unit
         if T_pristine is not None:
             self.temp_unit=T_pristine.unit
@@ -1127,6 +1130,7 @@ class cosmo_stats(object):
         self.z_vec_for_box= self.Lz*fftshift(fftfreq(self.Nz)) # line of sight Cartesian config space coordinate axis
         self.d3r=self.Deltaz*self.Deltaxy**2                      # volume element = voxel volume
 
+        print("cosmo_stats.__init__: extrema of xy vec for box",np.min(self.xy_vec_for_box),np.max(self.xy_vec_for_box))
         self.xx_grid,self.yy_grid,self.zz_grid=np.meshgrid(self.xy_vec_for_box,
                                                            self.xy_vec_for_box,
                                                            self.z_vec_for_box, indexing="ij")      # box-shaped Cartesian coords CENTRE-ORIGIN
@@ -1255,6 +1259,7 @@ class cosmo_stats(object):
             _,_,z_vec_from_CST=eff_pri_domain
             CST_Deltaz=z_vec_from_CST[1]-z_vec_from_CST[0]
             # TODO: now that these domains are the same, just pass the CST z vec to cosmo_stats instead of a bundle including redundant copies of the common PSF-box xy vec
+            print("cosmo_stats.__init__: extrema of passed domain for effective primary:",np.min(eff_pri_domain[0]),np.max(eff_pri_domain[0]))
             eff_pri_this_domain=np.zeros(self.box_shape)
             for i,z_CST_i in enumerate(z_vec_from_CST):
                 LoS_1st,LoS_2nd=np.argsort(np.abs(self.z_vec_for_box-z_CST_i))[:2]
@@ -1262,9 +1267,6 @@ class cosmo_stats(object):
                 weight_2nd=np.abs(z_CST_i-self.z_vec_for_box[LoS_2nd])/CST_Deltaz
                 eff_pri_this_domain[:,:,i]=effective_primary_beam_for_effective_volume[:,:,LoS_2nd]*weight_1st +\
                                            effective_primary_beam_for_effective_volume[:,:,LoS_2nd]*weight_2nd
-            # interpolator=RGI((eff_pri_domain),effective_primary_beam_for_effective_volume,
-            #                  bounds_error=avoid_extrapolation,fill_value=None)
-            # eff_pri_this_domain=interpolator(self.to_eval_at).T # the constituent self.ii_grid are centre-origin, as intended
             comprehensive_slice_figure(effective_primary_beam_for_effective_volume,
                                        norm=LogNorm(vmax=1),
                                        exts=[[eff_pri_domain[ 0][0],eff_pri_domain[ 0][-1]],
@@ -1635,6 +1637,7 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
 
         # helper args
         self.CSTPSF_xy=CSTPSF_xy
+        print("generate_PSF.__init__: extrema of xy vec:",np.min(CSTPSF_xy),np.max(CSTPSF_xy))
         CSTPSF_Delta_xy=CSTPSF_xy[1]-CSTPSF_xy[0]
         N_CSTPSF_xy=len(CSTPSF_xy)
         self.uvbins_CST=fftshift(fftfreq(N_CSTPSF_xy,d=CSTPSF_Delta_xy))
@@ -1861,8 +1864,8 @@ class reconfigure_CST_beam(object):
         freq_hi=freq_hi.to(u.GHz)
         freq_lo=freq_lo.to(u.GHz)
         delta_nu_CST=delta_nu_CST.to(u.GHz)
-        freqs_GHz=np.arange(freq_hi.value,freq_lo.value,-delta_nu_CST.value,
-                            endpoint=True)*delta_nu_CST.unit # descending; usually still in GHz
+        freqs_GHz=np.arange(freq_hi.value,freq_lo.value,
+                            -delta_nu_CST.value)*delta_nu_CST.unit # descending; usually still in GHz
         freqs=freqs_GHz.to(u.MHz) # descending; MHz
         self.freqs=freqs
         Nfreqs=len(freqs)
@@ -1877,10 +1880,9 @@ class reconfigure_CST_beam(object):
         if beam_sim_directory is None:
             print("Do you really mean to attempt CST imports from the working directory?")
 
-        # L_xy=comoving_middle
-        # xy_for_box=L_xy*fftshift(fftfreq(Nxy))
         L_xy=2*flat_enough*comoving_middle
         xy_for_box=L_xy*fftshift(fftfreq(Nxy))
+        print("reconfigure_CST_beam.__init__: extrema of xy vec:",np.min(xy_for_box),np.max(xy_for_box))
         self.xy_for_box=xy_for_box
         self.Nxy=Nxy
         self.xx_grid,self.yy_grid=np.meshgrid(xy_for_box,xy_for_box, indexing="ij") # config space points of interest for the slice (guided by the transverse extent of the eventual config-space box)
