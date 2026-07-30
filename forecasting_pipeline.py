@@ -1259,8 +1259,9 @@ class cosmo_stats(object):
             print("cosmo_stats.__init__: extrema of z_vec_from_CST: ",np.min(z_vec_from_CST),np.max(z_vec_from_CST))
             for i,z_PSF_i in enumerate(self.z_vec_for_box):
                 LoS_1st,LoS_2nd=np.argsort(np.abs(z_PSF_i-z_vec_from_CST))[:2]
-                weight_1st=np.abs(z_PSF_i-self.z_vec_for_box[LoS_1st])/CST_Deltaz
-                weight_2nd=np.abs(z_PSF_i-self.z_vec_for_box[LoS_2nd])/CST_Deltaz
+                print("len(z_vec_from_CST), LoS_1st, LoS_2nd =",len(z_vec_from_CST), LoS_1st, LoS_2nd)
+                weight_1st=np.abs(z_PSF_i-z_vec_from_CST[LoS_1st])/CST_Deltaz
+                weight_2nd=np.abs(z_PSF_i-z_vec_from_CST[LoS_2nd])/CST_Deltaz
                 eff_pri_this_domain[:,:,i]=effective_primary_beam_for_effective_volume[:,:,LoS_2nd]*weight_1st +\
                                            effective_primary_beam_for_effective_volume[:,:,LoS_2nd]*weight_2nd
             comprehensive_slice_figure(effective_primary_beam_for_effective_volume,
