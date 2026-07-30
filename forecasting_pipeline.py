@@ -174,11 +174,9 @@ def comprehensive_slice_figure(box,                      # 3D box to plot slices
     if exts is not None:
         xext_vals,yext_vals,zext_vals=exts
         if isinstance(xext_vals[0],Quantity):
-            # print("about to strip units of extent vectors for a comprehensive slice figure")
             xext_vals=[val.value for val in xext_vals]
             yext_vals=[val.value for val in yext_vals]
             zext_vals=[val.value for val in zext_vals]
-        # print("xext_vals[0]=",xext_vals)
         xyext=np.concatenate((xext_vals,np.flip(yext_vals))) # supposed to be min0,max0,max1,min1
         xzext=np.concatenate((xext_vals,np.flip(zext_vals)))
         yzext=np.concatenate((yext_vals,np.flip(zext_vals)))
@@ -373,17 +371,14 @@ class beam_effects(object):
         CST_lo_safe=CST_lo.to(CST_deltanu.unit)
         CST_freqs=np.arange(CST_hi_safe.value,CST_lo_safe.value,
                             -CST_deltanu.value)*CST_deltanu.unit # here and in reconfigure_CST, now inclusive of both endpoints     
-        print("len(CST_freqs)=",len(CST_freqs))
         CST_redshifts=np.asarray([nu_HI_z0/freq-1 for freq in CST_freqs]) # checked = no frequency units that remain unconverted as of 29th Jul 2026 12:23
         CST_comoving=np.asarray([comoving_distance(z).value for z in CST_redshifts])*u.Mpc
         N_CST_freqs=len(CST_comoving)
         comoving_mid=CST_comoving[int(N_CST_freqs//2)]
         CSTPSF_xy_ext=2*flat_enough*comoving_mid # stricter than the horizon limit. 2x is to account for +/- approved-small-angle from boresight
         CSTPSF_xy_vec= CSTPSF_xy_ext*fftshift(fftfreq(Npix))
-        print("unit check: CSTPSF_xy_vec[0]=",CSTPSF_xy_vec[0])
         self.Npix=Npix
         CST_z_vec=CST_comoving-comoving_mid
-        print("beam_effects.__init__: PSF/box Lxy,Lz=",CSTPSF_xy_ext,self.Lsurv_box_z)
         kperpmin_PSFCST=twopi/CSTPSF_xy_ext
         kperpmax_PSFCST=Npix/CSTPSF_xy_ext*pi
         kparmin_PSF=twopi/self.DeltaDc
@@ -1250,13 +1245,25 @@ class cosmo_stats(object):
                 self.effective_volume=np.sum(self.taper_xyz_centre**2*self.d3r)
         else:
             CST_Deltaz=z_vec_for_CST[1]-z_vec_for_CST[0]
-            print("cosmo_stats.__init__: extrema of passed domain for effective primary:",np.min(z_vec_for_CST[0]),np.max(z_vec_for_CST[0]))
             eff_pri_this_domain=np.zeros(self.box_shape)
-            print("cosmo_stats.__init__: extrema of z_vec_for_CST: ",np.min(z_vec_for_CST),np.max(z_vec_for_CST))
+            CST_zmin=np.min(z_vec_for_CST)
+            CST_zmax=np.max(z_vec_for_CST)
+            print("cosmo_stats.__init__: extrema of z_vec_for_CST: ",z_vec_for_CST[0],z_vec_for_CST[-1])
             for i,z_PSF_i in enumerate(self.z_vec_for_box):
-                LoS_1st,LoS_2nd=np.argsort(np.abs(z_PSF_i-z_vec_for_CST))[:2]
-                weight_1st=np.abs(z_PSF_i-z_vec_for_CST[LoS_1st])/CST_Deltaz
-                weight_2nd=np.abs(z_PSF_i-z_vec_for_CST[LoS_2nd])/CST_Deltaz
+                if z_PSF_i>CST_zmax:
+                    LoS_1st=-1
+                    LoS_2nd=-1
+                    weight_1st=1
+                    weight_2nd=0
+                elif z_PSF_i<CST_zmin:
+                    LoS_1st=0
+                    LoS_2nd=0
+                    weight_1st=1
+                    weight_2nd=0
+                else:
+                    LoS_1st,LoS_2nd=np.argsort(np.abs(z_PSF_i-z_vec_for_CST))[:2]
+                    weight_1st=np.abs(z_PSF_i-z_vec_for_CST[LoS_1st])/CST_Deltaz
+                    weight_2nd=np.abs(z_PSF_i-z_vec_for_CST[LoS_2nd])/CST_Deltaz
                 eff_pri_this_domain[:,:,i]=effective_primary_CST[:,:,LoS_2nd]*weight_1st +\
                                            effective_primary_CST[:,:,LoS_2nd]*weight_2nd
             comprehensive_slice_figure(effective_primary_CST,
@@ -1279,7 +1286,7 @@ class cosmo_stats(object):
         if PSF is not None: # non-identity PSF
             print("self.PSF.shape =",self.PSF.shape)
             PSFext=np.max(np.abs(PSF))
-            PSF_norm=SymLogNorm(1e-3,vmin=-PSFext,vmax=PSFext)
+            PSF_norm=SymLogNorm(1e-6*PSFext,vmin=-PSFext,vmax=PSFext) # refactored to give 6 true dB
             comprehensive_slice_figure(PSF, 
                                        norm=PSF_norm,
                                        cmap="RdBu",
@@ -1733,9 +1740,9 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
         print("thetamax=",thetamax)
         deltauv=1/thetamax
         uvmagmax=deltauv*Npix
+        self.uvmagmax=uvmagmax
         self.CSTPSF_xy=2*thetamax*self.ctr_chan_comov_dist*fftshift(fftfreq(Npix))
 
-        # self.uvbins_use=np.linspace(-uvmagmax,uvmagmax+deltauv,Npix+1)
         self.uvbins_use=2*uvmagmax*fftshift(fftfreq(Npix+1))
         self.d2u=deltauv**2
 
@@ -1778,15 +1785,18 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
                 
                 implane+=gridded_im*beam_ij
 
+        implane/=self.N_baselines
         plt.figure()
-        plt.imshow(gridded_uv.T,origin="lower")
+        plt.imshow(gridded_uv,origin="lower",
+                   extent=[-self.uvmagmax,self.uvmagmax,self.uvmagmax,-self.uvmagmax])
         plt.colorbar()
         plt.title("gridded uv")
         plt.savefig("single_slice_gridded_uv.png")
         plt.close()
 
         plt.figure()
-        plt.imshow(implane.T)
+        plt.imshow(implane,origin="lower",
+                   extent=[-self.uvmagmax,self.uvmagmax,self.uvmagmax,-self.uvmagmax])
         plt.colorbar()
         plt.title("PSF")
         plt.savefig("PSF.png",dpi=500)
@@ -1794,13 +1804,16 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
 
         _,axs=plt.subplots(1,3,layout="constrained",figsize=(12,5))
         fftpsf=fftshift(fftn(ifftshift(implane)))
-        im=axs[0].imshow(fftpsf.real.T)
+        im=axs[0].imshow(fftpsf.real,origin="lower",
+                         extent=[-self.uvmagmax,self.uvmagmax,self.uvmagmax,-self.uvmagmax])
         plt.colorbar(im,ax=axs[0])
         axs[0].set_title("Re")
-        im=axs[1].imshow(fftpsf.imag.T)
+        im=axs[1].imshow(fftpsf.imag,origin="lower",
+                         extent=[-self.uvmagmax,self.uvmagmax,self.uvmagmax,-self.uvmagmax])
         plt.colorbar(im,ax=axs[1])
         axs[1].set_title("Im")
-        im=axs[2].imshow(np.abs(fftpsf).T)
+        im=axs[2].imshow(np.abs(fftpsf),origin="lower",
+                         extent=[-self.uvmagmax,self.uvmagmax,self.uvmagmax,-self.uvmagmax])
         plt.colorbar(im,ax=axs[2])
         axs[2].set_title("abs")
         plt.suptitle("FFT(PSF)\nIMPROPERLY NORMALIZED")
@@ -2233,17 +2246,6 @@ def save_args_to_file(frame:str, filepath:str="settings.json"):
     settings = {arg: values[arg] for arg in args}
     with open(filepath, "w") as f:
         json.dump(settings, f, indent=2, default=str)
-
-def get_f_types_prefacs(cases):
-    f_types_prefacs=[] # ends up as a ragged array in the general case, so list of lists is generally better. this is so small and quick of a calculation that I don't care about it being slow or stylistically questionable
-    for case in cases:
-        Nft,_=case
-        if Nft==1:
-            term= [1.]
-        else:
-            term= np.linspace(0.95,1.05,Nft)
-        f_types_prefacs.append(term)
-    return f_types_prefacs
 
 def pointing_family(original_pointing,N,seed=270426):
     rng=np.random.default_rng(seed)
