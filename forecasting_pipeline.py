@@ -174,11 +174,11 @@ def comprehensive_slice_figure(box,                      # 3D box to plot slices
     if exts is not None:
         xext_vals,yext_vals,zext_vals=exts
         if isinstance(xext_vals[0],Quantity):
-            print("about to strip units of extent vectors for a comprehensive slice figure")
+            # print("about to strip units of extent vectors for a comprehensive slice figure")
             xext_vals=[val.value for val in xext_vals]
             yext_vals=[val.value for val in yext_vals]
             zext_vals=[val.value for val in zext_vals]
-        print("xext_vals[0]=",xext_vals)
+        # print("xext_vals[0]=",xext_vals)
         xyext=np.concatenate((xext_vals,np.flip(yext_vals))) # supposed to be min0,max0,max1,min1
         xzext=np.concatenate((xext_vals,np.flip(zext_vals)))
         yzext=np.concatenate((yext_vals,np.flip(zext_vals)))
@@ -742,7 +742,7 @@ class beam_effects(object):
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
-                                wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
+                                wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
 
         recalc_co_fi_xx_fg=False
         recalc_co_fi_sy_fg=False
@@ -1261,15 +1261,15 @@ class cosmo_stats(object):
                                            effective_primary_CST[:,:,LoS_2nd]*weight_2nd
             comprehensive_slice_figure(effective_primary_CST,
                                        norm=LogNorm(vmax=1),
-                                       exts=[[self.xy_vec_for_box[0].value,self.xy_vec_for_box[-1].value],
-                                             [self.xy_vec_for_box[0].value,self.xy_vec_for_box[-1].value],
+                                       exts=[[self.xy_vec_for_box[0],self.xy_vec_for_box[-1]],
+                                             [self.xy_vec_for_box[0],self.xy_vec_for_box[-1]],
                                              [z_vec_for_CST[0],z_vec_for_CST[-1]]  ],
                                        name="effective_primary.png")
             comprehensive_slice_figure(eff_pri_this_domain,
                                        norm=LogNorm(vmax=1),
-                                       exts=[[self.xy_vec_for_box[0].value,self.xy_vec_for_box[-1].value],
-                                             [self.xy_vec_for_box[0].value,self.xy_vec_for_box[-1].value],
-                                             [self.z_vec_for_box[ 0].value,self.z_vec_for_box[-1].value]  ],
+                                       exts=[[self.xy_vec_for_box[0],self.xy_vec_for_box[-1]],
+                                             [self.xy_vec_for_box[0],self.xy_vec_for_box[-1]],
+                                             [self.z_vec_for_box[ 0],self.z_vec_for_box[-1]]  ],
                                        name="effective_primary_interpolated.png") # in the new paradigm, these shouldn't be visibly super different. as of 16:49 24/07/26, they aren't—nice!
 
             self.effective_volume=np.sum((eff_pri_this_domain*self.taper_xyz_centre)**2*self.d3r)
@@ -1288,10 +1288,8 @@ class cosmo_stats(object):
             assert(not np.all(np.isclose(PSF,0))), "PSF should not be identically vanishing"
             pad_lo_xy,pad_hi_xy=get_padding(self.Nxy)
             pad_lo_z, pad_hi_z =get_padding(self.Nz)
-            print("pad_lo_xy,pad_hi_xy,pad_lo_z,pad_hi_z =",pad_lo_xy,pad_hi_xy,pad_lo_z,pad_hi_z)
             PSF_padded=np.pad(PSF,((pad_lo_xy,pad_hi_xy),(pad_lo_xy,pad_hi_xy),(pad_lo_z,pad_hi_z),),"wrap")
             self.PSF_padded=PSF_padded
-            print("self.PSF_padded.shape, (2*self.Nxy-1,2*self.Nxy-1,2*self.Nz-1) =",self.PSF_padded.shape, (2*self.Nxy-1,2*self.Nxy-1,2*self.Nz-1))
         
         # strictness control for realization averaging
         self.frac_tol=frac_tol
@@ -1359,7 +1357,6 @@ class cosmo_stats(object):
             raise ValueError("invalid state of box beam knowledge. try again with pristine or beam!")
         T_use=T_use.to(u.mK)
 
-        print("cosmo_stats.generate_P: T_use.shape, self.taper_xyz_centre.shape =",T_use.shape, self.taper_xyz_centre.shape)
         T_tilde=fftshift( fftn( 
                                 ifftshift(T_use*self.taper_xyz_centre)*self.d3r,
                                 s=self.box_shape, axes=self.transform_axes, norm="backward"        
@@ -1429,9 +1426,7 @@ class cosmo_stats(object):
         t0=time.time()
         for i in range(self.N_realizations):
             self.generate_GRF()
-            print("self.T_pristine.shape",self.T_pristine.shape)
             self.generate_P(T_use=T_use)
-            print("self.P_unbinned.shape",self.P_unbinned.shape)
             ti=time.time()
             if ((ti-t0)>3600): # actually save the realizations every hour
                 np.save("P_"+interfix+"_MC_incomplete.npy",self.P_unbinned_running_sum.value/i)
@@ -1740,7 +1735,8 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
         uvmagmax=deltauv*Npix
         self.CSTPSF_xy=2*thetamax*self.ctr_chan_comov_dist*fftshift(fftfreq(Npix))
 
-        self.uvbins_use=np.linspace(-uvmagmax,uvmagmax+deltauv,Npix+1)
+        # self.uvbins_use=np.linspace(-uvmagmax,uvmagmax+deltauv,Npix+1)
+        self.uvbins_use=2*uvmagmax*fftshift(fftfreq(Npix+1))
         self.d2u=deltauv**2
 
     def calc_uv_slice(self):
@@ -2406,8 +2402,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                     init_and_box_tol=0.05,CAMB_tol=0.05,                                 
                                     frac_tol_conv=frac_tol_conv,seed=seed,                                         
                                     ftol_deriv=1e-16,maxiter=5,   
-                                    # LoS_apo=True,transverse_apo=False,
-                                    LoS_apo=True,transverse_apo=True,
+                                    LoS_apo=True,transverse_apo=False,
                                     N_timesteps=N_timesteps,
 
                                     # CONVENIENCE
