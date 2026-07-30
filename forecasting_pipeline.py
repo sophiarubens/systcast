@@ -428,14 +428,12 @@ class beam_effects(object):
                 syst_boxes[0,:,:,:]=fidu_box
         
         CST_domain=(CSTPSF_xy_vec,CSTPSF_xy_vec,CST_z_vec) # TODO verify not brittle to leave unitified. was the only problem 
-        PSF_domain=(CSTPSF_xy_vec.value,CSTPSF_xy_vec.value,PSF_z_vec.value) # TODO verify not brittle to leave deunitified
+        self.CST_z_vec=CST_z_vec
         CSTPSF_xy_ext=CSTPSF_xy_vec[-1]-CSTPSF_xy_vec[0]
         self.CSTPSF_xy_ext=CSTPSF_xy_ext
         print("beam_effects.__init__: extrema of xy vec",np.min(CSTPSF_xy_vec),np.max(CSTPSF_xy_vec))
         print("beam_effects.__init__: extrema of CST z vec:",np.min(CST_z_vec),np.max(CST_z_vec))
         print("beam_effects.__init__: extrema of PSF z vec:",np.min(PSF_z_vec),np.max(PSF_z_vec))
-        self.CST_domain=CST_domain
-        self.PSF_domain=PSF_domain
 
         CST_syst_ensemble=np.zeros((N_CST_types,N_pointing_errors_max+1,Npix,Npix,N_CST_z)) # shape of CST_syst_ensemble is (N_CST_types,Npix,Npix,N_CST_z) but the sub-ensembles passed to generate_PSF have shapes  ////////replace
         CST_syst_ensemble[:,0,:,:,:]=syst_boxes # situate the pointing error–free versions
@@ -692,7 +690,7 @@ class beam_effects(object):
         co_fi_xx_fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_z_ext,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
-                                effective_primary_beam_for_effective_volume=self.fi_eff_primary_box, eff_pri_domain=self.CST_domain,
+                                effective_primary_CST=self.fi_eff_primary_box, z_vec_for_CST=self.CST_z_vec,
                                 PSF=self.fidu,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
@@ -702,14 +700,14 @@ class beam_effects(object):
         co_fi_sy_fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_z_ext,
                                 P_fid=P_cosmo,k_fid=self.ksph,
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
-                                effective_primary_beam_for_effective_volume=self.sy_eff_primary_box, eff_pri_domain=self.CST_domain,
+                                effective_primary_CST=self.sy_eff_primary_box, z_vec_for_CST=self.CST_z_vec,
                                 PSF=self.syst,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
         xx_fi_sy_fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_z_ext,
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
-                                effective_primary_beam_for_effective_volume=self.sy_eff_primary_box, eff_pri_domain=self.CST_domain,
+                                effective_primary_CST=self.sy_eff_primary_box, z_vec_for_CST=self.CST_z_vec,
                                 T_pristine=fg_box,
                                 PSF=self.syst,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
@@ -717,7 +715,7 @@ class beam_effects(object):
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
         xx_fi_xx_fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_z_ext,
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
-                                effective_primary_beam_for_effective_volume=self.fi_eff_primary_box, eff_pri_domain=self.CST_domain,
+                                effective_primary_CST=self.fi_eff_primary_box, z_vec_for_CST=self.CST_z_vec,
                                 T_pristine=fg_box,
                                 PSF=self.fidu,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
@@ -726,7 +724,7 @@ class beam_effects(object):
         co_fi_xx_xx=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_z_ext,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
-                                effective_primary_beam_for_effective_volume=self.fi_eff_primary_box, eff_pri_domain=self.CST_domain,
+                                effective_primary_CST=self.fi_eff_primary_box, z_vec_for_CST=self.CST_z_vec,
                                 PSF=self.fidu,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
@@ -734,7 +732,7 @@ class beam_effects(object):
         co_fi_sy_xx=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_z_ext,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
-                                effective_primary_beam_for_effective_volume=self.sy_eff_primary_box, eff_pri_domain=self.CST_domain,
+                                effective_primary_CST=self.sy_eff_primary_box, z_vec_for_CST=self.CST_z_vec,
                                 PSF=self.syst,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
@@ -1034,8 +1032,8 @@ class cosmo_stats(object):
                  k_fid:np.ndarray=None,                                                 # Fourier space points where the fiducial power spectrum is sampled
                  Nxy:int=None,Nz:int=None,                                              # number of voxels in the x/y or z directions
                  PSF:np.ndarray=None,                                                   # PSF (box of values evaluated in config space)
-                 effective_primary_beam_for_effective_volume=None,                      # "average" primary beam with beam types weighted by the fraction of antennas with that beam type
-                 eff_pri_domain=None,                                                   # formatted as (x_vec, y_vec, z_vec)
+                 effective_primary_CST=None,                      # "average" primary beam with beam types weighted by the fraction of antennas with that beam type
+                 z_vec_for_CST=None,                                                   # formatted as (x_vec, y_vec, z_vec)
                  Nkperp:int=0,Nkpar:int=0,                                              # number of k-bins in the sky plane and line of sight directions
                  binning_mode:str="lin",                                                # bin linearly or logarithmically (TODO: de-trivialize this... it used to be implemented, but I guess I pruned enough intervening stuff that it got orphaned)
                  frac_tol:float=0.1,                                                    # fractional tolerance in cosmic variance of the Monte Carlo ensemble -> used to calculate the number of realizations
@@ -1245,30 +1243,27 @@ class cosmo_stats(object):
         self.taper_xyz_corner=ifftshift(taper_xyz_product,axes=fftshift_axes)
 
         # beam
-        if effective_primary_beam_for_effective_volume is None:
+        if effective_primary_CST is None:
             if PSF is not None:
                 raise ValueError("not enough info")
             else:
                 self.effective_volume=np.sum(self.taper_xyz_centre**2*self.d3r)
         else:
-            _,_,z_vec_from_CST=eff_pri_domain
-            CST_Deltaz=z_vec_from_CST[1]-z_vec_from_CST[0]
-            # TODO: now that these domains are the same, just pass the CST z vec to cosmo_stats instead of a bundle including redundant copies of the common PSF-box xy vec
-            print("cosmo_stats.__init__: extrema of passed domain for effective primary:",np.min(eff_pri_domain[0]),np.max(eff_pri_domain[0]))
+            CST_Deltaz=z_vec_for_CST[1]-z_vec_for_CST[0]
+            print("cosmo_stats.__init__: extrema of passed domain for effective primary:",np.min(z_vec_for_CST[0]),np.max(z_vec_for_CST[0]))
             eff_pri_this_domain=np.zeros(self.box_shape)
-            print("cosmo_stats.__init__: extrema of z_vec_from_CST: ",np.min(z_vec_from_CST),np.max(z_vec_from_CST))
+            print("cosmo_stats.__init__: extrema of z_vec_for_CST: ",np.min(z_vec_for_CST),np.max(z_vec_for_CST))
             for i,z_PSF_i in enumerate(self.z_vec_for_box):
-                LoS_1st,LoS_2nd=np.argsort(np.abs(z_PSF_i-z_vec_from_CST))[:2]
-                print("len(z_vec_from_CST), LoS_1st, LoS_2nd =",len(z_vec_from_CST), LoS_1st, LoS_2nd)
-                weight_1st=np.abs(z_PSF_i-z_vec_from_CST[LoS_1st])/CST_Deltaz
-                weight_2nd=np.abs(z_PSF_i-z_vec_from_CST[LoS_2nd])/CST_Deltaz
-                eff_pri_this_domain[:,:,i]=effective_primary_beam_for_effective_volume[:,:,LoS_2nd]*weight_1st +\
-                                           effective_primary_beam_for_effective_volume[:,:,LoS_2nd]*weight_2nd
-            comprehensive_slice_figure(effective_primary_beam_for_effective_volume,
+                LoS_1st,LoS_2nd=np.argsort(np.abs(z_PSF_i-z_vec_for_CST))[:2]
+                weight_1st=np.abs(z_PSF_i-z_vec_for_CST[LoS_1st])/CST_Deltaz
+                weight_2nd=np.abs(z_PSF_i-z_vec_for_CST[LoS_2nd])/CST_Deltaz
+                eff_pri_this_domain[:,:,i]=effective_primary_CST[:,:,LoS_2nd]*weight_1st +\
+                                           effective_primary_CST[:,:,LoS_2nd]*weight_2nd
+            comprehensive_slice_figure(effective_primary_CST,
                                        norm=LogNorm(vmax=1),
-                                       exts=[[eff_pri_domain[ 0][0],eff_pri_domain[ 0][-1]],
-                                             [eff_pri_domain[ 1][0],eff_pri_domain[ 1][-1]],
-                                             [eff_pri_domain[-1][0],eff_pri_domain[-1][-1]]  ],
+                                       exts=[[self.xy_vec_for_box[0].value,self.xy_vec_for_box[-1].value],
+                                             [self.xy_vec_for_box[0].value,self.xy_vec_for_box[-1].value],
+                                             [z_vec_for_CST[0],z_vec_for_CST[-1]]  ],
                                        name="effective_primary.png")
             comprehensive_slice_figure(eff_pri_this_domain,
                                        norm=LogNorm(vmax=1),
