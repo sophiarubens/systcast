@@ -6,7 +6,6 @@ from matplotlib.colors import LogNorm,TwoSlopeNorm,SymLogNorm ,CenteredNorm
 
 from scipy.fft import fftshift,ifftshift,fftfreq, fftn, irfftn, set_workers
 from scipy.integrate import quad
-from scipy.interpolate import RectBivariateSpline as RBS
 from scipy.interpolate import RegularGridInterpolator as RGI
 from scipy.interpolate import griddata as gd
 from scipy.signal import convolve
@@ -80,8 +79,8 @@ D=6.*u.m
 CHORD_channel_width_MHz=0.1953125*u.MHz
 def_observing_dec=pi/60.
 def_offset=1.75*pi/180. # for this placeholder state where I build up the CHORD layout using rotation matrices instead of actual measurements. probably add Hans' mask at some point to punch the corners and receiver hut holes out...
-def_evol_restriction_threshold=1/30 # HERA 1/15 was made up—for round number appeal, probably
-                                      # 1/15 is turn this down for a computationally less intense substitute. had been using 1/30 as of 2026 July 17th AM
+def_evolution_threshold=1/15 # HERA 1/15 was made up—for round number appeal, probably
+                                      # 1/15 is turn this down for a computationally less intense substitute if keeping the channel width the same
 def_PA_N_grid_pix=256
 integration_s=10*u.s # seconds
 hrs_per_night=8*u.hr # borrowed from Debanjan / 21cmSense
@@ -243,7 +242,7 @@ class beam_effects(object):
                  bmin:float=b_EW,bmax:float=b_max_CHORD,                          # max and min baselines of the array
                  nu_ctr:float=600.*u.MHz,                                         # central freq of survey
                  delta_nu:float=CHORD_channel_width_MHz,                          # channel width
-                 evol_restriction_threshold:float=def_evol_restriction_threshold, # how close to coeval is close enough? \Delta z/z
+                 evolution_threshold:float=def_evolution_threshold, # how close to coeval is close enough? \Delta z/z
                  
                  # parameters of per-antenna systematic–aware beam synthesis
                  N_pbws_pert:int=0,                 # number of beams to perturb
@@ -298,8 +297,8 @@ class beam_effects(object):
         nu_ctr=nu_ctr.to(u.MHz)
         self.nu_ctr=nu_ctr
         self.Deltanu=delta_nu
-        self.bw=nu_ctr*evol_restriction_threshold
-        self.Nchan=int(self.bw/self.Deltanu)
+        self.bw=nu_ctr*evolution_threshold
+        self.Nchan=int(self.bw/self.Deltanu.to(self.bw.unit))
         print("beam_effects.__init__: self.bw,self.Deltanu,self.Nchan=",self.bw,self.Deltanu,self.Nchan)
         self.z_ctr=freq2z(nu_HI_z0,nu_ctr)
         self.nu_lo=self.nu_ctr-self.bw/2.
@@ -1183,6 +1182,7 @@ class cosmo_stats(object):
             Nkperp=int(Nxy/bin_denom)
         if Nkpar==0:
             Nkpar=int(Nz/bin_denom)
+        print("cosmo_stats.__init__: Nkperp,Nkpar (number of bins per cylindrical direction) =",Nkpar,Nkperp)
         self.Nkperp=Nkperp # for power spec binning
         self.Nkpar=Nkpar
         self.kmax_box_xy= pi/self.Deltaxy
@@ -1286,11 +1286,11 @@ class cosmo_stats(object):
         if PSF is not None: # non-identity PSF
             print("self.PSF.shape =",self.PSF.shape)
             PSFext=np.max(np.abs(PSF))
-            PSF_norm=SymLogNorm(1e-6*PSFext,vmin=-PSFext,vmax=PSFext) # refactored to give 6 true dB
+            PSF_norm=SymLogNorm(1e-10*PSFext,vmin=-PSFext,vmax=PSFext) # refactored to give 6 true dB
             comprehensive_slice_figure(PSF, 
                                        norm=PSF_norm,
                                        cmap="RdBu",
-                                       name="PSF.png")
+                                       name="PSF_slices.png")
 
             assert(not np.all(np.isclose(PSF,0))), "PSF should not be identically vanishing"
             pad_lo_xy,pad_hi_xy=get_padding(self.Nxy)
@@ -1566,7 +1566,7 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
                  nu_ctr:float=nu_HI_z0,                                            # central frequency of the survey of interest
                  Delta_nu:float=CHORD_channel_width_MHz,                           # channel width in frequency (MHz)
                  distribution:str="random",                                        # distribution of per-antenna systematics. the options I've encoded for now are random, column, and corner, based on where the fiducial beam types are placed within the array
-                 evol_restriction_threshold:float=def_evol_restriction_threshold,  # max \delta z/z you will tolerate for the survey of interest and still consider the box close enough to coeval
+                 evolution_threshold:float=def_evolution_threshold,  # max \delta z/z you will tolerate for the survey of interest and still consider the box close enough to coeval
                  weighting="uniform", Npix:int=def_PA_N_grid_pix,
 
                  sub_ensemble_of_CST_beams=None,                                   # array-like with shape (N_CST_types, N_pointing_errors+1, N_CST_xy, N_CST_xy, N_CST_freqs)
@@ -1577,7 +1577,7 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
         self.N_pbws_pert=N_pbws_pert
         self.N_timesteps=N_timesteps
         self.distribution=distribution
-        self.evol_restriction_threshold=evol_restriction_threshold
+        self.evolution_threshold=evolution_threshold
         self.Delta_nu=Delta_nu
         N_NS=N_NS_full
         N_EW=N_EW_full
@@ -1620,7 +1620,7 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
         antennas_xyz=antennas_ENU@lat_mat.T
         
         # line-of-sight quantities
-        bw_MHz=self.nu_ctr_MHz*evol_restriction_threshold # ongoing investigation into factor of two
+        bw_MHz=self.nu_ctr_MHz*evolution_threshold # ongoing investigation into factor of two
         N_chan=int((bw_MHz/self.Delta_nu).decompose())
         print("generate_PSF.__init__: bw_MHz,self.Delta_nu,N_chan=",bw_MHz,self.Delta_nu,N_chan)
         self.N_chan=N_chan
@@ -1799,7 +1799,7 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
                    extent=[-self.uvmagmax,self.uvmagmax,self.uvmagmax,-self.uvmagmax])
         plt.colorbar()
         plt.title("PSF")
-        plt.savefig("PSF.png",dpi=500)
+        plt.savefig("PSF_slice.png",dpi=500)
         plt.close()
 
         _,axs=plt.subplots(1,3,layout="constrained",figsize=(12,5))
@@ -1823,8 +1823,8 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
         return implane
 
     def stack_to_box(self):
-        if (self.nu_ctr_MHz.value<(350/(1-self.evol_restriction_threshold/2)) or 
-            self.nu_ctr_MHz>(nu_HI_z0/(1+self.evol_restriction_threshold/2))):
+        if (self.nu_ctr_MHz.value<(350/(1-self.evolution_threshold/2)) or 
+            self.nu_ctr_MHz>(nu_HI_z0/(1+self.evolution_threshold/2))):
             raise ValueError("{:6.2f} is out of bounds".format(self.nu_ctr_MHz))
 
         box_xyz=np.zeros((self.Npix,self.Npix,self.N_chan))
@@ -2266,6 +2266,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
               frac_tol_conv=0.1, N_th_k=1024,
               N_pbws_pert=0, antenna_dist="random", 
               which_power="P",
+              evol_thresh=def_evolution_threshold,
                   
               wedge_cut=False, layer_foregrounds=True, pointing_errors=[0.,0.,0.],
                   
@@ -2384,7 +2385,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                     # the observation
                                     bminCHORD,bmaxCHORD,                                                       
                                     nu_ctr,freq_bin_width,                                                 
-                                    evol_restriction_threshold=def_evol_restriction_threshold,           
+                                    evolution_threshold=evol_thresh,           
                                     
                                     # numerical beam perturbation parameters
                                     N_pbws_pert=N_pbws_pert_i,
@@ -2691,7 +2692,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     P_CO_XX_XX_XX_params=                     ["COSMO",
                                                 absolute_units,
                                                "COSMOCOSMO",
-                                                # abs_co_no_fg,
+                                                abs_co_no_fg,
                                                 abs_co,
                                                 abs_map,
                                                 False]
