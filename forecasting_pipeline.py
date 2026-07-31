@@ -66,7 +66,7 @@ twopi=2.*pi
 
 # numerical
 eps=1e-15
-flat_enough=pi/6
+flat_enough=pi/8
 
 # CHORD
 N_NS_full=24
@@ -203,7 +203,7 @@ def comprehensive_slice_figure(box,                      # 3D box to plot slices
             axs[i,2].set_title(str(z_idx )+"/"+str(Nz-1))
 
         sl0=box[x_idx,:,:]
-        img=axs[i,0].imshow(sl0.T,origin="lower",
+        img=axs[i,0].imshow(sl0,origin="lower",
                             extent=yzext,
                             norm=norm,cmap=cmap)
         plt.colorbar(img,ax=axs[i,0])
@@ -211,7 +211,7 @@ def comprehensive_slice_figure(box,                      # 3D box to plot slices
         axs[i,0].set_ylabel("z "+axis_label_suffix)
 
         sl1=box[:,y_idx,:]
-        img=axs[i,1].imshow(sl1.T,origin="lower",
+        img=axs[i,1].imshow(sl1,origin="lower",
                             extent=xzext,
                             norm=norm,cmap=cmap)
         plt.colorbar(img,ax=axs[i,1])
@@ -219,7 +219,7 @@ def comprehensive_slice_figure(box,                      # 3D box to plot slices
         axs[i,1].set_ylabel("z "+axis_label_suffix)
 
         sl2=box[:,:,z_idx]
-        img=axs[i,2].imshow(sl2.T,origin="lower",
+        img=axs[i,2].imshow(sl2,origin="lower",
                             extent=xyext,
                             norm=norm,cmap=cmap)
         plt.colorbar(img,ax=axs[i,2])
@@ -1286,11 +1286,19 @@ class cosmo_stats(object):
         if PSF is not None: # non-identity PSF
             print("self.PSF.shape =",self.PSF.shape)
             PSFext=np.max(np.abs(PSF))
-            PSF_norm=SymLogNorm(1e-10*PSFext,vmin=-PSFext,vmax=PSFext) # refactored to give 6 true dB
+            manydBdown=1e-9
+            PSF_norm=SymLogNorm(manydBdown*PSFext,vmin=-PSFext,vmax=PSFext)
             comprehensive_slice_figure(PSF, 
                                        norm=PSF_norm,
                                        cmap="RdBu",
+                                       exts=[[self.xy_vec_for_box[0],self.xy_vec_for_box[-1]],
+                                             [self.xy_vec_for_box[0],self.xy_vec_for_box[-1]],
+                                             [z_vec_for_CST[0],z_vec_for_CST[-1]]  ],
                                        name="PSF_slices.png")
+            FFTPSF=fftshift(fftn(ifftshift(PSF)))
+            comprehensive_slice_figure(np.abs(FFTPSF),
+                                       cmap=cmasher.horizon,
+                                       name="FFTPSF_slices_UNNORMALIZED.png")
 
             assert(not np.all(np.isclose(PSF,0))), "PSF should not be identically vanishing"
             pad_lo_xy,pad_hi_xy=get_padding(self.Nxy)
@@ -1626,7 +1634,9 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
         self.N_chan=N_chan
         nu_lo=self.nu_ctr_MHz-bw_MHz/2.
         nu_hi=self.nu_ctr_MHz+bw_MHz/2.
-        surv_channels_MHz=np.linspace(nu_hi,nu_lo,N_chan) # decr.
+        # surv_channels_MHz=np.linspace(nu_hi,nu_lo,N_chan) # decr.
+        surv_channels_MHz=np.arange(nu_hi.value,nu_lo.value,-Delta_nu.value)*Delta_nu.unit # decr
+        surv_channels_MHz-=Delta_nu # to make this vec represent the same frequencies as its counterpart in beam_effects
         surv_channels_Hz=surv_channels_MHz.to(u.Hz)
         surv_wavelengths=c/surv_channels_Hz # incr.
         self.surv_wavelengths=surv_wavelengths.decompose()
@@ -1640,9 +1650,7 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
         # helper args
         self.CSTPSF_xy=CSTPSF_xy
         print("generate_PSF.__init__: extrema of xy vec:",np.min(CSTPSF_xy),np.max(CSTPSF_xy))
-        CSTPSF_Delta_xy=CSTPSF_xy[1]-CSTPSF_xy[0]
         N_CSTPSF_xy=len(CSTPSF_xy)
-        self.uvbins_CST=fftshift(fftfreq(N_CSTPSF_xy,d=CSTPSF_Delta_xy))
         self.CST_freqs=CST_freqs
         self.CST_deltanu=CST_freqs[1]-CST_freqs[0]
         self.N_CSTPSF_xy=N_CSTPSF_xy
@@ -1736,14 +1744,18 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
         print("synthesized rotation")
 
         # Wed 29th Jul 2026 edition
-        thetamax=flat_enough
-        print("thetamax=",thetamax)
-        deltauv=1/thetamax
-        uvmagmax=deltauv*Npix
-        self.uvmagmax=uvmagmax
-        self.CSTPSF_xy=2*thetamax*self.ctr_chan_comov_dist*fftshift(fftfreq(Npix))
+        theta_ext=2*flat_enough
+        deltauv=1/theta_ext
+        uv_ext=deltauv*Npix
+        print("generate_PSF.__init__: theta_ext, deltauv, uv_ext =",theta_ext, deltauv, uv_ext)
+        self.uv_ext=uv_ext
+        self.CSTPSF_xy=theta_ext*self.ctr_chan_comov_dist*fftshift(fftfreq(Npix))
 
-        self.uvbins_use=2*uvmagmax*fftshift(fftfreq(Npix+1))
+        uvbins_use=uv_ext*fftshift(fftfreq(Npix))
+        print("generate_PSF.__init__: check uv gridding resolution: deltauv - (uvbins_use[-1]-uvbins_use[-1]) =",deltauv - (uvbins_use[-1]-uvbins_use[-1]))
+        uvbins_use=np.concatenate(uvbins_use,[uvbins_use[-1]+deltauv])
+        self.uvbins_use=uvbins_use
+        print("generate_PSF.__init__: uvbins_use.shape =",uvbins_use.shape)
         self.d2u=deltauv**2
 
     def calc_uv_slice(self):
@@ -1786,9 +1798,10 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
                 implane+=gridded_im*beam_ij
 
         implane/=self.N_baselines
+        uv_extent_for_kwarg=[-self.uv_ext/2,self.uv_ext/2,self.uv_ext/2,-self.uv_ext/2]
         plt.figure()
         plt.imshow(gridded_uv,origin="lower",
-                   extent=[-self.uvmagmax,self.uvmagmax,self.uvmagmax,-self.uvmagmax])
+                   extent=uv_extent_for_kwarg)
         plt.colorbar()
         plt.title("gridded uv")
         plt.savefig("single_slice_gridded_uv.png")
@@ -1796,7 +1809,7 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
 
         plt.figure()
         plt.imshow(implane,origin="lower",
-                   extent=[-self.uvmagmax,self.uvmagmax,self.uvmagmax,-self.uvmagmax])
+                   extent=uv_extent_for_kwarg)
         plt.colorbar()
         plt.title("PSF")
         plt.savefig("PSF_slice.png",dpi=500)
@@ -1805,15 +1818,15 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
         _,axs=plt.subplots(1,3,layout="constrained",figsize=(12,5))
         fftpsf=fftshift(fftn(ifftshift(implane)))
         im=axs[0].imshow(fftpsf.real,origin="lower",
-                         extent=[-self.uvmagmax,self.uvmagmax,self.uvmagmax,-self.uvmagmax])
+                         extent=uv_extent_for_kwarg)
         plt.colorbar(im,ax=axs[0])
         axs[0].set_title("Re")
         im=axs[1].imshow(fftpsf.imag,origin="lower",
-                         extent=[-self.uvmagmax,self.uvmagmax,self.uvmagmax,-self.uvmagmax])
+                         extent=uv_extent_for_kwarg)
         plt.colorbar(im,ax=axs[1])
         axs[1].set_title("Im")
         im=axs[2].imshow(np.abs(fftpsf),origin="lower",
-                         extent=[-self.uvmagmax,self.uvmagmax,self.uvmagmax,-self.uvmagmax])
+                         extent=uv_extent_for_kwarg)
         plt.colorbar(im,ax=axs[2])
         axs[2].set_title("abs")
         plt.suptitle("FFT(PSF)\nIMPROPERLY NORMALIZED")
@@ -2692,7 +2705,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     P_CO_XX_XX_XX_params=                     ["COSMO",
                                                 absolute_units,
                                                "COSMOCOSMO",
-                                                abs_co_no_fg,
+                                                # abs_co_no_fg,
                                                 abs_co,
                                                 abs_map,
                                                 False]
