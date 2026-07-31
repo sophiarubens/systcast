@@ -27,7 +27,6 @@ import pandas as pd
 from pathlib import Path
 import pygtc
 import time
-# import io
 
 set_workers(6)
 
@@ -66,7 +65,7 @@ twopi=2.*pi
 
 # numerical
 eps=1e-15
-flat_enough=pi/8
+flat_enough=pi/14
 
 # CHORD
 N_NS_full=24
@@ -449,7 +448,7 @@ class beam_effects(object):
         if heavy_beam_recalc: # redo the beam synthesis
             fidu_synthesis=generate_PSF(array_version=array_version,N_timesteps=self.N_timesteps,
                                                 N_pbws_pert=0,nu_ctr=nu_ctr,
-                                                distribution="random",Npix=def_PA_N_grid_pix,
+                                                distribution="random",Npix=Npix,
                                                 Delta_nu=delta_nu,
                                                 sub_ensemble_of_CST_beams=fidu_box,
                                                 CSTPSF_xy=CSTPSF_xy_vec,CST_freqs=CST_freqs,
@@ -457,19 +456,25 @@ class beam_effects(object):
             fidu_synthesis.stack_to_box()
             print("finished synthesizing fiducial CST PSF")
             fidu_box_PSF=fidu_synthesis.box
-            syst_synthesis=generate_PSF(array_version=array_version,N_timesteps=self.N_timesteps,
-                                                N_pbws_pert=N_pbws_pert,nu_ctr=nu_ctr,
-                                                distribution=antenna_distribution,Npix=def_PA_N_grid_pix,
-                                                Delta_nu=delta_nu,
-                                                sub_ensemble_of_CST_beams=[fidu_box,CST_syst_ensemble],
-                                                CSTPSF_xy=CSTPSF_xy_vec,CST_freqs=CST_freqs,
-                                                supplementary_name=ioname)
-            syst_synthesis.stack_to_box()
+            if N_CST_types>1 or N_pointing_errors_max>0:
+                syst_synthesis=generate_PSF(array_version=array_version,N_timesteps=self.N_timesteps,
+                                                    N_pbws_pert=N_pbws_pert,nu_ctr=nu_ctr,
+                                                    distribution=antenna_distribution,Npix=Npix,
+                                                    Delta_nu=delta_nu,
+                                                    sub_ensemble_of_CST_beams=[fidu_box,CST_syst_ensemble],
+                                                    CSTPSF_xy=CSTPSF_xy_vec,CST_freqs=CST_freqs,
+                                                    supplementary_name=ioname)
+                syst_synthesis.stack_to_box()
+                syst_box_PSF=syst_synthesis.box
+                weights_PSF=syst_synthesis.weights
+                Ntypes=syst_synthesis.N_total_beam_types
+            else:
+                syst_box_PSF=np.copy(fidu_box_PSF)
+                weights_PSF=fidu_synthesis.weights
+                Ntypes=1
+
             print("finished synthesizing systematic-laden CST PSF")
-            syst_box_PSF=syst_synthesis.box
-            weights_PSF=syst_synthesis.weights
-            Ntypes=syst_synthesis.N_total_beam_types
-            
+
             np.save("fidu_box_PSF_"+ioname+".npy",fidu_box_PSF)
             np.save("syst_box_PSF_"+ioname+".npy",syst_box_PSF)
             np.save("weights_PSF_"+ioname+".npy",weights_PSF)
@@ -658,6 +663,7 @@ class beam_effects(object):
         self.P_flat=P_flat
         self.k_for_flat=np.linspace(self.kparmin_surv,self.kparmax_surv,10*self.Nkpar_surv)
         if self.layer_foregrounds:
+            # self.freqs_for_fg=np.flip(self.bw*fftshift(fftfreq(self.N_chan)))
             self.freqs_for_fg= np.linspace(self.nu_hi.value,self.nu_lo.value, # descending in frequency to match the iteration over increasing redshift
                                            self.Nchan,endpoint=True)*self.Deltanu.unit
             fg_box=np.zeros((self.Npix,self.Npix,self.Nchan))*u.mK
@@ -1753,9 +1759,8 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
 
         uvbins_use=uv_ext*fftshift(fftfreq(Npix))
         print("generate_PSF.__init__: check uv gridding resolution: deltauv - (uvbins_use[-1]-uvbins_use[-1]) =",deltauv - (uvbins_use[-1]-uvbins_use[-1]))
-        uvbins_use=np.concatenate(uvbins_use,[uvbins_use[-1]+deltauv])
+        uvbins_use=np.concatenate([uvbins_use,[uvbins_use[-1]+deltauv]])
         self.uvbins_use=uvbins_use
-        print("generate_PSF.__init__: uvbins_use.shape =",uvbins_use.shape)
         self.d2u=deltauv**2
 
     def calc_uv_slice(self):
@@ -1808,7 +1813,9 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
         plt.close()
 
         plt.figure()
-        plt.imshow(implane,origin="lower",
+        ext=np.max(np.abs(implane))
+        plt.imshow(implane,origin="lower",cmap="RdBu",
+                   norm=SymLogNorm(1e-9*ext,vmin=-ext,vmax=ext),
                    extent=uv_extent_for_kwarg)
         plt.colorbar()
         plt.title("PSF")
@@ -2276,7 +2283,7 @@ def pointing_family(original_pointing,N,seed=270426):
 
 def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False,
               array_version:str="pathfinder", nu_ctr:float=800, epsxy:float=0.1,
-              frac_tol_conv=0.1, N_th_k=1024,
+              frac_tol_conv=0.1, N_th_k=1024, Npix=256,
               N_pbws_pert=0, antenna_dist="random", 
               which_power="P",
               evol_thresh=def_evolution_threshold,
@@ -2398,7 +2405,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                     # the observation
                                     bminCHORD,bmaxCHORD,                                                       
                                     nu_ctr,freq_bin_width,                                                 
-                                    evolution_threshold=evol_thresh,           
+                                    evolution_threshold=evol_thresh,   
+                                    Npix=Npix,        
                                     
                                     # numerical beam perturbation parameters
                                     N_pbws_pert=N_pbws_pert_i,

@@ -41,7 +41,7 @@ power_comparison_plots(redo_window_calc=True, # redo the Monte Carlos
                        redo_box_calc=True,    # re-synthesize the PSF; reimports CST only if files DNE
                        array_version="full", nu_ctr=600.*u.MHz, 
                        frac_tol_conv=0.25, which_power="P",
-                       freq_bin_width=0.210*u.MHz,
+                       freq_bin_width=0.210*u.MHz, Npix=512,
                        antenna_dist="frame", # default is frame
                        pointing_errors=pointingerrs[:N_CST_total],
                        CST_lo=0.58*u.GHz,CST_hi=0.62*u.GHz,CST_deltanu=2e-4*u.GHz,
