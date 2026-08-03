@@ -1046,8 +1046,9 @@ class cosmo_stats(object):
                  seed=None,                                                             # Monte Carlo realization logistics: whether or not to subtract the monopole moment when you generate boxes (the option is mostly there if you're interested in off-label uses of this code to compute power spectra from fields that are not cosmological overdensity fields); RNG seed for predictable ensemble behaviour
                  LoS_apo=False,transverse_apo=False,                                     # apodize along the sky plane or line-of-sight directions to suppress ringing originating from features that cut off sharply?
                  wedge_cut:bool=False,nu_ctr=None,                                      # throw away info from k-modes inside the foreground wedge?; when using synchrotron foregrounds AND performing a wedge cut, the calling routine should specify the central frequency of the survey in question to have a physical anchor for the foregrounds. also need central freq for FoG
-                 fg_box:np.ndarray=None):                                               # foregrounds to add to the signal-of-interest map (T)
-        
+                 fg_box:np.ndarray=None,                                                # foregrounds to add to the signal-of-interest map (T)
+                 FoG=False):
+
         # spectrum and box
         if (Lz is None): # cubic box
             self.Lz=Lxy
@@ -1138,20 +1139,28 @@ class cosmo_stats(object):
         d3k=self.Deltakxy**2*self.Deltakz                              # volume element / voxel volume
         self.kxy_vec_for_box_corner=twopi*fftfreq(self.Nxy,d=self.Deltaxy) # one Cartesian coordinate axis - non-fftshifted/ corner origin
         self.kz_vec_for_box_corner= twopi*fftfreq(self.Nz,d=self.Deltaz)
-        self.kx_grid_corner,self.ky_grid_corner,self.kz_grid_corner=np.meshgrid(self.kxy_vec_for_box_corner,
+        kx_grid_corner,ky_grid_corner,kz_grid_corner=np.meshgrid(self.kxy_vec_for_box_corner,
                                                                                 self.kxy_vec_for_box_corner,
                                                                                 self.kz_vec_for_box_corner, indexing="ij")               # box-shaped Cartesian coords
-        self.kmag_grid_corner= np.sqrt(self.kx_grid_corner**2+self.ky_grid_corner**2+self.kz_grid_corner**2) # k magnitudes for each voxel (need for the box generation direction)
-        self.kmag_grid_centre=fftshift(self.kmag_grid_corner)
-        self.kmag_grid_centre_flat=np.reshape(self.kmag_grid_centre,(self.Nxy**2*self.Nz),order="C")
+        self.kmag_grid_corner= np.sqrt(kx_grid_corner**2+ky_grid_corner**2+kz_grid_corner**2) # k magnitudes for each voxel (need for the box generation direction)
+        kmag_grid_centre=fftshift(self.kmag_grid_corner)
+        self.kmag_grid_centre_flat=np.reshape(kmag_grid_centre,(self.Nxy**2*self.Nz),order="C")
         self.kmag_grid_corner_flat=np.reshape(self.kmag_grid_corner,(self.Nxy**2*self.Nz,),order="C")
         self.kmag_grid_for_comparison= self.kmag_grid_corner if self.Nz>1 else self.kmag_grid_corner[:,:,0]
               
         self.kpar_column_centre= np.abs(fftshift(self.kz_vec_for_box_corner))                                      # magnitudes of kpar for a representative column along the line of sight (z-like)
-        self.kperp_slice_centre= np.sqrt(fftshift(self.kx_grid_corner)**2+fftshift(self.ky_grid_corner)**2)[:,:,0] # magnitudes of kperp for a representative slice transverse to the line of sight (x- and y-like)
+        self.kperp_slice_centre= np.sqrt(fftshift(kx_grid_corner)**2+fftshift(ky_grid_corner)**2)[:,:,0] # magnitudes of kperp for a representative slice transverse to the line of sight (x- and y-like)
         kperpgrid3,kpargrid3=np.meshgrid(self.kperp_slice_centre,self.kpar_column_centre, indexing="ij")
-        self.kperpgrid3_flat=np.reshape(kperpgrid3,(self.Nxy**2*self.Nz,),order="C")
-        self.kpargrid3_flat= np.reshape(kpargrid3, (self.Nxy**2*self.Nz,),order="C")
+        kperpgrid3_flat=np.reshape(kperpgrid3,(self.Nxy**2*self.Nz,),order="C")
+        kpargrid3_flat= np.reshape(kpargrid3, (self.Nxy**2*self.Nz,),order="C")
+
+        if FoG:
+            kmag_safe=np.copy(self.kmag_grid_corner)
+            kmag_safe[kmag_safe==0]=1./u.Mpc # try inf (bad), 1., 0...
+            kmu=np.abs(kz_grid_corner)*kz_grid_corner/kmag_safe # k-par/k
+            if isinstance(kmu, Quantity):
+                kmu=kmu.value
+            self.kmu=kmu
 
         if self.Nz>1:
             self.transform_axes=(0,1,2)
@@ -1168,9 +1177,9 @@ class cosmo_stats(object):
             assert(nu_ctr is not None), "an arbitrary box <-> power spectrum translation doesn't require frequency\n"+\
                                         "info. But, when you opt into the wedge cut, you must override the None\n"+\
                                         "default in the nu_ctr keyword."
-            self.kperp_corner=np.sqrt(self.kx_grid_corner**2+self.ky_grid_corner**2)
+            self.kperp_corner=np.sqrt(kx_grid_corner**2+ky_grid_corner**2)
             wedge_kpar_threshold_corner=wedge_kpar(nu_ctr,self.kperp_corner)
-            self.voxels_in_wedge_corner=self.kz_grid_corner<=wedge_kpar_threshold_corner
+            self.voxels_in_wedge_corner=kz_grid_corner<=wedge_kpar_threshold_corner
         
         # rng management
         self.rng=np.random.default_rng(seed)
@@ -1212,7 +1221,7 @@ class cosmo_stats(object):
             self.kperpbins_grid,self.kparbins_grid=np.meshgrid(self.kperpbins,self.kparbins, indexing="ij")
         
             self.bins_to_use=[self.kperpbins.value,self.kparbins.value]
-            self.coords_to_use=[self.kperpgrid3_flat.value,self.kpargrid3_flat.value]
+            self.coords_to_use=[kperpgrid3_flat.value,kpargrid3_flat.value]
 
         else: # calling them perp bins for class reasons but they are just sph
             kmax_box=np.max([self.kmax_box_xy.value,self.kmax_box_z.value])/self.length_unit # ignore the voxels outside the sphere that is contained by the box's larger axis but probably exceeds its smaller axis
@@ -1228,30 +1237,29 @@ class cosmo_stats(object):
             self.coords_to_use=self.kmag_grid_centre_flat.value
             
         # tapering/apodization
-        taper_xy=np.ones(self.Nxy)
-        taper_z=np.ones(self.Nz)
+        apodization_xy=np.ones(self.Nxy)
+        apodization_z=np.ones(self.Nz)
         fftshift_axes=()
         if transverse_apo:
-            taper_xy=Blackman_Harris_safe_for_FFT(Nxy)
+            apodization_xy=Blackman_Harris_safe_for_FFT(Nxy)
             fftshift_axes=(0,1)
         if LoS_apo:
-            taper_z= Blackman_Harris_safe_for_FFT(Nz) # confirmed to be centre-, not corner-origin
+            apodization_z= Blackman_Harris_safe_for_FFT(Nz) # confirmed to be centre-, not corner-origin
             fftshift_axes+=(2,)
         if self.Nz>1:
-            taper_xxx,taper_yyy,taper_zzz=np.meshgrid(taper_xy,taper_xy,taper_z, indexing="ij")
-            taper_xyz_product=taper_xxx*taper_yyy*taper_zzz
+            apodization_xxx,apodization_yyy,apodization_zzz=np.meshgrid(apodization_xy,apodization_xy,apodization_z, indexing="ij")
+            apodization_xyz_product=apodization_xxx*apodization_yyy*apodization_zzz
         else:
-            taper_xx,taper_yy=np.meshgrid(taper_xy,taper_xy,indexing="ij")
-            taper_xyz_product=taper_xx*taper_yy
-        self.taper_xyz_centre=taper_xyz_product
-        self.taper_xyz_corner=ifftshift(taper_xyz_product,axes=fftshift_axes)
+            apodization_xx,apodization_yy=np.meshgrid(apodization_xy,apodization_xy,indexing="ij")
+            apodization_xyz_product=apodization_xx*apodization_yy
+        self.apodization_xyz_centre=apodization_xyz_product
 
         # beam
         if effective_primary_CST is None:
             if PSF is not None:
                 raise ValueError("not enough info")
             else:
-                self.effective_volume=np.sum(self.taper_xyz_centre**2*self.d3r)
+                self.effective_volume=np.sum(self.apodization_xyz_centre**2*self.d3r)
         else:
             CST_Deltaz=z_vec_for_CST[1]-z_vec_for_CST[0]
             eff_pri_this_domain=np.zeros(self.box_shape)
@@ -1288,12 +1296,11 @@ class cosmo_stats(object):
                                              [self.z_vec_for_box[ 0],self.z_vec_for_box[-1]]  ],
                                        name="effective_primary_interpolated.png") # in the new paradigm, these shouldn't be visibly super different. as of 16:49 24/07/26, they aren't—nice!
 
-            self.effective_volume=np.sum((eff_pri_this_domain*self.taper_xyz_centre)**2*self.d3r)
+            self.effective_volume=np.sum((eff_pri_this_domain*self.apodization_xyz_centre)**2*self.d3r)
         print("cosmo_stats: self.effective_volume=",self.effective_volume)
-        self.PSF=PSF
         self.PSF_padded=None
         if PSF is not None: # non-identity PSF
-            print("self.PSF.shape =",self.PSF.shape)
+            print("PSF.shape =",PSF.shape)
             PSFext=np.max(np.abs(PSF))
             manydBdown=1e-9
             PSF_norm=SymLogNorm(manydBdown*PSFext,vmin=-PSFext,vmax=PSFext)
@@ -1333,7 +1340,7 @@ class cosmo_stats(object):
         else:
             self.N_cumul=np.zeros((self.Nkperp,))
 
-    def resample_P_fid_on_grid(self,FoG=False): # resample a 1D power spec on a 3D grid. to break these symmetries, you can do a bit of reverse-engineering: do what you want to the box -> update the T_pristine attribute -> form a power spec using the same cosmo_stats object -> save that unbinned power spec as P_fid_grid -> continue with your Monte Carlo or whatever
+    def resample_P_fid_on_grid(self): # resample a 1D power spec on a 3D grid. to break these symmetries, you can do a bit of reverse-engineering: do what you want to the box -> update the T_pristine attribute -> form a power spec using the same cosmo_stats object -> save that unbinned power spec as P_fid_grid -> continue with your Monte Carlo or whatever
         assert(len(self.k_fid)==len(self.P_fid) or len(self.k_fid)==len(self.P_fid.T))
         sort_array=np.argsort(self.kmag_grid_corner_flat)
         kmag_grid_corner_flat_sorted=self.kmag_grid_corner_flat[sort_array]
@@ -1346,22 +1353,17 @@ class cosmo_stats(object):
         P_fid_box[np.isnan(P_fid_box)]=0.
 
         FoG_modulation=1.
-        if FoG:
+        if self.FoG:
             alpha_FoG=1 # what CHIME 2026 uses 
             sigma_FoG=(1.93-1.48*(self.z_ctr-1)+0.81*(self.z_ctr-1)**2)*self.h.value # cf. eq. 11 of the CHIME/cosmology 2026 interpretation paper
-            kmag_safe=np.copy(self.kmag_grid_corner)
-            kmag_safe[kmag_safe==0]=1./u.Mpc # try inf (bad), 1., 0...
-            kmu=np.abs(self.kz_grid_corner)*self.kz_grid_corner/kmag_safe # k-par/k
-            if isinstance(kmu, Quantity):
-                kmu=kmu.value
-            D_FoG_HI=1/(1+ 0.5*(kmu*alpha_FoG*sigma_FoG)**2 ) # cf. eq. 10 of the CHIME/cosmology 2026 interpretation paper
+            D_FoG_HI=1/(1+ 0.5*(self.kmu*alpha_FoG*sigma_FoG)**2 ) # cf. eq. 10 of the CHIME/cosmology 2026 interpretation paper
             FoG_modulation=D_FoG_HI**2
             FoG_modulation=1
         self.P_fid_box=P_fid_box*FoG_modulation
             
     def generate_P(self,T_use=None): # from a box of temperature field values
         if T_use is None:            # establish common string flags
-            if self.PSF is None:
+            if self.PSF_padded is None:
                 T_use="pristine"
             else:
                 T_use="beam"
@@ -1382,7 +1384,7 @@ class cosmo_stats(object):
         T_use=T_use.to(u.mK)
 
         T_tilde=fftshift( fftn( 
-                                ifftshift(T_use*self.taper_xyz_centre)*self.d3r,
+                                ifftshift(T_use*self.apodization_xyz_centre)*self.d3r,
                                 s=self.box_shape, axes=self.transform_axes, norm="backward"        
                               ) 
                         ) # centre-origin
@@ -1436,12 +1438,12 @@ class cosmo_stats(object):
             T+=self.fg_box
         
         self.T_pristine=T
-        if self.PSF is not None:
+        if self.PSF_padded is not None:
             self.T_beam=convolve(self.PSF_padded,T.value,mode="valid")*self.temp_unit
 
     def power_Monte_Carlo(self,interfix:str=""): # since box generation is not deterministic
         self.MC_not_complete=True
-        if self.PSF is None:
+        if self.PSF_padded is None:
             T_use="pristine"
         else: 
             T_use="beam"
@@ -1540,20 +1542,25 @@ def beam_type_distribution(N_NS,N_EW,N_types,distribution="random",frame_width=2
                     rest_of_types=np.arange(N_EW,N_types)
                     for i in rest_of_types:
                         synthesized_beam_types[::2,i::N_EW]=i
-        elif distribution=="frame":
+        elif distribution=="frame" or distribution=="hybrid":
             synthesized_beam_types=np.zeros((N_NS,N_EW),dtype=np.int8)
             if N_types>1: # stricter threshold for this case based on where the random numbers come from
                 sh=synthesized_beam_types.shape
                 sz=synthesized_beam_types.size
                 sz_ind=np.arange(sz)
                 sz_ind_rectangular=sz_ind.reshape(sh)
-                indices_for_systs=~np.isin(sz_ind_rectangular, 
+                part_of_frame=~np.isin(sz_ind_rectangular, 
                                            sz_ind_rectangular[frame_width:-frame_width, 
                                                               frame_width:-frame_width])
-                synthesized_beam_types[indices_for_systs]=1
-                synthesized_beam_types[indices_for_systs]=rng.integers(1,high=N_types,
-                                                                  size=np.sum(synthesized_beam_types[indices_for_systs]))
-                                                                #   size=2*(N_NS+N_EW)-4)
+                synthesized_beam_types[part_of_frame]=1
+                N_in_frame=np.sum(synthesized_beam_types[part_of_frame])
+                synthesized_beam_types[part_of_frame]=rng.integers(1,high=N_types,
+                                                                  size=N_in_frame)
+
+                if distribution=="hybrid": # implementándolo cómo efectivamente un subtype de the frame distribution
+                    N_out_of_frame=N_ant-N_in_frame
+                    synthesized_beam_types[~part_of_frame]=rng.integers(0,N_types,size=(N_out_of_frame,))
+
         else:
             raise ValueError("beam distribution pattern not yet implemented")
         
