@@ -17,9 +17,7 @@ systnames= [ "+0.0+0.0+0.5", "+0.0+0.0+1.0", "+0.0+0.0+1.5",     # local. commen
 all_syst_dirs=[sn+"_deg/" for sn in systnames]
 
 N_systs_use=len(systnames) # exhaustive case
-N_systs_use=1 # pared-down case for debugging. as of July 20th: I believe my synthesized beams (well, I believe the ways in which 
-              # different systematics are showing up, even ... more updates soon), but the changes I'm interested in are visible even 
-              # in the fiducial beam–aware power spec, so I'm running some extremely toy tests
+N_systs_use=1 # pared-down case for debugging.
 N_CST_total=N_systs_use+1
 
 

@@ -1845,7 +1845,8 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
 
         # generate a box of r-values (necessary for interpolation to survey domain in cosmo_stats as called by beam_effects)
         xy_vec=self.CSTPSF_xy
-        z_vec=self.comoving_distances_channels-self.ctr_chan_comov_dist 
+        comoving_extent=self.comoving_distances_channels[-1]-self.comoving_distances_channels[0]
+        z_vec=comoving_extent*fftshift(fftfreq(self.N_chan)) 
         print("generate_PSF.stack_to_box: z_vec min,max =",np.min(z_vec),np.max(z_vec))
         self.xy_vec=xy_vec
         self.z_vec=z_vec
