@@ -1140,8 +1140,8 @@ class cosmo_stats(object):
         self.kxy_vec_for_box_corner=twopi*fftfreq(self.Nxy,d=self.Deltaxy) # one Cartesian coordinate axis - non-fftshifted/ corner origin
         self.kz_vec_for_box_corner= twopi*fftfreq(self.Nz,d=self.Deltaz)
         kx_grid_corner,ky_grid_corner,kz_grid_corner=np.meshgrid(self.kxy_vec_for_box_corner,
-                                                                                self.kxy_vec_for_box_corner,
-                                                                                self.kz_vec_for_box_corner, indexing="ij")               # box-shaped Cartesian coords
+                                                                 self.kxy_vec_for_box_corner,
+                                                                 self.kz_vec_for_box_corner, indexing="ij")               # box-shaped Cartesian coords
         self.kmag_grid_corner= np.sqrt(kx_grid_corner**2+ky_grid_corner**2+kz_grid_corner**2) # k magnitudes for each voxel (need for the box generation direction)
         kmag_grid_centre=fftshift(self.kmag_grid_corner)
         self.kmag_grid_centre_flat=np.reshape(kmag_grid_centre,(self.Nxy**2*self.Nz),order="C")
@@ -1189,7 +1189,7 @@ class cosmo_stats(object):
         self.avoid_extrapolation=avoid_extrapolation
         if (self.P_fid is not None and self.k_fid is not None):
             if (len(self.P_fid.shape)==1): # truly 1d fiducial power spec (by this point, even CAMB-like shapes have been reshuffled)
-                self.resample_P_fid_on_grid(self.compute_FoG)
+                self.resample_P_fid_on_grid()
             else:
                 assert 1==0, "not yet implemented"
         
