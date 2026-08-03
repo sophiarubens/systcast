@@ -38,12 +38,12 @@ with open("ptg_err.json", "w") as f:
 
 # re-simulate / re-plot
 power_comparison_plots(redo_window_calc=True, # redo the Monte Carlos
-                       redo_box_calc=True,    # re-synthesize the PSF; reimports CST only if files DNE
-                       array_version="full", nu_ctr=600.*u.MHz, 
-                       frac_tol_conv=0.25, which_power="P",
-                       freq_bin_width=0.210*u.MHz, Npix=512,
-                       antenna_dist="frame", # default is frame
-                       pointing_errors=pointingerrs[:N_CST_total],
-                       CST_lo=0.58*u.GHz,CST_hi=0.62*u.GHz,CST_deltanu=2e-4*u.GHz,
-                       N_timesteps=1,
+                       redo_box_calc=True, # re-synthesize the PSF; reimports CST only if files DNE
+                       which_power="P", # plotting choice
+                       nu_ctr=600.*u.MHz, frac_tol_conv=0.25, freq_bin_width=0.210*u.MHz, # k-parallel observation conditioning
+                       array_version="full", Npix=512, transverse_half_angle=pi/4,# k-perp observation conditioning
+                       antenna_dist="frame", # spatial distribution of systematics; "frame" is the default
+                       pointing_errors=pointingerrs[:N_CST_total], # specify the systematics
+                       CST_lo=0.58*u.GHz,CST_hi=0.62*u.GHz,CST_deltanu=2e-4*u.GHz, # CST freqs for import from files
+                       N_timesteps=1, # amount of rotation synthesis
                        beam_sim_directory=CST_dir, CST_f_head_fidu=fiduname, CST_f_head_syst=all_syst_dirs[:N_systs_use])

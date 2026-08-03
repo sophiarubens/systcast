@@ -66,7 +66,6 @@ twopi=2.*pi
 # numerical
 eps=1e-15
 flat_enough=pi/4
-print("flat_enough=",flat_enough)
 
 # CHORD
 N_NS_full=24
@@ -81,7 +80,6 @@ def_observing_dec=pi/60.
 def_offset=1.75*pi/180. # for this placeholder state where I build up the CHORD layout using rotation matrices instead of actual measurements. probably add Hans' mask at some point to punch the corners and receiver hut holes out...
 def_evolution_threshold=1/15 # HERA 1/15 was made up—for round number appeal, probably
                              # 1/15 is turn this down for a computationally less intense substitute if keeping the channel width the same
-print("def_evolution_threshold=",def_evolution_threshold)
 def_PA_N_grid_pix=256
 integration_s=10*u.s # seconds
 hrs_per_night=8*u.hr # borrowed from Debanjan / 21cmSense
@@ -244,6 +242,7 @@ class beam_effects(object):
                  nu_ctr:float=600.*u.MHz,                                         # central freq of survey
                  delta_nu:float=CHORD_channel_width_MHz,                          # channel width
                  evolution_threshold:float=def_evolution_threshold, # how close to coeval is close enough? \Delta z/z
+                 transverse_half_angle=flat_enough,
                  
                  # parameters of per-antenna systematic–aware beam synthesis
                  N_pbws_pert:int=0,                 # number of beams to perturb
@@ -375,7 +374,7 @@ class beam_effects(object):
         CST_comoving=np.asarray([comoving_distance(z).value for z in CST_redshifts])*u.Mpc
         N_CST_freqs=len(CST_comoving)
         comoving_mid=CST_comoving[int(N_CST_freqs//2)]
-        CSTPSF_xy_ext=2*flat_enough*comoving_mid # stricter than the horizon limit. 2x is to account for +/- approved-small-angle from boresight
+        CSTPSF_xy_ext=2*transverse_half_angle*comoving_mid # stricter than the horizon limit. 2x is to account for +/- approved-small-angle from boresight
         CSTPSF_xy_vec= CSTPSF_xy_ext*fftshift(fftfreq(Npix))
         self.Npix=Npix
         CST_z_vec=CST_comoving-comoving_mid
@@ -393,6 +392,7 @@ class beam_effects(object):
         if heavy_beam_recalc and not already_imported_fidu_CST:
             fidu=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=Npix,
                                         beam_sim_directory=beam_sim_directory,f_head=CST_f_head_fidu,
+                                        transverse_half_angle=transverse_half_angle,
                                         f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="fidu_box_"+ioname)
             fidu.construct_CST_box()
             print("generated fidu beam box\n")
@@ -410,6 +410,7 @@ class beam_effects(object):
             for i,CST_f_head_syst_i in enumerate(CST_f_head_syst):
                 syst=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=Npix,
                                             beam_sim_directory=beam_sim_directory,f_head=CST_f_head_syst_i,
+                                            transverse_half_angle=transverse_half_angle,
                                             f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="syst_box_"+ioname)
                 syst.construct_CST_box()
                 print("generated syst beam box\n")
@@ -450,7 +451,7 @@ class beam_effects(object):
         if heavy_beam_recalc: # redo the beam synthesis
             fidu_synthesis=generate_PSF(array_version=array_version,N_timesteps=self.N_timesteps,
                                                 N_pbws_pert=0,nu_ctr=nu_ctr,
-                                                distribution="random",Npix=Npix,
+                                                distribution="random",Npix=Npix, transverse_half_angle=transverse_half_angle,
                                                 Delta_nu=delta_nu,
                                                 sub_ensemble_of_CST_beams=fidu_box,
                                                 CSTPSF_xy=CSTPSF_xy_vec,CST_freqs=CST_freqs,
@@ -461,7 +462,7 @@ class beam_effects(object):
             if N_CST_types>1 or N_pointing_errors_max>0:
                 syst_synthesis=generate_PSF(array_version=array_version,N_timesteps=self.N_timesteps,
                                                     N_pbws_pert=N_pbws_pert,nu_ctr=nu_ctr,
-                                                    distribution=antenna_distribution,Npix=Npix,
+                                                    distribution=antenna_distribution,Npix=Npix, transverse_half_angle=transverse_half_angle,
                                                     Delta_nu=delta_nu,
                                                     sub_ensemble_of_CST_beams=[fidu_box,CST_syst_ensemble],
                                                     CSTPSF_xy=CSTPSF_xy_vec,CST_freqs=CST_freqs,
@@ -1581,6 +1582,7 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
                  N_timesteps:float=def_N_timesteps,                                # number of timesteps in rotation synthesis
                  nu_ctr:float=nu_HI_z0,                                            # central frequency of the survey of interest
                  Delta_nu:float=CHORD_channel_width_MHz,                           # channel width in frequency (MHz)
+                 transverse_half_angle=flat_enough,
                  distribution:str="random",                                        # distribution of per-antenna systematics. the options I've encoded for now are random, column, and corner, based on where the fiducial beam types are placed within the array
                  evolution_threshold:float=def_evolution_threshold,  # max \delta z/z you will tolerate for the survey of interest and still consider the box close enough to coeval
                  weighting="uniform", Npix:int=def_PA_N_grid_pix,
@@ -1752,7 +1754,7 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
         print("synthesized rotation")
 
         # Wed 29th Jul 2026 edition
-        theta_ext=2*flat_enough
+        theta_ext=2*transverse_half_angle
         deltauv=1/theta_ext
         uv_ext=deltauv*Npix
         print("generate_PSF.__init__: theta_ext, deltauv, uv_ext =",theta_ext, deltauv, uv_ext)
@@ -1852,6 +1854,7 @@ class reconfigure_CST_beam(object):
                  f_tail:str="_efield.txt",                            # end of CST beam file names
                  box_outname:str="placeholder",                       # what to call the config space box of CST-informed beam values that results from a complete use of this class
                  Nxy:int=128,                                         # number of pixels per side of frequency slides (get one sky plane square per CST file)
+                 transverse_half_angle=flat_enough,
                  multi_CST=True):                                     # set to False to go back to the file name construction order ok for the Jan-Apr 2026 CST
         self.beam_sim_directory=beam_sim_directory
         self.f_head=f_head
@@ -1880,7 +1883,7 @@ class reconfigure_CST_beam(object):
         if beam_sim_directory is None:
             print("Do you really mean to attempt CST imports from the working directory?")
 
-        L_xy=2*flat_enough*comoving_middle
+        L_xy=2*transverse_half_angle*comoving_middle
         xy_for_box=L_xy*fftshift(fftfreq(Nxy))
         print("reconfigure_CST_beam.__init__: extrema of xy vec:",np.min(xy_for_box),np.max(xy_for_box))
         self.xy_for_box=xy_for_box
@@ -2257,7 +2260,8 @@ def pointing_family(original_pointing,N,seed=270426):
 
 def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False,
               array_version:str="pathfinder", nu_ctr:float=800, epsxy:float=0.1,
-              frac_tol_conv=0.1, N_th_k=1024, Npix=256,
+              frac_tol_conv=0.1, N_th_k=1024, 
+              Npix=256, transverse_half_angle=flat_enough,
               N_pbws_pert=0, antenna_dist="random", 
               which_power="P",
               evol_thresh=def_evolution_threshold,
@@ -2380,7 +2384,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                     bminCHORD,bmaxCHORD,                                                       
                                     nu_ctr,freq_bin_width,                                                 
                                     evolution_threshold=evol_thresh,   
-                                    Npix=Npix,        
+                                    Npix=Npix, transverse_half_angle=transverse_half_angle,    
                                     
                                     # numerical beam perturbation parameters
                                     N_pbws_pert=N_pbws_pert_i,
