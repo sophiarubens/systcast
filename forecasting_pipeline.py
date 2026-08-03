@@ -266,7 +266,7 @@ class beam_effects(object):
                  P_fid_for_cont_pwr=None,                      # fiducial power spectrum to use in Monte Carlo... typical choice for forecasting is CAMB (enforced default); some analyses may favour, for example, a flat spectrum
                  k_idx_for_window:int=0,                       # examine contaminant power or window functions?
                  wedge_cut:bool=False,                         # excise info from voxels inside the foreground wedge?
-                 layer_foregrounds:bool=True,                  # add synchrotron foregrounds on top of cosmo + beam data?
+                 layer_foregrounds:bool=True,                  # add synchrotron and FF foregrounds on top of cosmo + beam data?
 
                  # NUMERICAL 
                  N_theory_k:int=4096,                 # how many points in the cosmo power spectrum?
@@ -2207,7 +2207,7 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
         im=axs[i][j].imshow(spec_to_plot.T, cmap=colourmap, origin="lower", extent=cyl_extent, norm=norm)
         xlims_to_use=axs[i][j].get_xlim()
         ylims_to_use=axs[i][j].get_ylim()
-        axs[i][j].plot(k_perp,wedge_kpar(nu_ctr,k_perp),c="tab:green")
+        axs[i][j].plot(k_perp,wedge_kpar(nu_ctr,k_perp),c="tab:red",label="extent of FG wedge\nno horizon limit")
         axs[i][j].set_xlim(xlims_to_use)
         axs[i][j].set_ylim(ylims_to_use)
         axs[i][j].set_xlabel("k$_\perp$")
@@ -2232,6 +2232,7 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
         values_of_k[k]=[ spec[idx_for_k1], spec[0,par_idx_for_k2], spec[idx_for_k3] ]
         print("LIM review k=0.1:",spec[0,par_idx_for_k2])
 
+    axs[0][0].legend()
     complexity_indices=np.arange(N_spectra)
     ax_right.scatter(complexity_indices,values_of_k[:,0],label=str(np.round(k1_inset,4))+" (~1st BAO wiggle scale)")
     ax_right.scatter(complexity_indices,values_of_k[:,1],label=str(np.round(k2_inset,4))+" (LIM review comparison scale)")
