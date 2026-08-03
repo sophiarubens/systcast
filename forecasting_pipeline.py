@@ -2334,7 +2334,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         N_max_pointing_errors_each_CST=[len(pter_per_CST) for pter_per_CST in pointing_errors]
     else: # pointing_errors is a list of three-element lists
         N_max_pointing_errors_each_CST=[len(pointing_errors)]
-    N_pointing_errors_each_CST=[np.arange(0,N_max_pt_er+1) for N_max_pt_er in N_max_pointing_errors_each_CST]
+    N_pointing_errors_each_CST=[np.arange(0,N_max_pt_er+1,dtype=np.int8) for N_max_pt_er in N_max_pointing_errors_each_CST]
     complexity_cases=[]
     for a in range(1,N_CST_types+1):
         for b in range(N_max_pointing_errors_each_CST[a-1]):
