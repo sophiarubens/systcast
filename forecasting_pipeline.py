@@ -65,7 +65,8 @@ twopi=2.*pi
 
 # numerical
 eps=1e-15
-flat_enough=pi/14
+flat_enough=pi/4
+print("flat_enough=",flat_enough)
 
 # CHORD
 N_NS_full=24
@@ -79,7 +80,8 @@ CHORD_channel_width_MHz=0.1953125*u.MHz
 def_observing_dec=pi/60.
 def_offset=1.75*pi/180. # for this placeholder state where I build up the CHORD layout using rotation matrices instead of actual measurements. probably add Hans' mask at some point to punch the corners and receiver hut holes out...
 def_evolution_threshold=1/15 # HERA 1/15 was made up—for round number appeal, probably
-                                      # 1/15 is turn this down for a computationally less intense substitute if keeping the channel width the same
+                             # 1/15 is turn this down for a computationally less intense substitute if keeping the channel width the same
+print("def_evolution_threshold=",def_evolution_threshold)
 def_PA_N_grid_pix=256
 integration_s=10*u.s # seconds
 hrs_per_night=8*u.hr # borrowed from Debanjan / 21cmSense
@@ -1810,34 +1812,6 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
         plt.colorbar()
         plt.title("gridded uv")
         plt.savefig("single_slice_gridded_uv.png")
-        plt.close()
-
-        plt.figure()
-        ext=np.max(np.abs(implane))
-        plt.imshow(implane,origin="lower",cmap="RdBu",
-                   norm=SymLogNorm(1e-9*ext,vmin=-ext,vmax=ext),
-                   extent=uv_extent_for_kwarg)
-        plt.colorbar()
-        plt.title("PSF")
-        plt.savefig("PSF_slice.png",dpi=500)
-        plt.close()
-
-        _,axs=plt.subplots(1,3,layout="constrained",figsize=(12,5))
-        fftpsf=fftshift(fftn(ifftshift(implane)))
-        im=axs[0].imshow(fftpsf.real,origin="lower",
-                         extent=uv_extent_for_kwarg)
-        plt.colorbar(im,ax=axs[0])
-        axs[0].set_title("Re")
-        im=axs[1].imshow(fftpsf.imag,origin="lower",
-                         extent=uv_extent_for_kwarg)
-        plt.colorbar(im,ax=axs[1])
-        axs[1].set_title("Im")
-        im=axs[2].imshow(np.abs(fftpsf),origin="lower",
-                         extent=uv_extent_for_kwarg)
-        plt.colorbar(im,ax=axs[2])
-        axs[2].set_title("abs")
-        plt.suptitle("FFT(PSF)\nIMPROPERLY NORMALIZED")
-        plt.savefig("FFT_PSF.png",dpi=500)
         plt.close()
 
         return implane
