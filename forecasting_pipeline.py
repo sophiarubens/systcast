@@ -1559,7 +1559,8 @@ def beam_type_distribution(N_NS,N_EW,N_types,distribution="random",frame_width=2
 
                 if distribution=="hybrid": # implementándolo cómo efectivamente un subtype de the frame distribution
                     N_out_of_frame=N_ant-N_in_frame
-                    synthesized_beam_types[~part_of_frame]=rng.integers(0,N_types,size=(N_out_of_frame,))
+                    subset_of_types=1+int(N_types//2)
+                    synthesized_beam_types[~part_of_frame]=rng.integers(0,subset_of_types,size=(N_out_of_frame,))
 
         else:
             raise ValueError("beam distribution pattern not yet implemented")
