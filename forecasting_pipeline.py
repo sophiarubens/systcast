@@ -1130,7 +1130,6 @@ class cosmo_stats(object):
             self.box_shape=(self.Nxy,self.Nxy)
         else:
             self.box_shape=(self.Nz,)
-        # self.box_shape=(self.Nxy,self.Nxy,self.Nz) if self.Nz>1 else (self.Nxy,self.Nxy)
         self.Deltaxy=self.Lxy/self.Nxy                           # sky plane: voxel side length
         self.xy_vec_for_box=self.Lxy*fftshift(fftfreq(self.Nxy)) # sky plane Cartesian config space coordinate axis
         self.Deltaz= self.Lz/self.Nz                           # line of sight voxel side length
