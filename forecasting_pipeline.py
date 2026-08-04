@@ -251,9 +251,9 @@ class beam_effects(object):
                  array_version:str="full",          # full or pathfinder CHORD?
 
                  # beam config
-                 CST_lo=None,CST_hi=None,                                     # low and high frequencies of the CST simulation band (GHz !!!!!!!!!!not MHz)
-                 CST_deltanu=None,                                            # frequency spacing of CST simulations (MHz)
-                 beam_sim_directory=None,                                     # directory to import CST simulations from 
+                 CST_lo=0.580*u.GHz,CST_hi=0.620*u.GHz,                                     # low and high frequencies of the CST simulation band (GHz !!!!!!!!!!not MHz)
+                 CST_deltanu=0.2*u.MHz,                                            # frequency spacing of CST simulations (MHz)
+                 beam_sim_directory="",                                     # directory to import CST simulations from 
                  f_mid1:str="pol1/f_",f_mid2:str="pol1/f_",                   # middle part of CST file names... should include something distinguish the two polarizations (not enforced)
                  f_tail:str="_GHz.txt",                                       # trailing part of CST file names 
                  CST_f_head_fidu:str="fiducial/",CST_f_head_syst:str="syst/", # start of CST file names for different beam types (see Memo I for terminology description)
@@ -385,135 +385,136 @@ class beam_effects(object):
         print("simulated k-perp extent:",kperpmin_PSFCST,kperpmax_PSFCST)
         print("simulated k-par  extent:",kparmin_PSF,kparmax_PSF)
 
-        already_imported_fidu_CST=Path("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy").is_file()
-        already_imported_syst_CST=Path("syst_boxes_"+ioname+".npy").is_file()
-        if N_CST_types==1: # missing piece of the puzzle to prevent redundant CST translation
-            already_imported_syst_CST=True
-        if heavy_beam_recalc and not already_imported_fidu_CST:
-            fidu=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=Npix,
-                                        beam_sim_directory=beam_sim_directory,f_head=CST_f_head_fidu,
-                                        transverse_half_angle=transverse_half_angle,
-                                        f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="fidu_box_"+ioname)
-            fidu.construct_CST_box()
-            print("generated fidu beam box\n")
-            fidu_box=fidu.box
-            np.save("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy",fidu_box)
-        else:
-            fidu_box=  np.load("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy")
-
-            ioname_base_case=ioname.replace("N_CST_types_"+str(N_CST_types),"N_CST_types_1")
-            ioname_base_case=ioname_base_case.replace("N_ptg_err_"+str(N_pointing_errors_max),"N_ptg_err_0")
-        N_CST_z=len(CST_z_vec)
-
-        syst_boxes=np.zeros((N_CST_types,Npix,Npix,N_CST_z)) # this needs to be 4D to be forward-compatible with the new iteration strategy in generate_PSF
-        if heavy_beam_recalc and not already_imported_syst_CST: # only import the fiducial beam once
-            for i,CST_f_head_syst_i in enumerate(CST_f_head_syst):
-                syst=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=Npix,
-                                            beam_sim_directory=beam_sim_directory,f_head=CST_f_head_syst_i,
+        if beam_sim_directory!="":
+            already_imported_fidu_CST=Path("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy").is_file()
+            already_imported_syst_CST=Path("syst_boxes_"+ioname+".npy").is_file()
+            if N_CST_types==1: # missing piece of the puzzle to prevent redundant CST translation
+                already_imported_syst_CST=True
+            if heavy_beam_recalc and not already_imported_fidu_CST:
+                fidu=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=Npix,
+                                            beam_sim_directory=beam_sim_directory,f_head=CST_f_head_fidu,
                                             transverse_half_angle=transverse_half_angle,
-                                            f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="syst_box_"+ioname)
-                syst.construct_CST_box()
-                print("generated syst beam box\n")
-                syst_boxes[i,:,:,:]=syst.box
-            
-            np.save("syst_boxes_"+ioname+".npy",syst_boxes)
-        else:
-            if N_CST_types>1:
-                syst_boxes=np.load("syst_boxes_"+ioname+".npy")
+                                            f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="fidu_box_"+ioname)
+                fidu.construct_CST_box()
+                print("generated fidu beam box\n")
+                fidu_box=fidu.box
+                np.save("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy",fidu_box)
             else:
-                syst_boxes[0,:,:,:]=fidu_box
-        
-        CST_domain=(CSTPSF_xy_vec,CSTPSF_xy_vec,CST_z_vec) # TODO verify not brittle to leave unitified. was the only problem 
-        self.CST_z_vec=CST_z_vec
-        CSTPSF_xy_ext=CSTPSF_xy_vec[-1]-CSTPSF_xy_vec[0]
-        self.CSTPSF_xy_ext=CSTPSF_xy_ext
-        print("beam_effects.__init__: extrema of xy vec",np.min(CSTPSF_xy_vec),np.max(CSTPSF_xy_vec))
-        print("beam_effects.__init__: extrema of CST z vec:",np.min(CST_z_vec),np.max(CST_z_vec))
-        print("beam_effects.__init__: extrema of PSF z vec:",np.min(PSF_z_vec),np.max(PSF_z_vec))
+                fidu_box=  np.load("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy")
 
-        CST_syst_ensemble=np.zeros((N_CST_types,N_pointing_errors_max+1,Npix,Npix,N_CST_z)) # shape of CST_syst_ensemble is (N_CST_types,Npix,Npix,N_CST_z) but the sub-ensembles passed to generate_PSF have shapes  ////////replace
-        CST_syst_ensemble[:,0,:,:,:]=syst_boxes # situate the pointing error–free versions
+                ioname_base_case=ioname.replace("N_CST_types_"+str(N_CST_types),"N_CST_types_1")
+                ioname_base_case=ioname_base_case.replace("N_ptg_err_"+str(N_pointing_errors_max),"N_ptg_err_0")
+            N_CST_z=len(CST_z_vec)
 
-        if type(pointing_errors[0])==float:
-            pointing_errors_to_loop_over=[pointing_errors]
-        elif pointing_errors is not None:
-            pointing_errors_to_loop_over=pointing_errors
-        else:
-            pointing_errors_to_loop_over=[[0.,0.,0.]]
-        for i,syst_box in enumerate(syst_boxes):
-            if N_pointing_errors_max>0:
-                for j,pointing_error in enumerate(pointing_errors_to_loop_over):
-                    repointed=repoint_beam(CST_domain,syst_box,pointing_error)
-                    CST_syst_ensemble[i,j+1,:,:,:]=repointed
-        print("finished repointing beams for this complexity case")
-        
-        CST_freqs=np.arange(CST_lo.value,CST_hi.value,CST_deltanu.value)*CST_deltanu.unit
-        if heavy_beam_recalc: # redo the beam synthesis
-            fidu_synthesis=generate_PSF(array_version=array_version,N_timesteps=self.N_timesteps,
-                                                N_pbws_pert=0,nu_ctr=nu_ctr,
-                                                distribution="random",Npix=Npix, transverse_half_angle=transverse_half_angle,
-                                                Delta_nu=delta_nu,
-                                                sub_ensemble_of_CST_beams=fidu_box,
-                                                CSTPSF_xy=CSTPSF_xy_vec,CST_freqs=CST_freqs,
-                                                supplementary_name=ioname)
-            fidu_synthesis.stack_to_box()
-            print("finished synthesizing fiducial CST PSF")
-            fidu_box_PSF=fidu_synthesis.box
-            if N_CST_types>1 or N_pointing_errors_max>0:
-                syst_synthesis=generate_PSF(array_version=array_version,N_timesteps=self.N_timesteps,
-                                                    N_pbws_pert=N_pbws_pert,nu_ctr=nu_ctr,
-                                                    distribution=antenna_distribution,Npix=Npix, transverse_half_angle=transverse_half_angle,
+            syst_boxes=np.zeros((N_CST_types,Npix,Npix,N_CST_z)) # this needs to be 4D to be forward-compatible with the new iteration strategy in generate_PSF
+            if heavy_beam_recalc and not already_imported_syst_CST: # only import the fiducial beam once
+                for i,CST_f_head_syst_i in enumerate(CST_f_head_syst):
+                    syst=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=Npix,
+                                                beam_sim_directory=beam_sim_directory,f_head=CST_f_head_syst_i,
+                                                transverse_half_angle=transverse_half_angle,
+                                                f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="syst_box_"+ioname)
+                    syst.construct_CST_box()
+                    print("generated syst beam box\n")
+                    syst_boxes[i,:,:,:]=syst.box
+                
+                np.save("syst_boxes_"+ioname+".npy",syst_boxes)
+            else:
+                if N_CST_types>1:
+                    syst_boxes=np.load("syst_boxes_"+ioname+".npy")
+                else:
+                    syst_boxes[0,:,:,:]=fidu_box
+            
+            CST_domain=(CSTPSF_xy_vec,CSTPSF_xy_vec,CST_z_vec) # TODO verify not brittle to leave unitified. was the only problem 
+            self.CST_z_vec=CST_z_vec
+            CSTPSF_xy_ext=CSTPSF_xy_vec[-1]-CSTPSF_xy_vec[0]
+            self.CSTPSF_xy_ext=CSTPSF_xy_ext
+            print("beam_effects.__init__: extrema of xy vec",np.min(CSTPSF_xy_vec),np.max(CSTPSF_xy_vec))
+            print("beam_effects.__init__: extrema of CST z vec:",np.min(CST_z_vec),np.max(CST_z_vec))
+            print("beam_effects.__init__: extrema of PSF z vec:",np.min(PSF_z_vec),np.max(PSF_z_vec))
+
+            CST_syst_ensemble=np.zeros((N_CST_types,N_pointing_errors_max+1,Npix,Npix,N_CST_z)) # shape of CST_syst_ensemble is (N_CST_types,Npix,Npix,N_CST_z) but the sub-ensembles passed to generate_PSF have shapes  ////////replace
+            CST_syst_ensemble[:,0,:,:,:]=syst_boxes # situate the pointing error–free versions
+
+            if type(pointing_errors[0])==float:
+                pointing_errors_to_loop_over=[pointing_errors]
+            elif pointing_errors is not None:
+                pointing_errors_to_loop_over=pointing_errors
+            else:
+                pointing_errors_to_loop_over=[[0.,0.,0.]]
+            for i,syst_box in enumerate(syst_boxes):
+                if N_pointing_errors_max>0:
+                    for j,pointing_error in enumerate(pointing_errors_to_loop_over):
+                        repointed=repoint_beam(CST_domain,syst_box,pointing_error)
+                        CST_syst_ensemble[i,j+1,:,:,:]=repointed
+            print("finished repointing beams for this complexity case")
+            
+            CST_freqs=np.arange(CST_lo.value,CST_hi.value,CST_deltanu.value)*CST_deltanu.unit
+            if heavy_beam_recalc: # redo the beam synthesis
+                fidu_synthesis=generate_PSF(array_version=array_version,N_timesteps=self.N_timesteps,
+                                                    N_pbws_pert=0,nu_ctr=nu_ctr,
+                                                    distribution="random",Npix=Npix, transverse_half_angle=transverse_half_angle,
                                                     Delta_nu=delta_nu,
-                                                    sub_ensemble_of_CST_beams=[fidu_box,CST_syst_ensemble],
+                                                    sub_ensemble_of_CST_beams=fidu_box,
                                                     CSTPSF_xy=CSTPSF_xy_vec,CST_freqs=CST_freqs,
                                                     supplementary_name=ioname)
-                syst_synthesis.stack_to_box()
-                syst_box_PSF=syst_synthesis.box
-                weights_PSF=syst_synthesis.weights
-                Ntypes=syst_synthesis.N_total_beam_types
+                fidu_synthesis.stack_to_box()
+                print("finished synthesizing fiducial CST PSF")
+                fidu_box_PSF=fidu_synthesis.box
+                if N_CST_types>1 or N_pointing_errors_max>0:
+                    syst_synthesis=generate_PSF(array_version=array_version,N_timesteps=self.N_timesteps,
+                                                        N_pbws_pert=N_pbws_pert,nu_ctr=nu_ctr,
+                                                        distribution=antenna_distribution,Npix=Npix, transverse_half_angle=transverse_half_angle,
+                                                        Delta_nu=delta_nu,
+                                                        sub_ensemble_of_CST_beams=[fidu_box,CST_syst_ensemble],
+                                                        CSTPSF_xy=CSTPSF_xy_vec,CST_freqs=CST_freqs,
+                                                        supplementary_name=ioname)
+                    syst_synthesis.stack_to_box()
+                    syst_box_PSF=syst_synthesis.box
+                    weights_PSF=syst_synthesis.weights
+                    Ntypes=syst_synthesis.N_total_beam_types
+                else:
+                    syst_box_PSF=np.copy(fidu_box_PSF)
+                    weights_PSF=fidu_synthesis.weights
+                    Ntypes=1
+
+                print("finished synthesizing systematic-laden CST PSF")
+
+                np.save("fidu_box_PSF_"+ioname+".npy",fidu_box_PSF)
+                np.save("syst_box_PSF_"+ioname+".npy",syst_box_PSF)
+                np.save("weights_PSF_"+ioname+".npy",weights_PSF)
+                print("saved synthesized beam")
+            else: 
+                fidu_box_PSF=np.load("fidu_box_PSF_"+ioname+".npy")
+                syst_box_PSF=np.load("syst_box_PSF_"+ioname+".npy")
+                weights_PSF=np.load("weights_PSF_"+ioname+".npy")
+                print("loaded synthesized beam")
+            print("finished importing/constructing synthesized CST beam")
+            print("fidu_box_PSF.shape=",fidu_box_PSF.shape)
+            
+            self.fi_eff_primary_box=fidu_box
+            weighted_sum_syst_primary=np.zeros_like(fidu_box)
+            Ntypes=len(weights_PSF) # this is super hacky and I need to streamline it
+            if Ntypes>1:
+                q=0
+                for i in range(N_CST_types):
+                    for j in range(N_pointing_errors_max+1):
+                        syst_box_here=CST_syst_ensemble[i,j,:,:,:]
+                        if not np.allclose(syst_box_here,0):
+                            weighted_sum_syst_primary+=weights_PSF[q]*syst_box_here
+                        q+=1
+                self.sy_eff_primary_box=weighted_sum_syst_primary
             else:
-                syst_box_PSF=np.copy(fidu_box_PSF)
-                weights_PSF=fidu_synthesis.weights
-                Ntypes=1
+                self.sy_eff_primary_box=np.copy(self.fi_eff_primary_box)
+            
+            self.fidu=fidu_box_PSF
+            self.syst=syst_box_PSF
 
-            print("finished synthesizing systematic-laden CST PSF")
-
-            np.save("fidu_box_PSF_"+ioname+".npy",fidu_box_PSF)
-            np.save("syst_box_PSF_"+ioname+".npy",syst_box_PSF)
-            np.save("weights_PSF_"+ioname+".npy",weights_PSF)
-            print("saved synthesized beam")
-        else: 
-            fidu_box_PSF=np.load("fidu_box_PSF_"+ioname+".npy")
-            syst_box_PSF=np.load("syst_box_PSF_"+ioname+".npy")
-            weights_PSF=np.load("weights_PSF_"+ioname+".npy")
-            print("loaded synthesized beam")
-        print("finished importing/constructing synthesized CST beam")
-        print("fidu_box_PSF.shape=",fidu_box_PSF.shape)
-        
-        self.fi_eff_primary_box=fidu_box
-        weighted_sum_syst_primary=np.zeros_like(fidu_box)
-        Ntypes=len(weights_PSF) # this is super hacky and I need to streamline it
-        if Ntypes>1:
-            q=0
-            for i in range(N_CST_types):
-                for j in range(N_pointing_errors_max+1):
-                    syst_box_here=CST_syst_ensemble[i,j,:,:,:]
-                    if not np.allclose(syst_box_here,0):
-                        weighted_sum_syst_primary+=weights_PSF[q]*syst_box_here
-                    q+=1
-            self.sy_eff_primary_box=weighted_sum_syst_primary
-        else:
-            self.sy_eff_primary_box=np.copy(self.fi_eff_primary_box)
-        
-        self.fidu=fidu_box_PSF
-        self.syst=syst_box_PSF
-
-        self.CST_z_ext=CST_z_vec[-1]-CST_z_vec[0]
-        self.CST_Nz=len(CST_z_vec)
-        self.PSF_Nz=self.Nchan
-        print("self.PSF_Nz=",self.PSF_Nz)
-        self.PSF_z_ext=self.Dc_hi-self.Dc_lo
-        self.PSF_Delta_z=self.PSF_z_ext/self.PSF_Nz
+            self.CST_z_ext=CST_z_vec[-1]-CST_z_vec[0]
+            self.CST_Nz=len(CST_z_vec)
+            self.PSF_Nz=self.Nchan
+            print("self.PSF_Nz=",self.PSF_Nz)
+            self.PSF_z_ext=self.Dc_hi-self.Dc_lo
+            self.PSF_Delta_z=self.PSF_z_ext/self.PSF_Nz
 
         # groundwork-informed forecasting considerations
         self.P_fid_for_cont_pwr=P_fid_for_cont_pwr
@@ -1061,10 +1062,8 @@ class cosmo_stats(object):
         self.physical_volume=physical_volume
         self.fg_box=fg_box
         self.P_fid=P_fid
-        self.compute_FoG = P_fid is not None
-        # print("self.compute_FoG=",self.compute_FoG)
-        self.FoG=FoG # oversubscribed, but no issues for now
-        if self.compute_FoG:
+        self.FoG=FoG
+        if self.FoG:
             assert nu_ctr is not None, "centre freq is required to compute FoG"
             z_ctr=nu_HI_z0/nu_ctr-1
             self.z_ctr=z_ctr
@@ -1125,7 +1124,13 @@ class cosmo_stats(object):
         self.power_unit= self.temp_unit**2 *self.length_unit**3
         
         # config space
-        self.box_shape=(self.Nxy,self.Nxy,self.Nz) if self.Nz>1 else (self.Nxy,self.Nxy)
+        if self.Nz>1 and self.Nxy>1:
+            self.box_shape=(self.Nxy,self.Nxy,self.Nz)
+        elif self.Nz==1:
+            self.box_shape=(self.Nxy,self.Nxy)
+        else:
+            self.box_shape=(self.Nz,)
+        # self.box_shape=(self.Nxy,self.Nxy,self.Nz) if self.Nz>1 else (self.Nxy,self.Nxy)
         self.Deltaxy=self.Lxy/self.Nxy                           # sky plane: voxel side length
         self.xy_vec_for_box=self.Lxy*fftshift(fftfreq(self.Nxy)) # sky plane Cartesian config space coordinate axis
         self.Deltaz= self.Lz/self.Nz                           # line of sight voxel side length
@@ -1147,7 +1152,14 @@ class cosmo_stats(object):
         kmag_grid_centre=fftshift(self.kmag_grid_corner)
         self.kmag_grid_centre_flat=np.reshape(kmag_grid_centre,(self.Nxy**2*self.Nz),order="C")
         self.kmag_grid_corner_flat=np.reshape(self.kmag_grid_corner,(self.Nxy**2*self.Nz,),order="C")
-        self.kmag_grid_for_comparison= self.kmag_grid_corner if self.Nz>1 else self.kmag_grid_corner[:,:,0]
+        # self.kmag_grid_for_comparison= self.kmag_grid_corner if self.Nz>1 else self.kmag_grid_corner[:,:,0]
+        if self.Nz>1 and self.Nxy>1:
+            self.kmag_grid_for_comparison=self.kmag_grid_corner
+        elif self.Nz==1:
+            self.kmag_grid_for_comparison=self.kmag_grid_corner[:,:,0]
+        elif self.Nxy==1:
+            self.kmag_grid_for_comparison=self.kmag_grid_corner[0,0,:]
+        print("cosmo_stats.__init__: self.kmag_grid_for_comparison.shape=",self.kmag_grid_for_comparison.shape)
               
         self.kpar_column_centre= np.abs(fftshift(self.kz_vec_for_box_corner))                                      # magnitudes of kpar for a representative column along the line of sight (z-like)
         self.kperp_slice_centre= np.sqrt(fftshift(kx_grid_corner)**2+fftshift(ky_grid_corner)**2)[:,:,0] # magnitudes of kperp for a representative slice transverse to the line of sight (x- and y-like)
@@ -1163,11 +1175,15 @@ class cosmo_stats(object):
                 kmu=kmu.value
             self.kmu=kmu
 
-        if self.Nz>1:
+        if self.Nz>1 and self.Nxy>1:
             self.transform_axes=(0,1,2)
             self.d3k=d3k
             self.iftnorm=twopi**3
-        else:
+        elif self.Nxy==1:
+            self.transform_axes=(0) # it would've been 2 in a 3D box but this is technically a 1D box
+            self.d3k=d3k
+            self.iftnorm=np.copy(twopi)
+        elif self.Nz==1:
             self.transform_axes=(0,1)
             self.d3k=self.Deltakxy**2
             self.iftnorm=twopi**2
@@ -1210,7 +1226,9 @@ class cosmo_stats(object):
         self.kmin_box_z=  twopi/self.Lz
         
         # voxel grids for cyl binning
-        if (self.Nkpar is not None and self.Nkpar!=0):
+        print("Nxy=",Nxy)
+        if (self.Nkpar is not None and self.Nkpar!=0 and Nxy>1): # first two conditions: 3D box: make sure you don't intend to bin spherically
+                                                                 # last condition: intend to create a 1D box
             kperpbins=np.linspace(0,self.kmax_box_xy, self.Nkperp+1)
             bw=kperpbins[1]-kperpbins[0]
             self.kperpbins=kperpbins +0.5*bw
@@ -1226,8 +1244,9 @@ class cosmo_stats(object):
 
         else: # calling them perp bins for class reasons but they are just sph
             kmax_box=np.max([self.kmax_box_xy.value,self.kmax_box_z.value])/self.length_unit # ignore the voxels outside the sphere that is contained by the box's larger axis but probably exceeds its smaller axis
+            Nbins= self.Nkperp if Nxy>1 else self.Nkpar
             
-            kperpbins=np.linspace(0,kmax_box, self.Nkperp+1)
+            kperpbins=np.linspace(0,kmax_box, Nbins+1)
             bw=kperpbins[1]-kperpbins[0]
             self.kperpbins=kperpbins +0.5*bw
 
@@ -1418,14 +1437,16 @@ class cosmo_stats(object):
         sigmas=np.sqrt(self.physical_volume*self.P_fid_box/2.) # from inverting the estimator equation and turning variances into std devs
         
         # scipy irfftn puts all the variance into the real component of the half-axis slice of the last axis it transforms in the box. I need to anticipate this by giving those voxels' real components all the variance! (Nothing will be overcounted because the imag part is thrown away)
-        all_voxels_along_all_but_last_axis=tuple(slice(0,l) for l in self.box_shape[:-1])
-        sigmas[all_voxels_along_all_but_last_axis + (slice(0,1),)]*=np.sqrt(2) # zero mode always needs the adjustment
+        transverse=tuple(slice(0,l) for l in self.box_shape[:-1])
+        sigmas[transverse + (slice(0,1),)               # union of all transverse voxels and 0th slice of last axis (in Fourier terms, the fundamental)
+                                          ]*=np.sqrt(2) # zero mode always needs the adjustment
         if self.box_shape[-1]%2==0: # when your last axis has an even number of voxels...
             half_axis=self.box_shape[-1]//2
-            sigmas[all_voxels_along_all_but_last_axis + (slice(half_axis,half_axis+1),)]*=np.sqrt(2) # the Nyquist mode also needs the adjustment
+            sigmas[transverse + (slice(half_axis,half_axis+1),)               # union of all transverse voxels and halfway along the last axis (in Fourier terms, the Nyquist mode)
+                                                                ]*=np.sqrt(2) # the Nyquist mode also needs the adjustment
         sigmas[self.kmag_grid_for_comparison==0.]=0. # enforce zero-mean. This point is self-conjugate anyway!!
         T_tilde_Re,T_tilde_Im=self.rng.normal(loc=0.*sigmas,scale=sigmas,size=np.insert(sigmas.shape,0,2)) # corner-origin
-        T_tilde=T_tilde_Re+1j*T_tilde_Im # have not yet applied the symmetry that ensures T is real-valued 
+        T_tilde=T_tilde_Re+1j*T_tilde_Im # defer Hermitian symmetry enforcement to irfftn 
         if self.wedge_cut:
             T_tilde[self.voxels_in_wedge_corner]=0.
 
