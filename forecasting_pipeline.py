@@ -369,7 +369,7 @@ class beam_effects(object):
         CST_hi_safe=CST_hi.to(CST_deltanu.unit)
         CST_lo_safe=CST_lo.to(CST_deltanu.unit)
         CST_freqs=np.arange(CST_hi_safe.value,CST_lo_safe.value,
-                            -CST_deltanu.value)*CST_deltanu.unit # here and in reconfigure_CST, now inclusive of both endpoints     
+                            -CST_deltanu.value)*CST_deltanu.unit # here and in reconfigure_CST_beam, now inclusive of both endpoints     
         CST_redshifts=np.asarray([nu_HI_z0/freq-1 for freq in CST_freqs]) # checked = no frequency units that remain unconverted as of 29th Jul 2026 12:23
         CST_comoving=np.asarray([comoving_distance(z).value for z in CST_redshifts])*u.Mpc
         N_CST_freqs=len(CST_comoving)
@@ -1887,7 +1887,9 @@ class reconfigure_CST_beam(object):
         xis=[comoving_distance(z) for z in zs_for_xis] # ascending
         xis=Quantity(xis) # for the typical coeval approximation
         self.xis=xis
-        comoving_middle=xis[int(Nfreqs//2)]
+        nu_ctr=(freq_hi+freq_lo)/2
+        z_ctr=nu_HI_z0/nu_ctr-1
+        comoving_middle=comoving_distance(z_ctr) # seems like a superfluous call, but this is to establish consistency with the PSF-box ecosystem. the old way was not robust against there being an even vs. odd number of voxels along the LoS. another fix could've been to fftfreq-ify these channels, but that is lowkey super overengineered because these are CST channels and the the box I form here never gets Fourier operated on until a bunch of interpolation and postprocessing down the line
         self.CST_z_vec=xis-comoving_middle
 
         if beam_sim_directory is None:
