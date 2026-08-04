@@ -666,7 +666,7 @@ class beam_effects(object):
         self.P_flat=P_flat
         self.k_for_flat=np.linspace(self.kparmin_surv,self.kparmax_surv,10*self.Nkpar_surv)
         if self.layer_foregrounds:
-            # self.freqs_for_fg=np.flip(self.bw*fftshift(fftfreq(self.N_chan)))
+            # self.freqs_for_fg=np.flip(self.bw.value*fftshift(fftfreq(self.N_chan)))*self.bw.unit
             self.freqs_for_fg= np.linspace(self.nu_hi.value,self.nu_lo.value, # descending in frequency to match the iteration over increasing redshift
                                            self.Nchan,endpoint=True)*self.Deltanu.unit
             fg_box=np.zeros((self.Npix,self.Npix,self.Nchan))*u.mK
@@ -1063,6 +1063,7 @@ class cosmo_stats(object):
         self.P_fid=P_fid
         self.compute_FoG = P_fid is not None
         # print("self.compute_FoG=",self.compute_FoG)
+        self.FoG=FoG # oversubscribed, but no issues for now
         if self.compute_FoG:
             assert nu_ctr is not None, "centre freq is required to compute FoG"
             z_ctr=nu_HI_z0/nu_ctr-1
@@ -2324,6 +2325,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         antenna_dist_string="rwcl"
     elif antenna_dist=="frame":
         antenna_dist_string="frme"
+    elif antenna_dist=="hybrid":
+        antenna_dist_string="hybr"
     elif antenna_dist!="random":
         raise ValueError("unknown antenna_dist")
 
