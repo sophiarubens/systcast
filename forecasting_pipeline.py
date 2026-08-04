@@ -1147,14 +1147,12 @@ class cosmo_stats(object):
         kmag_grid_centre=fftshift(self.kmag_grid_corner)
         self.kmag_grid_centre_flat=np.reshape(kmag_grid_centre,(self.Nxy**2*self.Nz),order="C")
         self.kmag_grid_corner_flat=np.reshape(self.kmag_grid_corner,(self.Nxy**2*self.Nz,),order="C")
-        # self.kmag_grid_for_comparison= self.kmag_grid_corner if self.Nz>1 else self.kmag_grid_corner[:,:,0]
         if self.Nz>1 and self.Nxy>1:
             self.kmag_grid_for_comparison=self.kmag_grid_corner
         elif self.Nz==1:
             self.kmag_grid_for_comparison=self.kmag_grid_corner[:,:,0]
         elif self.Nxy==1:
             self.kmag_grid_for_comparison=self.kmag_grid_corner[0,0,:]
-        print("cosmo_stats.__init__: self.kmag_grid_for_comparison.shape=",self.kmag_grid_for_comparison.shape)
               
         self.kpar_column_centre= np.abs(fftshift(self.kz_vec_for_box_corner))                                      # magnitudes of kpar for a representative column along the line of sight (z-like)
         self.kperp_slice_centre= np.sqrt(fftshift(kx_grid_corner)**2+fftshift(ky_grid_corner)**2)[:,:,0] # magnitudes of kperp for a representative slice transverse to the line of sight (x- and y-like)
@@ -1212,7 +1210,6 @@ class cosmo_stats(object):
             Nkperp=int(Nxy/bin_denom)
         if Nkpar==0:
             Nkpar=int(Nz/bin_denom)
-        print("cosmo_stats.__init__: Nkperp,Nkpar (number of bins per cylindrical direction) =",Nkpar,Nkperp)
         self.Nkperp=Nkperp # for power spec binning
         self.Nkpar=Nkpar
         self.kmax_box_xy= pi/self.Deltaxy
@@ -1221,7 +1218,6 @@ class cosmo_stats(object):
         self.kmin_box_z=  twopi/self.Lz
         
         # voxel grids for cyl binning
-        print("Nxy=",Nxy)
         if (self.Nkpar is not None and self.Nkpar!=0 and Nxy>1): # first two conditions: 3D box: make sure you don't intend to bin spherically
                                                                  # last condition: intend to create a 1D box
             kperpbins=np.linspace(0,self.kmax_box_xy, self.Nkperp+1)
