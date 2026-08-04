@@ -310,7 +310,7 @@ class beam_effects(object):
         self.DeltaDc=self.Dc_hi-self.Dc_lo
         self.deltaz=self.z_hi-self.z_lo
         self.surv_channels=np.arange(self.nu_lo.value,self.nu_hi.value,self.Deltanu.value)*self.Deltanu.unit
-        self.r0=comoving_distance(self.z_ctr)
+        self.comoving_mid=comoving_distance(self.z_ctr)
         self.layer_foregrounds=layer_foregrounds
         self.b_NS=b_NS
         self.b_EW=b_EW
@@ -372,12 +372,10 @@ class beam_effects(object):
                             -CST_deltanu.value)*CST_deltanu.unit # here and in reconfigure_CST_beam, now inclusive of both endpoints     
         CST_redshifts=np.asarray([nu_HI_z0/freq-1 for freq in CST_freqs]) # checked = no frequency units that remain unconverted as of 29th Jul 2026 12:23
         CST_comoving=np.asarray([comoving_distance(z).value for z in CST_redshifts])*u.Mpc
-        N_CST_freqs=len(CST_comoving)
-        comoving_mid=CST_comoving[int(N_CST_freqs//2)]
-        CSTPSF_xy_ext=2*transverse_half_angle*comoving_mid # stricter than the horizon limit. 2x is to account for +/- approved-small-angle from boresight
+        CSTPSF_xy_ext=2*transverse_half_angle*self.comoving_mid # stricter than the horizon limit. 2x is to account for +/- approved-small-angle from boresight
         CSTPSF_xy_vec= CSTPSF_xy_ext*fftshift(fftfreq(Npix))
         self.Npix=Npix
-        CST_z_vec=CST_comoving-comoving_mid
+        CST_z_vec=CST_comoving-self.comoving_mid
         kperpmin_PSFCST=twopi/CSTPSF_xy_ext
         kperpmax_PSFCST=Npix/CSTPSF_xy_ext*pi
         kparmin_PSF=twopi/self.DeltaDc
@@ -448,7 +446,7 @@ class beam_effects(object):
                         CST_syst_ensemble[i,j+1,:,:,:]=repointed
             print("finished repointing beams for this complexity case")
             
-            CST_freqs=np.arange(CST_lo.value,CST_hi.value,CST_deltanu.value)*CST_deltanu.unit
+            # CST_freqs=np.arange(CST_lo.value,CST_hi.value,CST_deltanu.value)*CST_deltanu.unit
             if heavy_beam_recalc: # redo the beam synthesis
                 fidu_synthesis=generate_PSF(array_version=array_version,N_timesteps=self.N_timesteps,
                                                     N_pbws_pert=0,nu_ctr=nu_ctr,
@@ -667,9 +665,7 @@ class beam_effects(object):
         self.P_flat=P_flat
         self.k_for_flat=np.linspace(self.kparmin_surv,self.kparmax_surv,10*self.Nkpar_surv)
         if self.layer_foregrounds:
-            # self.freqs_for_fg=np.flip(self.bw.value*fftshift(fftfreq(self.N_chan)))*self.bw.unit
-            self.freqs_for_fg= np.linspace(self.nu_hi.value,self.nu_lo.value, # descending in frequency to match the iteration over increasing redshift
-                                           self.Nchan,endpoint=True)*self.Deltanu.unit
+            self.freqs_for_fg=np.flip(self.bw.value*fftshift(fftfreq(self.N_chan)))*self.bw.unit # descending in frequency to match the iteration over increasing redshift
             fg_box=np.zeros((self.Npix,self.Npix,self.Nchan))*u.mK
             fg_info_cases=[ [335.4*foreground_temp_unit, 150*u.MHz, -2.8,  0.1],   # synchrotron
                             [33.5 *foreground_temp_unit, 150*u.MHz, -2.15, 0.01] ] # free-free
@@ -1671,11 +1667,7 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
         N_chan=int((bw_MHz/self.Delta_nu).decompose())
         print("generate_PSF.__init__: bw_MHz,self.Delta_nu,N_chan=",bw_MHz,self.Delta_nu,N_chan)
         self.N_chan=N_chan
-        nu_lo=self.nu_ctr_MHz-bw_MHz/2.
-        nu_hi=self.nu_ctr_MHz+bw_MHz/2.
-        # surv_channels_MHz=np.linspace(nu_hi,nu_lo,N_chan) # decr.
-        surv_channels_MHz=np.arange(nu_hi.value,nu_lo.value,-Delta_nu.value)*Delta_nu.unit # decr
-        surv_channels_MHz-=Delta_nu # to make this vec represent the same frequencies as its counterpart in beam_effects
+        surv_channels_MHz=bw_MHz*fftshift(fftfreq(N_chan))
         surv_channels_Hz=surv_channels_MHz.to(u.Hz)
         surv_wavelengths=c/surv_channels_Hz # incr.
         self.surv_wavelengths=surv_wavelengths.decompose()
