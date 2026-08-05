@@ -2288,6 +2288,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
               evol_thresh=def_evolution_threshold,
                   
               wedge_cut=False, layer_foregrounds=True, pointing_errors=[0.,0.,0.],
+              LoS_apo=True,transverse_apo=False,
                   
               freq_bin_width=CHORD_channel_width_MHz,
               N_timesteps=def_N_timesteps,
@@ -2427,7 +2428,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                     init_and_box_tol=0.05,CAMB_tol=0.05,                                 
                                     frac_tol_conv=frac_tol_conv,seed=seed,                                         
                                     ftol_deriv=1e-16,maxiter=5,   
-                                    LoS_apo=True,transverse_apo=False,
+                                    LoS_apo=LoS_apo,transverse_apo=transverse_apo,
                                     N_timesteps=N_timesteps,
 
                                     # CONVENIENCE
