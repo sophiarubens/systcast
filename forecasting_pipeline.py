@@ -424,7 +424,6 @@ class beam_effects(object):
             
             CST_domain=(CSTPSF_xy_vec,CSTPSF_xy_vec,CST_z_vec) # TODO verify not brittle to leave unitified. was the only problem 
             self.CST_z_vec=CST_z_vec
-            CSTPSF_xy_ext=CSTPSF_xy_vec[-1]-CSTPSF_xy_vec[0]
             self.CSTPSF_xy_ext=CSTPSF_xy_ext
             print("beam_effects.__init__: extrema of xy vec",np.min(CSTPSF_xy_vec),np.max(CSTPSF_xy_vec))
             print("beam_effects.__init__: extrema of CST z vec:",np.min(CST_z_vec),np.max(CST_z_vec))
