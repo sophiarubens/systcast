@@ -665,7 +665,7 @@ class beam_effects(object):
         self.P_flat=P_flat
         self.k_for_flat=np.linspace(self.kparmin_surv,self.kparmax_surv,10*self.Nkpar_surv)
         if self.layer_foregrounds:
-            self.freqs_for_fg=np.flip(self.bw.value*fftshift(fftfreq(self.N_chan)))*self.bw.unit # descending in frequency to match the iteration over increasing redshift
+            self.freqs_for_fg=np.flip(self.bw.value*fftshift(fftfreq(self.Nchan)))*self.bw.unit+self.nu_ctr # descending in frequency to match the iteration over increasing redshift
             fg_box=np.zeros((self.Npix,self.Npix,self.Nchan))*u.mK
             fg_info_cases=[ [335.4*foreground_temp_unit, 150*u.MHz, -2.8,  0.1],   # synchrotron
                             [33.5 *foreground_temp_unit, 150*u.MHz, -2.15, 0.01] ] # free-free
