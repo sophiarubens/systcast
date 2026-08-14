@@ -407,7 +407,9 @@ class beam_effects(object):
 
         if beam_sim_directory!="":
             already_imported_fidu_CST=Path("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy").is_file()
-            already_imported_syst_CST=Path("syst_boxes_"+ioname+".npy").is_file()
+            already_imported_syst_CST=True
+            if N_CST_types>1:
+                already_imported_syst_CST=Path("syst_boxes_"+ioname+".npy").is_file()
             if N_CST_types==1: # missing piece of the puzzle to prevent redundant CST translation
                 already_imported_syst_CST=True
             if heavy_beam_recalc and not already_imported_fidu_CST:
@@ -2371,7 +2373,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         for b in range(N_max_pointing_errors_each_CST[a-1]):
             point=N_pointing_errors_each_CST[a-1][b]
             complexity_cases.append([a,point])
-            complexity_ids.append([a,str(point)]) # Nth attempt to get my Fir environment plot labels (titles on LHS and x-axis labels on RHS) to stop rendering as [a, np.int8(b)]
+            complexity_ids.append("[{},{}]".format(a,point)) # previous version rendered locally as [a,'b']
 
     power_quantities_all=[]
     Delta2_quantities_all=[]
