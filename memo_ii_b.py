@@ -39,9 +39,9 @@ power_comparison_plots(redo_window_calc=True, # redo the Monte Carlos
                        redo_box_calc=True, # re-synthesize the PSF; reimports CST only if files DNE
                        which_power="P", # plotting choice
                        nu_ctr=600.*u.MHz, frac_tol_conv=0.25, freq_bin_width=0.210*u.MHz, # k-parallel observation conditioning
-                       array_version="full", Npix=512, transverse_half_angle=pi/4,# k-perp observation conditioning
-                       antenna_dist="frame", # spatial distribution of systematics; "frame" is the default
-                       LoS_apo=True,transverse_apo=True, # obv the LoS apodization stays, but I want to check what happens to high k-perps when I add transverse apo
+                       array_version="full", Npix=256, transverse_half_angle=pi/4,# k-perp observation conditioning
+                       antenna_dist="hybrid", # spatial distribution of systematics; "frame" is the default
+                       LoS_apo=True,transverse_apo=False, # obv the LoS apodization stays, but I want to check what happens to high k-perps when I add transverse apo (later I realized that would be bad... other side of the convolution theorem angle...)
                        pointing_errors=pointingerrs[:N_CST_total], # specify the systematics
                        CST_lo=0.58*u.GHz,CST_hi=0.62*u.GHz,CST_deltanu=2e-4*u.GHz, # CST freqs for import from files
                        N_timesteps=1, # amount of rotation synthesis

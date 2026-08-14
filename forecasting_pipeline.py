@@ -378,7 +378,9 @@ class beam_effects(object):
         self.fgfreqs=np.asarray([self.nu_lo.value,self.nu_hi.value])*self.nu_ctr.unit
 
         self.N_timesteps=           N_timesteps
-        N_CST_types=len(CST_f_head_syst)+1 # +1 is for the fiducial type
+        print("beam_effects.__init__: CST_f_head_syst=",CST_f_head_syst)
+        N_nontrivial_syst_CST_types=np.sum(CST_f_head_syst!="") # len(CST_f_head_syst) didn't work because it counted "" as an entry
+        N_CST_types=N_nontrivial_syst_CST_types+1 # +1 is for the fiducial type
 
         if np.all(pointing_errors==[[0.,0.,0.]]):
             N_pointing_errors=[0]
@@ -1792,13 +1794,13 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
         deltauv=1/theta_ext
         uv_ext=deltauv*Npix
         if np.max(np.abs(uv_synth))>uv_ext/2:
-            print("WARNING: the uv extent that follows from the chosen Npix and transverse half-angle\nis too constrained to fit all baselines of the array simulated here = \nthis info gets discarded")
+            print("\nWARNING: the uv extent that follows from the chosen Npix and transverse half-angle is too\nconstrained to fit all baselines of the array simulated here = this info gets discarded\n")
         print("generate_PSF.__init__: theta_ext, deltauv, uv_ext =",theta_ext, deltauv, uv_ext)
         self.uv_ext=uv_ext
         self.CSTPSF_xy=theta_ext*self.comoving_ctr*fftshift(fftfreq(Npix))
 
         uvbins_use=uv_ext*fftshift(fftfreq(Npix))
-        print("generate_PSF.__init__: check uv gridding resolution: deltauv - (uvbins_use[-1]-uvbins_use[-1]) =",deltauv - (uvbins_use[-1]-uvbins_use[-1]))
+        print("generate_PSF.__init__: check uv gridding resolution: deltauv - (uvbins_use[-1]-uvbins_use[-2]) =",deltauv - (uvbins_use[-1]-uvbins_use[-2]))
         uvbins_use=np.concatenate([uvbins_use,[uvbins_use[-1]+deltauv]])
         self.uvbins_use=uvbins_use
         self.d2u=deltauv**2
