@@ -402,8 +402,8 @@ class beam_effects(object):
         kperpmax_PSFCST=Npix/CSTPSF_xy_ext*pi
         kparmin_PSF=twopi/self.PSF_comoving_ext
         kparmax_PSF=self.Nchan/self.PSF_comoving_ext*pi
-        print("simulated k-perp extent:",kperpmin_PSFCST,kperpmax_PSFCST)
-        print("simulated k-par  extent:",kparmin_PSF,kparmax_PSF)
+        print("PSF k-perp extent:",kperpmin_PSFCST,kperpmax_PSFCST)
+        print("PSF k-par  extent:",kparmin_PSF,kparmax_PSF)
 
         if beam_sim_directory!="":
             already_imported_fidu_CST=Path("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy").is_file()
@@ -2363,12 +2363,12 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         N_max_pointing_errors_each_CST=[len(pointing_errors)]
     N_pointing_errors_each_CST=[np.arange(0,N_max_pt_er+1,dtype=np.int8) for N_max_pt_er in N_max_pointing_errors_each_CST]
     complexity_cases=[]
+    complexity_ids=[]
     for a in range(1,N_CST_types+1):
         for b in range(N_max_pointing_errors_each_CST[a-1]):
             point=N_pointing_errors_each_CST[a-1][b]
             complexity_cases.append([a,point])
-
-    complexity_ids=["{}".format(case) for case in complexity_cases]
+            complexity_ids.append([a,str(point)]) # Nth attempt to get my Fir environment plot labels (titles on LHS and x-axis labels on RHS) to stop rendering as [a, np.int8(b)]
 
     power_quantities_all=[]
     Delta2_quantities_all=[]
