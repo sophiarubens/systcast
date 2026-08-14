@@ -113,12 +113,12 @@ def discretize_LoS(freq_lo, freq_hi, freq_delta, rest_freq=nu_HI_z0):
     freq_lo=freq_lo.to(freq_delta.unit)
     freqs_descending=np.arange(freq_hi.value,freq_lo.value,-freq_delta.value)*freq_delta.unit
     Nz=len(freqs_descending)
-    redshifts_ascending=rest_freq/freqs_descending-1
-    comoving_absolute=np.asarray([comoving_distance(redshift) for redshift in redshifts_ascending])*u.Mpc
+    redshifts_ascending=rest_freq.to(freqs_descending.unit)/freqs_descending-1
+    comoving_absolute=np.asarray([comoving_distance(redshift).value for redshift in redshifts_ascending])*u.Mpc # the Mpc are built into comoving_distance but I have to strip them for list comprehension purposes
     comoving_ext=comoving_absolute[-1]-comoving_absolute[0]
     freq_mid=(freq_hi+freq_lo)/2
     redshift_ctr=rest_freq/freq_mid-1
-    comoving_ctr=comoving_distance(redshift_ctr)*u.Mpc # seems like a superfluous call, but this is to establish consistency with the PSF-box ecosystem. the old way was not robust against there being an even vs. odd number of voxels along the LoS. another fix could've been to fftfreq-ify these channels, but that is lowkey super overengineered because these are CST channels and the the box I form here never gets Fourier operated on until a bunch of interpolation and postprocessing down the line
+    comoving_ctr=comoving_distance(redshift_ctr) # seems like a superfluous call, but this is to establish consistency with the PSF-box ecosystem. the old way was not robust against there being an even vs. odd number of voxels along the LoS. another fix could've been to fftfreq-ify these channels, but that is lowkey super overengineered because these are CST channels and the the box I form here never gets Fourier operated on until a bunch of interpolation and postprocessing down the line
     comoving_centred=comoving_absolute-comoving_ctr
     flat_sky_centred=comoving_ext*fftshift(fftfreq(Nz))
     flat_sky_absolute=flat_sky_centred+comoving_ctr
@@ -343,6 +343,12 @@ class beam_effects(object):
         N_ant=N_ant
         
         # cylindrically binned survey k-modes and box considerations
+        _, \
+        self.Nchan, self.PSF_comoving_ext, _, \
+        _, \
+        _, _, \
+        _, PSF_flat_sky_comoving_centred = discretize_LoS(self.nu_lo, self.nu_hi, delta_nu)
+
         kpar_surv=kpar(self.nu_ctr,self.Deltanu,self.Nchan) # not used for cosmo_stats calculations, but convenient to keep around for forecasting
         self.kpar_surv=kpar_surv
         kparmin_surv=kpar_surv[0]
@@ -364,17 +370,7 @@ class beam_effects(object):
         self.kmin_surv=np.sqrt(kperpmin_surv**2+kparmin_surv**2)
         self.kmax_surv=np.sqrt(kperpmax_surv**2+kparmax_surv**2)
 
-        # self.Lsurv_box_xy=twopi/kperpmin_surv
-        # self.Nxy_box=int(self.Lsurv_box_xy*kperpmax_surv/pi)
-        # self.Lsurv_box_z=twopi/kparmin_surv
-        # self.Nz_box=int(self.Lsurv_box_z*kparmax_surv/pi)
-
-        PSF_freqs, \
-        self.Nchan, self.PSF_comoving_ext, PSF_comoving_ctr, \
-        PSF_redshifts, \
-        PSF_comoving_absolute, PSF_comoving_centred, \
-        PSF_flat_sky_absolute, PSF_flat_sky_centred = discretize_LoS(self.nu_hi, self.nu_lo, delta_nu)
-        PSF_z_vec=PSF_flat_sky_centred
+        PSF_z_vec=PSF_flat_sky_comoving_centred
         self.PSF_Nz=self.Nchan
         print("beam_effects.__init__: self.PSF_Nz=",self.PSF_Nz)
         print("beam_effects.__init__: self.bw,self.Deltanu,self.Nchan=",self.bw,self.Deltanu,self.Nchan)
@@ -397,7 +393,7 @@ class beam_effects(object):
         _, _, _, \
         _, \
         _, CST_z_vec, \
-        _, _ = discretize_LoS(CST_hi_safe, CST_lo_safe, CST_deltanu)
+        _, _ = discretize_LoS(CST_lo_safe, CST_hi_safe, CST_deltanu)
     
         CSTPSF_xy_ext=2*transverse_half_angle*self.comoving_mid # stricter than the horizon limit. 2x is to account for +/- approved-small-angle from boresight
         CSTPSF_xy_vec= CSTPSF_xy_ext*fftshift(fftfreq(Npix))
@@ -1682,11 +1678,6 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
         freq_lo=self.nu_ctr-halfbw
         freq_hi=self.nu_ctr+halfbw
 
-        # surv_channels_MHz, \
-        # N_chan, comoving_ext, comoving_ctr\
-        # redshifts_ascending, \
-        # comoving_absolute, comoving_centred, \
-        # flat_sky_absolute, flat_sky_centred = ...
         surv_channels_MHz, N_chan, _, comoving_ctr, _, _, _, _, flat_sky_centred = discretize_LoS(freq_lo,freq_hi,self.Delta_nu)
 
         print("generate_PSF.__init__: bw_MHz,self.Delta_nu,N_chan=",bw_MHz,self.Delta_nu,N_chan)
@@ -1908,16 +1899,10 @@ class reconfigure_CST_beam(object):
         delta_nu_CST=delta_nu_CST.to(u.GHz)
 
         freqs_GHz, \
-        Nfreqs, comoving_ext, comoving_middle, \
-        zs_for_xis, \
+        Nfreqs, _, comoving_middle, \
+        _, \
         xis, self.CST_z_vec, \
-        flat_sky_absolute, flat_sky_centred, = discretize_LoS(freq_lo,freq_hi,delta_nu_CST)
-
-        # return freqs_descending, \
-        #            Nz, comoving_ext, comoving_ctr, \
-        #            redshifts_ascending, \
-        #            comoving_absolute, comoving_centred, \
-        #            flat_sky_absolute, flat_sky_centred
+        _, _, = discretize_LoS(freq_lo,freq_hi,delta_nu_CST)
 
         freqs=freqs_GHz.to(u.MHz) # descending; MHz
         self.freqs=freqs
