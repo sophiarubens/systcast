@@ -108,6 +108,26 @@ def comoving_dist_arg(z,Omegam=Omegam,OmegaLambda=OmegaLambda): # this is 1/ E(z
 def comoving_distance(z=0.5,H0=H0,Omegam=Omegam,OmegaLambda=OmegaLambda):
     integral,_=quad(comoving_dist_arg,0,z,args=(Omegam,OmegaLambda,))
     return (c.value*integral)/(H0.value*1000)*u.Mpc
+def discretize_LoS(freq_lo, freq_hi, freq_delta, rest_freq=nu_HI_z0):
+    freq_hi=freq_hi.to(freq_delta.unit)
+    freq_lo=freq_lo.to(freq_delta.unit)
+    freqs_descending=np.arange(freq_hi.value,freq_lo.value,-freq_delta.value)*freq_delta.unit
+    Nz=len(freqs_descending)
+    redshifts_ascending=rest_freq/freqs_descending-1
+    comoving_absolute=np.asarray([comoving_distance(redshift) for redshift in redshifts_ascending])*u.Mpc
+    comoving_ext=comoving_absolute[-1]-comoving_absolute[0]
+    freq_mid=(freq_hi+freq_lo)/2
+    redshift_ctr=rest_freq/freq_mid-1
+    comoving_ctr=comoving_distance(redshift_ctr)*u.Mpc # seems like a superfluous call, but this is to establish consistency with the PSF-box ecosystem. the old way was not robust against there being an even vs. odd number of voxels along the LoS. another fix could've been to fftfreq-ify these channels, but that is lowkey super overengineered because these are CST channels and the the box I form here never gets Fourier operated on until a bunch of interpolation and postprocessing down the line
+    comoving_centred=comoving_absolute-comoving_ctr
+    flat_sky_centred=comoving_ext*fftshift(fftfreq(Nz))
+    flat_sky_absolute=flat_sky_centred+comoving_ctr
+
+    return freqs_descending, \
+           Nz, comoving_ext, comoving_ctr, \
+           redshifts_ascending, \
+           comoving_absolute, comoving_centred, \
+           flat_sky_absolute, flat_sky_centred
 
 # typical trivial conversions
 def freq2z(nu_rest,nu_obs):
@@ -298,8 +318,6 @@ class beam_effects(object):
         self.nu_ctr=nu_ctr
         self.Deltanu=delta_nu
         self.bw=nu_ctr*evolution_threshold
-        self.Nchan=int(self.bw/self.Deltanu.to(self.bw.unit))
-        print("beam_effects.__init__: self.bw,self.Deltanu,self.Nchan=",self.bw,self.Deltanu,self.Nchan)
         self.z_ctr=freq2z(nu_HI_z0,nu_ctr)
         self.nu_lo=self.nu_ctr-self.bw/2.
         self.z_hi=freq2z(nu_HI_z0,self.nu_lo)
@@ -307,9 +325,7 @@ class beam_effects(object):
         self.nu_hi=self.nu_ctr+self.bw/2.
         self.z_lo=freq2z(nu_HI_z0,self.nu_hi)
         self.Dc_lo=comoving_distance(self.z_lo)
-        self.DeltaDc=self.Dc_hi-self.Dc_lo
         self.deltaz=self.z_hi-self.z_lo
-        self.surv_channels=np.arange(self.nu_lo.value,self.nu_hi.value,self.Deltanu.value)*self.Deltanu.unit
         self.comoving_mid=comoving_distance(self.z_ctr)
         self.layer_foregrounds=layer_foregrounds
         self.b_NS=b_NS
@@ -327,7 +343,7 @@ class beam_effects(object):
         N_ant=N_ant
         
         # cylindrically binned survey k-modes and box considerations
-        kpar_surv=kpar(self.nu_ctr,self.Deltanu,self.Nchan)
+        kpar_surv=kpar(self.nu_ctr,self.Deltanu,self.Nchan) # not used for cosmo_stats calculations, but convenient to keep around for forecasting
         self.kpar_surv=kpar_surv
         kparmin_surv=kpar_surv[0]
         kparmax_surv=kpar_surv[-1]
@@ -348,12 +364,20 @@ class beam_effects(object):
         self.kmin_surv=np.sqrt(kperpmin_surv**2+kparmin_surv**2)
         self.kmax_surv=np.sqrt(kperpmax_surv**2+kparmax_surv**2)
 
-        self.Lsurv_box_xy=twopi/kperpmin_surv
-        self.Nxy_box=int(self.Lsurv_box_xy*kperpmax_surv/pi)
-        self.Lsurv_box_z=twopi/kparmin_surv
-        self.Nz_box=int(self.Lsurv_box_z*kparmax_surv/pi)
-        PSF_z_vec=self.DeltaDc*fftshift(fftfreq(self.Nchan))
-        print("beam_effects.__init__: Nxy_box,Nz_box =",self.Nxy_box,self.Nz_box)
+        # self.Lsurv_box_xy=twopi/kperpmin_surv
+        # self.Nxy_box=int(self.Lsurv_box_xy*kperpmax_surv/pi)
+        # self.Lsurv_box_z=twopi/kparmin_surv
+        # self.Nz_box=int(self.Lsurv_box_z*kparmax_surv/pi)
+
+        PSF_freqs, \
+        self.Nchan, self.PSF_comoving_ext, PSF_comoving_ctr, \
+        PSF_redshifts, \
+        PSF_comoving_absolute, PSF_comoving_centred, \
+        PSF_flat_sky_absolute, PSF_flat_sky_centred = discretize_LoS(self.nu_hi, self.nu_lo, delta_nu)
+        PSF_z_vec=PSF_flat_sky_centred
+        self.PSF_Nz=self.Nchan
+        print("beam_effects.__init__: self.PSF_Nz=",self.PSF_Nz)
+        print("beam_effects.__init__: self.bw,self.Deltanu,self.Nchan=",self.bw,self.Deltanu,self.Nchan)
 
         self.fgfreqs=np.asarray([self.nu_lo.value,self.nu_hi.value])*self.nu_ctr.unit
 
@@ -368,18 +392,20 @@ class beam_effects(object):
 
         CST_hi_safe=CST_hi.to(CST_deltanu.unit)
         CST_lo_safe=CST_lo.to(CST_deltanu.unit)
-        CST_freqs=np.arange(CST_hi_safe.value,CST_lo_safe.value,
-                            -CST_deltanu.value)*CST_deltanu.unit # here and in reconfigure_CST_beam, now inclusive of both endpoints     
-        CST_redshifts=np.asarray([nu_HI_z0/freq-1 for freq in CST_freqs]) # checked = no frequency units that remain unconverted as of 29th Jul 2026 12:23
-        CST_comoving=np.asarray([comoving_distance(z).value for z in CST_redshifts])*u.Mpc
+
+        CST_freqs, \
+        _, _, _, \
+        _, \
+        _, CST_z_vec, \
+        _, _ = discretize_LoS(CST_hi_safe, CST_lo_safe, CST_deltanu)
+    
         CSTPSF_xy_ext=2*transverse_half_angle*self.comoving_mid # stricter than the horizon limit. 2x is to account for +/- approved-small-angle from boresight
         CSTPSF_xy_vec= CSTPSF_xy_ext*fftshift(fftfreq(Npix))
         self.Npix=Npix
-        CST_z_vec=CST_comoving-self.comoving_mid
         kperpmin_PSFCST=twopi/CSTPSF_xy_ext
         kperpmax_PSFCST=Npix/CSTPSF_xy_ext*pi
-        kparmin_PSF=twopi/self.DeltaDc
-        kparmax_PSF=self.Nchan/self.DeltaDc*pi
+        kparmin_PSF=twopi/self.PSF_comoving_ext
+        kparmax_PSF=self.Nchan/self.PSF_comoving_ext*pi
         print("simulated k-perp extent:",kperpmin_PSFCST,kperpmax_PSFCST)
         print("simulated k-par  extent:",kparmin_PSF,kparmax_PSF)
 
@@ -445,7 +471,6 @@ class beam_effects(object):
                         CST_syst_ensemble[i,j+1,:,:,:]=repointed
             print("finished repointing beams for this complexity case")
             
-            # CST_freqs=np.arange(CST_lo.value,CST_hi.value,CST_deltanu.value)*CST_deltanu.unit
             if heavy_beam_recalc: # redo the beam synthesis
                 fidu_synthesis=generate_PSF(array_version=array_version,N_timesteps=self.N_timesteps,
                                                     N_pbws_pert=0,nu_ctr=nu_ctr,
@@ -506,12 +531,7 @@ class beam_effects(object):
             self.fidu=fidu_box_PSF
             self.syst=syst_box_PSF
 
-            self.CST_z_ext=CST_z_vec[-1]-CST_z_vec[0]
-            self.CST_Nz=len(CST_z_vec)
-            self.PSF_Nz=self.Nchan
-            print("self.PSF_Nz=",self.PSF_Nz)
-            self.PSF_z_ext=self.Dc_hi-self.Dc_lo
-            self.PSF_Delta_z=self.PSF_z_ext/self.PSF_Nz
+            self.PSF_Delta_z=self.PSF_comoving_ext/self.PSF_Nz
 
         # groundwork-informed forecasting considerations
         self.P_fid_for_cont_pwr=P_fid_for_cont_pwr
@@ -524,8 +544,6 @@ class beam_effects(object):
         kmax_CAMB=(1+CAMB_tol)*kmax_box_and_init*np.sqrt(3) # factor of sqrt(3) from pythag theorem for box to make extrapolation less likely to be necessary
         ksph,self.Ptruesph=self.get_21cm_power_spec(self.pars_set_cosmo,0.1*kmin_CAMB,10*kmax_CAMB)
         self.ksph=ksph/u.Mpc # by construction
-        self.Deltabox_xy=self.Lsurv_box_xy/self.Nxy_box
-        self.Deltabox_z= self.Lsurv_box_z/ self.Nz_box
         self.LoS_apo=LoS_apo
         self.transverse_apo=transverse_apo
 
@@ -676,7 +694,7 @@ class beam_effects(object):
             self.fg_box=fg_box # centre-origin
             print("beam_effects.calc_power_contamination: fg_box.shape =",fg_box.shape)
 
-            fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_z_ext,
+            fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_comoving_ext,
                            LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                            T_pristine=fg_box)
             fg.generate_P()
@@ -685,9 +703,9 @@ class beam_effects(object):
             self.P_xx_xx_xx_fg=fg.P_binned *fg_box.unit**2 *self.Lsurv_box_xy.unit**3
             print("                           fg power calc complete")
 
-        print("Lz that will be used to initialize cosmo_stats: ",self.PSF_z_ext)
+        print("Lz that will be used to initialize cosmo_stats: ",self.PSF_comoving_ext)
         print("fg_box.shape, self.Npix, self.PSF_Nz =",fg_box.shape, self.Npix, self.PSF_Nz)
-        co_fi_xx_fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_z_ext,
+        co_fi_xx_fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_comoving_ext,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
                                 effective_primary_CST=self.fi_eff_primary_box, z_vec_for_CST=self.CST_z_vec,
@@ -697,7 +715,7 @@ class beam_effects(object):
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
         self.kperpbins_internal=co_fi_xx_fg.kperpbins
         self.kparbins_internal=co_fi_xx_fg.kparbins
-        co_fi_sy_fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_z_ext,
+        co_fi_sy_fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_comoving_ext,
                                 P_fid=P_cosmo,k_fid=self.ksph,
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
                                 effective_primary_CST=self.sy_eff_primary_box, z_vec_for_CST=self.CST_z_vec,
@@ -705,7 +723,7 @@ class beam_effects(object):
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
-        xx_fi_sy_fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_z_ext,
+        xx_fi_sy_fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_comoving_ext,
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
                                 effective_primary_CST=self.sy_eff_primary_box, z_vec_for_CST=self.CST_z_vec,
                                 T_pristine=fg_box,
@@ -713,7 +731,7 @@ class beam_effects(object):
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
-        xx_fi_xx_fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_z_ext,
+        xx_fi_xx_fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_comoving_ext,
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
                                 effective_primary_CST=self.fi_eff_primary_box, z_vec_for_CST=self.CST_z_vec,
                                 T_pristine=fg_box,
@@ -721,7 +739,7 @@ class beam_effects(object):
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
-        co_fi_xx_xx=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_z_ext,
+        co_fi_xx_xx=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_comoving_ext,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
                                 effective_primary_CST=self.fi_eff_primary_box, z_vec_for_CST=self.CST_z_vec,
@@ -729,7 +747,7 @@ class beam_effects(object):
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
-        co_fi_sy_xx=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_z_ext,
+        co_fi_sy_xx=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_comoving_ext,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
                                 effective_primary_CST=self.sy_eff_primary_box, z_vec_for_CST=self.CST_z_vec,
@@ -737,7 +755,7 @@ class beam_effects(object):
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
-        co_xx_xx_fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_z_ext,
+        co_xx_xx_fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_comoving_ext,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
@@ -832,7 +850,7 @@ class beam_effects(object):
                 self.kpar_for_cosmo=   co_xx_xx_fg.kparbins
             self.P_co_xx_xx_fg= co_xx_xx_fg.P_binned_MC_complete
             print("cosmo +                    fg MC         complete")
-        COSMOTEST=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_z_ext,
+        COSMOTEST=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_comoving_ext,
                               P_fid=P_cosmo,k_fid=self.ksph, 
                               Nxy=self.Npix,Nz=self.PSF_Nz,
                               LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
@@ -1660,18 +1678,25 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
         
         # line-of-sight quantities
         bw_MHz=self.nu_ctr_MHz*evolution_threshold # ongoing investigation into factor of two
-        N_chan=int((bw_MHz/self.Delta_nu).decompose())
+        halfbw=self.bw/2
+        freq_lo=self.nu_ctr-halfbw
+        freq_hi=self.nu_ctr+halfbw
+
+        # surv_channels_MHz, \
+        # N_chan, comoving_ext, comoving_ctr\
+        # redshifts_ascending, \
+        # comoving_absolute, comoving_centred, \
+        # flat_sky_absolute, flat_sky_centred = ...
+        surv_channels_MHz, N_chan, _, comoving_ctr, _, _, _, _, flat_sky_centred = discretize_LoS(freq_lo,freq_hi,self.Delta_nu)
+
         print("generate_PSF.__init__: bw_MHz,self.Delta_nu,N_chan=",bw_MHz,self.Delta_nu,N_chan)
         self.N_chan=N_chan
-        surv_channels_MHz=bw_MHz*fftshift(fftfreq(N_chan))
+        self.surv_channels_MHz=surv_channels_MHz
+        self.flat_sky_centred=flat_sky_centred
         surv_channels_Hz=surv_channels_MHz.to(u.Hz)
         surv_wavelengths=c/surv_channels_Hz # incr.
         self.surv_wavelengths=surv_wavelengths.decompose()
-        z_channels=nu_HI_z0/surv_channels_MHz-1.
-        comoving_distances_channels=np.asarray([comoving_distance(chan).value for chan in z_channels]) # incr.
-        self.comoving_distances_channels=comoving_distances_channels*u.Mpc
-        self.ctr_chan_comov_dist=self.comoving_distances_channels[N_chan//2]
-        self.surv_channels_MHz=surv_channels_MHz
+        self.comoving_ctr=comoving_ctr
         self.lambda_obs=surv_wavelengths[0]
 
         # helper args
@@ -1770,13 +1795,12 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
         self.uv_synth=uv_synth # units are wavelengths
         print("synthesized rotation")
 
-        # Wed 29th Jul 2026 edition
         theta_ext=2*transverse_half_angle
         deltauv=1/theta_ext
         uv_ext=deltauv*Npix
         print("generate_PSF.__init__: theta_ext, deltauv, uv_ext =",theta_ext, deltauv, uv_ext)
         self.uv_ext=uv_ext
-        self.CSTPSF_xy=theta_ext*self.ctr_chan_comov_dist*fftshift(fftfreq(Npix))
+        self.CSTPSF_xy=theta_ext*self.comoving_ctr*fftshift(fftfreq(Npix))
 
         uvbins_use=uv_ext*fftshift(fftfreq(Npix))
         print("generate_PSF.__init__: check uv gridding resolution: deltauv - (uvbins_use[-1]-uvbins_use[-1]) =",deltauv - (uvbins_use[-1]-uvbins_use[-1]))
@@ -1854,12 +1878,9 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
         self.box=box_xyz
 
         # generate a box of r-values (necessary for interpolation to survey domain in cosmo_stats as called by beam_effects)
-        xy_vec=self.CSTPSF_xy
-        comoving_extent=self.comoving_distances_channels[-1]-self.comoving_distances_channels[0]
-        z_vec=comoving_extent*fftshift(fftfreq(self.N_chan)) 
-        print("generate_PSF.stack_to_box: z_vec min,max =",np.min(z_vec),np.max(z_vec))
-        self.xy_vec=xy_vec
-        self.z_vec=z_vec
+        self.xy_vec=self.CSTPSF_xy
+        self.z_vec=self.flat_sky_centred
+        print("generate_PSF.stack_to_box: z_vec min,max =",np.min(self.z_vec),np.max(self.z_vec))
 ####################################################################################################################################################################################################################################
 
 class reconfigure_CST_beam(object):
@@ -1885,20 +1906,24 @@ class reconfigure_CST_beam(object):
         freq_hi=freq_hi.to(u.GHz)
         freq_lo=freq_lo.to(u.GHz)
         delta_nu_CST=delta_nu_CST.to(u.GHz)
-        freqs_GHz=np.arange(freq_hi.value,freq_lo.value,
-                            -delta_nu_CST.value)*delta_nu_CST.unit # descending; usually still in GHz
+
+        freqs_GHz, \
+        Nfreqs, comoving_ext, comoving_middle, \
+        zs_for_xis, \
+        xis, self.CST_z_vec, \
+        flat_sky_absolute, flat_sky_centred, = discretize_LoS(freq_lo,freq_hi,delta_nu_CST)
+
+        # return freqs_descending, \
+        #            Nz, comoving_ext, comoving_ctr, \
+        #            redshifts_ascending, \
+        #            comoving_absolute, comoving_centred, \
+        #            flat_sky_absolute, flat_sky_centred
+
         freqs=freqs_GHz.to(u.MHz) # descending; MHz
         self.freqs=freqs
-        Nfreqs=len(freqs)
         self.Nfreqs=Nfreqs
-        zs_for_xis=[nu_HI_z0/freq-1 for freq in freqs] # ascending
-        xis=[comoving_distance(z) for z in zs_for_xis] # ascending
         xis=Quantity(xis) # for the typical coeval approximation
         self.xis=xis
-        nu_ctr=(freq_hi+freq_lo)/2
-        z_ctr=nu_HI_z0/nu_ctr-1
-        comoving_middle=comoving_distance(z_ctr) # seems like a superfluous call, but this is to establish consistency with the PSF-box ecosystem. the old way was not robust against there being an even vs. odd number of voxels along the LoS. another fix could've been to fftfreq-ify these channels, but that is lowkey super overengineered because these are CST channels and the the box I form here never gets Fourier operated on until a bunch of interpolation and postprocessing down the line
-        self.CST_z_vec=xis-comoving_middle
 
         if beam_sim_directory is None:
             print("Do you really mean to attempt CST imports from the working directory?")
