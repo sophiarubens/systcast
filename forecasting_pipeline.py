@@ -1840,9 +1840,11 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
 
         implane/=self.N_baselines
         uv_extent_for_kwarg=[-self.uv_ext/2,self.uv_ext/2,self.uv_ext/2,-self.uv_ext/2]
+        griddedmedian=0.5*np.median(gridded_uv)
         plt.figure()
         plt.imshow(gridded_uv,origin="lower",
-                   extent=uv_extent_for_kwarg)
+                   extent=uv_extent_for_kwarg,
+                   norm=CenteredNorm(griddedmedian,halfrange=0.5*griddedmedian))
         plt.colorbar()
         plt.title("gridded uv")
         plt.savefig("single_slice_gridded_uv.png")
