@@ -265,7 +265,7 @@ class beam_effects(object):
                  transverse_half_angle=flat_enough,
                  
                  # parameters of per-antenna systematic–aware beam synthesis
-                 N_pbws_pert:int=0,                 # number of beams to perturb
+                 N_primary_beams_pert:int=0,                 # number of beams to perturb
                  ioname:str="placeholder",          # unique identifier for saving files and figures related to the uv coverage of this scenario
                  antenna_distribution:str="random", # random, column, corner, or frame distribution of fiducial beam types?
                  array_version:str="full",          # full or pathfinder CHORD?
@@ -317,12 +317,12 @@ class beam_effects(object):
         nu_ctr=nu_ctr.to(u.MHz)
         self.nu_ctr=nu_ctr
         self.Deltanu=delta_nu
-        self.bw=nu_ctr*evolution_threshold
+        self.bandwidth=nu_ctr*evolution_threshold
         self.z_ctr=freq2z(nu_HI_z0,nu_ctr)
-        self.nu_lo=self.nu_ctr-self.bw/2.
+        self.nu_lo=self.nu_ctr-self.bandwidth/2.
         self.z_hi=freq2z(nu_HI_z0,self.nu_lo)
         self.Dc_hi=comoving_distance(self.z_hi)
-        self.nu_hi=self.nu_ctr+self.bw/2.
+        self.nu_hi=self.nu_ctr+self.bandwidth/2.
         self.z_lo=freq2z(nu_HI_z0,self.nu_hi)
         self.Dc_lo=comoving_distance(self.z_lo)
         self.deltaz=self.z_hi-self.z_lo
@@ -373,7 +373,7 @@ class beam_effects(object):
         PSF_z_vec=PSF_flat_sky_comoving_centred
         self.PSF_Nz=self.Nchan
         print("beam_effects.__init__: self.PSF_Nz=",self.PSF_Nz)
-        print("beam_effects.__init__: self.bw,self.Deltanu,self.Nchan=",self.bw,self.Deltanu,self.Nchan)
+        print("beam_effects.__init__: self.bandwidth,self.Deltanu,self.Nchan=",self.bandwidth,self.Deltanu,self.Nchan)
 
         self.fgfreqs=np.asarray([self.nu_lo.value,self.nu_hi.value])*self.nu_ctr.unit
 
@@ -469,7 +469,7 @@ class beam_effects(object):
             
             if heavy_beam_recalc: # redo the beam synthesis
                 fidu_synthesis=generate_PSF(array_version=array_version,N_timesteps=self.N_timesteps,
-                                                    N_pbws_pert=0,nu_ctr=nu_ctr,
+                                                    N_primary_beams_pert=0,nu_ctr=nu_ctr,
                                                     distribution="random",Npix=Npix, transverse_half_angle=transverse_half_angle,
                                                     Delta_nu=delta_nu,
                                                     sub_ensemble_of_CST_beams=fidu_box,
@@ -480,7 +480,7 @@ class beam_effects(object):
                 fidu_box_PSF=fidu_synthesis.box
                 if N_CST_types>1 or N_pointing_errors_max>0:
                     syst_synthesis=generate_PSF(array_version=array_version,N_timesteps=self.N_timesteps,
-                                                        N_pbws_pert=N_pbws_pert,nu_ctr=nu_ctr,
+                                                        N_primary_beams_pert=N_primary_beams_pert,nu_ctr=nu_ctr,
                                                         distribution=antenna_distribution,Npix=Npix, transverse_half_angle=transverse_half_angle,
                                                         Delta_nu=delta_nu,
                                                         sub_ensemble_of_CST_beams=[fidu_box,CST_syst_ensemble],
@@ -674,7 +674,7 @@ class beam_effects(object):
 
         foreground_temp_unit=u.K
         N_flat=10*self.Nkpar_surv
-        P_flat=np.ones(N_flat) *foreground_temp_unit**2 *self.Deltabox_xy.unit**3
+        P_flat=np.ones(N_flat) *foreground_temp_unit**2 *self.comoving_mid.unit**3
         self.P_flat=P_flat
         self.k_for_flat=np.linspace(self.kparmin_surv,self.kparmax_surv,10*self.Nkpar_surv)
         if self.layer_foregrounds:
@@ -696,7 +696,7 @@ class beam_effects(object):
             fg.generate_P()
             print("fg.P_unbinned.shape=",fg.P_unbinned.shape)
             fg.bin_power()
-            self.P_xx_xx_xx_fg=fg.P_binned *fg_box.unit**2 *self.Lsurv_box_xy.unit**3
+            self.P_xx_xx_xx_fg=fg.P_binned *fg_box.unit**2 *self.comoving_mid.unit**3
             print("                           fg power calc complete")
 
         print("Lz that will be used to initialize cosmo_stats: ",self.PSF_comoving_ext)
@@ -916,7 +916,7 @@ class beam_effects(object):
         self.sample_variance=np.sqrt(2/self.N_per_realization)*self.P_co_fi_sy_fg # rescale according to the number of realizations 
 
         sen=CHORD_sense(spacing=[self.b_EW,self.b_NS], n_side=[self.N_EW,self.N_NS], orientation=def_offset, center=None, dish_diameter=D, # array layout
-                        freq_cen=self.nu_ctr, integration_time=integration_s*u.s, time_per_day=hrs_per_night, n_days=100, bandwidth=self.bw, # obs config
+                        freq_cen=self.nu_ctr, integration_time=integration_s*u.s, time_per_day=hrs_per_night, n_days=100, bandwidth=self.bandwidth, # obs config
                         Trcv=35*u.K, latitude=DRAO_lat, tsky_ref_freq=400.*u.MHz, tsky_amplitude=25*u.K, # what's going on with the sky?
                         coherent=False, horizon_buffer=0.1*littleh/u.Mpc, foreground_model="optimistic") # processing details
         sen.sense2d()
@@ -1235,12 +1235,12 @@ class cosmo_stats(object):
         if (self.Nkpar is not None and self.Nkpar!=0 and Nxy>1): # first two conditions: 3D box: make sure you don't intend to bin spherically
                                                                  # last condition: intend to create a 1D box
             kperpbins=np.linspace(0,self.kmax_box_xy, self.Nkperp+1)
-            bw=kperpbins[1]-kperpbins[0]
-            self.kperpbins=kperpbins +0.5*bw
+            bin_width=kperpbins[1]-kperpbins[0]
+            self.kperpbins=kperpbins +0.5*bin_width
             
             kparbins=np.linspace(0,self.kmax_box_z-self.kmin_box_z, self.Nkpar+1)
-            bw=kparbins[1]-kparbins[0]
-            self.kparbins=kparbins +0.5*bw
+            bin_width=kparbins[1]-kparbins[0]
+            self.kparbins=kparbins +0.5*bin_width
             
             self.kperpbins_grid,self.kparbins_grid=np.meshgrid(self.kperpbins,self.kparbins, indexing="ij")
         
@@ -1252,8 +1252,8 @@ class cosmo_stats(object):
             Nbins= self.Nkperp if Nxy>1 else self.Nkpar
             
             kperpbins=np.linspace(0,kmax_box, Nbins+1)
-            bw=kperpbins[1]-kperpbins[0]
-            self.kperpbins=kperpbins +0.5*bw
+            bin_width=kperpbins[1]-kperpbins[0]
+            self.kperpbins=kperpbins +0.5*bin_width
 
             self.kparbins=None
             self.Nkpar=0
@@ -1613,7 +1613,7 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
                  b_NS:float=b_NS,b_EW:float=b_EW,                                  # N-S and E-W baseline lengths (m)
                  offset_rad:float=def_offset,                                      # (astropy-unitless because this class expects rad) CHORD is aligned with magnetic, not geographical north, so, when mathematically constructing the uv coverage, rotate the rectangular array grid
                  observing_dec:float=def_observing_dec,                            # declination to observe at (º)
-                 N_pbws_pert:int=0,                                                # number of antennas with perturbed primary beams
+                 N_primary_beams_pert:int=0,                                                # number of antennas with perturbed primary beams
                  N_timesteps:float=def_N_timesteps,                                # number of timesteps in rotation synthesis
                  nu_ctr:float=nu_HI_z0,                                            # central frequency of the survey of interest
                  Delta_nu:float=CHORD_channel_width_MHz,                           # channel width in frequency (MHz)
@@ -1627,7 +1627,7 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
                  supplementary_name=None # literally just for the July 16th 2026 histogram validation
                  ): 
         # array and observation geometry
-        self.N_pbws_pert=N_pbws_pert
+        self.N_primary_beams_pert=N_primary_beams_pert
         self.N_timesteps=N_timesteps
         self.distribution=distribution
         self.evolution_threshold=evolution_threshold
@@ -1673,14 +1673,14 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
         antennas_xyz=antennas_ENU@lat_mat.T
         
         # line-of-sight quantities
-        bw_MHz=self.nu_ctr_MHz*evolution_threshold # ongoing investigation into factor of two
-        halfbw=self.bw/2
-        freq_lo=self.nu_ctr-halfbw
-        freq_hi=self.nu_ctr+halfbw
+        bandwidth_MHz=self.nu_ctr_MHz*evolution_threshold # ongoing investigation into factor of two
+        halfbandwidth=bandwidth_MHz/2
+        freq_lo=self.nu_ctr_MHz-halfbandwidth
+        freq_hi=self.nu_ctr_MHz+halfbandwidth
 
         surv_channels_MHz, N_chan, _, comoving_ctr, _, _, _, _, flat_sky_centred = discretize_LoS(freq_lo,freq_hi,self.Delta_nu)
 
-        print("generate_PSF.__init__: bw_MHz,self.Delta_nu,N_chan=",bw_MHz,self.Delta_nu,N_chan)
+        print("generate_PSF.__init__: bandwidth_MHz,self.Delta_nu,N_chan=",bandwidth_MHz,self.Delta_nu,N_chan)
         self.N_chan=N_chan
         self.surv_channels_MHz=surv_channels_MHz
         self.flat_sky_centred=flat_sky_centred
@@ -1789,6 +1789,8 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
         theta_ext=2*transverse_half_angle
         deltauv=1/theta_ext
         uv_ext=deltauv*Npix
+        if np.max(np.abs(uv_synth))>uv_ext/2:
+            print("WARNING: the uv extent that follows from the chosen Npix and transverse half-angle\nis too constrained to fit all baselines of the array simulated here = \nthis info gets discarded")
         print("generate_PSF.__init__: theta_ext, deltauv, uv_ext =",theta_ext, deltauv, uv_ext)
         self.uv_ext=uv_ext
         self.CSTPSF_xy=theta_ext*self.comoving_ctr*fftshift(fftfreq(Npix))
@@ -1817,7 +1819,7 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
                 reshaped_u=np.reshape(u_here,N_here,order="C")
                 reshaped_v=np.reshape(v_here,N_here,order="C")
                 gridded_uv,_,_=np.histogram2d(reshaped_u,reshaped_v,bins=self.uvbins_use) # natural weighting
-                comb=np.nonzero(gridded_uv)
+                comb=np.nonzero(gridded_uv) # uv grid points where there are baseline(s)
                 if self.weighting=="custom":
                     gridded_uv[comb]=1/gridded_uv[comb]
                 elif self.weighting=="uniform": # I'm kind of oversubscribing this concept here because I have multiple beam types, but I use the weights to make things less bad
@@ -1832,8 +1834,7 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
                 weight_2nd=np.abs(self.nu_obs-self.CST_freqs_obs_units[LoS_2nd])/self.CST_deltanu_obs_units
                 beam_i=self.all_boxes[type_i,:,:,LoS_1st]*weight_1st + self.all_boxes[type_i,:,:,LoS_2nd]*weight_2nd
                 beam_j=self.all_boxes[type_j,:,:,LoS_1st]*weight_1st + self.all_boxes[type_j,:,:,LoS_2nd]*weight_2nd
-                product=beam_i*beam_j
-                beam_ij=np.sqrt(product) # geo mean of the beams of this baseline's two constituent antennas. still on initial CST grid
+                beam_ij=np.sqrt(beam_i*beam_j) # geo mean of the beams of this baseline's two constituent antennas. still on initial CST grid
                 beam_ij/=np.max(beam_ij) # beam should already be peak-normalized, pero mejor asegurarse que no haya nada raro... for example, a 2-3-pixel offset in the peak location
                 
                 implane+=gridded_im*beam_ij
@@ -2295,7 +2296,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
               array_version:str="pathfinder", nu_ctr:float=800, epsxy:float=0.1,
               frac_tol_conv=0.1, N_th_k=1024, 
               Npix=256, transverse_half_angle=flat_enough,
-              N_pbws_pert=0, antenna_dist="random", 
+              N_primary_beams_pert=0, antenna_dist="random", 
               which_power="P",
               evol_thresh=def_evolution_threshold,
                   
@@ -2380,11 +2381,11 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         if N_CST_types==0:
             N_fidu_types_i,N_pert_types_i=complexity_type
             if N_pert_types_i==0: # loop over complexity cases–friendly number of antennas with perturbed beams
-                N_pbws_pert_i=0
+                N_primary_beams_pert_i=0
             else:
-                N_pbws_pert_i=N_pbws_pert
+                N_primary_beams_pert_i=N_primary_beams_pert
             complexity_part="Nreal_"+str(N_fidu_types_i)+"__"\
-                            "Npert_"+str(N_pert_types_i)+"_"+str(N_pbws_pert)+"__"\
+                            "Npert_"+str(N_pert_types_i)+"_"+str(N_primary_beams_pert)+"__"\
                             "epsxy_"+str(epsxy)+"__"
             related_to_N_of_types={"N_fidu_types":N_fidu_types_i,"N_pert_types":N_pert_types_i}
         else:
@@ -2398,7 +2399,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                 pointing_errors_i=[[0.,0.,0.,]]
 
             CST_f_head_syst_i=CST_f_head_syst[:NCST_i]
-            N_pbws_pert_i=N_pbws_pert
+            N_primary_beams_pert_i=N_primary_beams_pert
         
         ioname=array_version+"_"+c_or_w+"_"+"_"\
            ""+per_chan_syst_string+"_"+per_chan_syst_name+"_"\
@@ -2423,7 +2424,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                     Npix=Npix, transverse_half_angle=transverse_half_angle,    
                                     
                                     # numerical beam perturbation parameters
-                                    N_pbws_pert=N_pbws_pert_i,
+                                    N_primary_beams_pert=N_primary_beams_pert_i,
                                     antenna_distribution=antdist,array_version=array_version,
                                     **related_to_N_of_types,
                                     CST_lo=CST_lo,CST_hi=CST_hi,CST_deltanu=CST_deltanu,ioname=ioname,
@@ -2480,7 +2481,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             recalc_co_xx_xx_fg=True
 
         print("about to perform or load Monte Carlos")
-        P_unit=u.mK**2 *observation.Deltabox_xy.unit**3
+        P_unit=u.mK**2 *observation.comoving_mid.unit**3
         if not from_incomplete_MC:
             if redo_window_calc:
                 t0=time.time()
