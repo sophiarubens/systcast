@@ -378,7 +378,7 @@ class beam_effects(object):
         self.fgfreqs=np.asarray([self.nu_lo.value,self.nu_hi.value])*self.nu_ctr.unit
 
         self.N_timesteps=           N_timesteps
-        N_CST_types=len(CST_f_head_syst)
+        N_CST_types=len(CST_f_head_syst)+1 # +1 is for the fiducial type
 
         if np.all(pointing_errors==[[0.,0.,0.]]):
             N_pointing_errors=[0]
