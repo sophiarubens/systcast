@@ -83,11 +83,12 @@ def_offset=1.75*pi/180. # for this placeholder state where I build up the CHORD 
 def_evolution_threshold=1/15 # HERA 1/15 was made up—for round number appeal, probably
                              # 1/15 is turn this down for a computationally less intense substitute if keeping the channel width the same
 def_PA_N_grid_pix=256
-integration_s=10*u.s # seconds
+integration_s=10*u.s
 hrs_per_night=8*u.hr # borrowed from Debanjan / 21cmSense
 # N_nights=100 # also borrowed from Debanjan / 21cmSense
 N_nights=1
-def_N_timesteps=1 # for local tests
+# def_N_timesteps=1 # for local tests
+def_N_timesteps=360
 CHORD_antenna_mask=np.ones((24,22),dtype="bool")
 CHORD_antenna_mask[   0 ,   0  ]=False # NW corner observatory access road gap
 CHORD_antenna_mask[   6 ,  10  ]=False # N receiver hut
@@ -178,7 +179,7 @@ def Blackman_Harris_safe_for_FFT(N): # !!centre-origin!! apodization function
 def comprehensive_slice_figure(box,                      # 3D box to plot slices of
                                norm=None,                # norm of the colour scale
                                name="placeholder.png",   # name of the output figure
-                               dpi=500,                  # resolution of the output figure
+                               dpi=750,                  # resolution of the output figure
                                fracs=[0,1e-5,1/3,1/2,1], # fractions along each axis at which to slice the box
                                exts=None,                # [[xlo, xhi], [ylo, yhi], [lzo, zhi]] for non-index axis labels
                                cmap=None                 # colour map for the imshow
@@ -454,10 +455,6 @@ class beam_effects(object):
                 print("importing syst ensemble")
                 syst_boxes=np.load("syst_CST_"+str(N_CST_types)+"_"+middle_name+"_MHz.npy")
                 print("syst_boxes.shape=",syst_boxes.shape)
-
-                # patch fix just to plot Aug 17-18 overnight job where the syst boxes were not saved safely
-                if syst_boxes.shape[0]>N_CST_types:
-                    syst_boxes=syst_boxes[:N_CST_types,:,:,:]
 
             CST_domain=(CSTPSF_xy_vec,CSTPSF_xy_vec,CST_z_vec)
             self.CST_z_vec=CST_z_vec
@@ -2272,7 +2269,7 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
     ax_right.legend(fontsize="small")
 
     plt.suptitle("ingredients of this power spectrum quantity: "+case_title)
-    plt.savefig(save_name+".png",dpi=250)
+    plt.savefig(save_name+".png",dpi=400)
     plt.close()
 
 def save_args_to_file(frame:str, filepath:str="settings.json"):
