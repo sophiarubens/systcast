@@ -428,7 +428,7 @@ class beam_effects(object):
                 np.save("fidu_CST_"+middle_name+"_MHz.npy",fidu_box)
                 if N_CST_types==1:
                     print("saving fidu box as syst box ensemble b/c there is only 1 CST type")
-                    np.save("syst_CST_"+middle_name+"_MHz.npy",np.expand_dims(fidu_box,0)) # for compatibility with the avoid-double-imports workaround
+                    np.save("syst_CST_"+str(N_CST_types)+"_"+middle_name+"_MHz.npy",np.expand_dims(fidu_box,0)) # for compatibility with the avoid-double-imports workaround
             else:
                 fidu_box=  np.load("fidu_CST_"+middle_name+"_MHz.npy")
 
