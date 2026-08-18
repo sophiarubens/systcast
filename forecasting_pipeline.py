@@ -449,10 +449,15 @@ class beam_effects(object):
                     print("generated syst beam box\n")
                     syst_boxes[i+1,:,:,:]=syst.box
                 
-                np.save("syst_CST_"+middle_name+"_MHz.npy",syst_boxes)
+                np.save("syst_CST_"+str(N_CST_types)+"_"+middle_name+"_MHz.npy",syst_boxes)
             else:
                 print("importing syst ensemble")
-                syst_boxes=np.load("syst_CST_"+middle_name+"_MHz.npy")
+                syst_boxes=np.load("syst_CST_"+str(N_CST_types)+"_"+middle_name+"_MHz.npy")
+                print("syst_boxes.shape=",syst_boxes.shape)
+
+                # patch fix just to plot Aug 17-18 overnight job where the syst boxes were not saved safely
+                if syst_boxes.shape[0]>N_CST_types:
+                    syst_boxes=syst_boxes[:N_CST_types,:,:,:]
 
             CST_domain=(CSTPSF_xy_vec,CSTPSF_xy_vec,CST_z_vec)
             self.CST_z_vec=CST_z_vec
@@ -2264,7 +2269,7 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
     ax_right.set_xlabel("N CST types, N pointing errors")
     ax_right.set_ylabel("power spectrum quantity "+case_units)
     ax_right.set_title("insets for k closest to...")
-    ax_right.legend()
+    ax_right.legend(fontsize="small")
 
     plt.suptitle("ingredients of this power spectrum quantity: "+case_title)
     plt.savefig(save_name+".png",dpi=250)
