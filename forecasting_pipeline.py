@@ -301,7 +301,7 @@ class beam_effects(object):
                  maxiter:int=5,                       # maximum number of times the partial derivative computation can recurse with an updated step size estimate
                  Npix:int=def_PA_N_grid_pix, # number of pixels per side of gridded uv plane
                  LoS_apo=False,transverse_apo=False,   # apply apodization along the line of sight or transverse directions?
-                 N_timesteps=def_N_timesteps,
+                 N_timesteps=def_N_timesteps, N_hrs=hrs_per_night,
 
                  # CONVENIENCE
                  heavy_beam_recalc:bool=True,         # save time by using pre-saved PSFs?
@@ -480,7 +480,7 @@ class beam_effects(object):
             print("finished repointing beams for this complexity case")
             
             if heavy_beam_recalc: # redo the beam synthesis
-                fidu_synthesis=generate_PSF(array_version=array_version,N_timesteps=self.N_timesteps,
+                fidu_synthesis=generate_PSF(array_version=array_version,N_timesteps=self.N_timesteps,N_hrs=N_hrs,
                                                     nu_ctr=nu_ctr,
                                                     distribution="random",Npix=Npix, transverse_half_angle=transverse_half_angle,
                                                     Delta_nu=delta_nu,
@@ -491,7 +491,7 @@ class beam_effects(object):
                 print("finished synthesizing fiducial CST PSF")
                 fidu_box_PSF=fidu_synthesis.box
                 if N_CST_types>1 or N_pointing_errors_max>0:
-                    syst_synthesis=generate_PSF(array_version=array_version,N_timesteps=self.N_timesteps,
+                    syst_synthesis=generate_PSF(array_version=array_version,N_timesteps=self.N_timesteps,N_hrs=N_hrs,
                                                         nu_ctr=nu_ctr,
                                                         distribution=antenna_distribution,Npix=Npix, transverse_half_angle=transverse_half_angle,
                                                         Delta_nu=delta_nu,
@@ -1625,7 +1625,7 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
                  b_NS:float=b_NS,b_EW:float=b_EW,                                  # N-S and E-W baseline lengths (m)
                  offset_rad:float=def_offset,                                      # (astropy-unitless because this class expects rad) CHORD is aligned with magnetic, not geographical north, so, when mathematically constructing the uv coverage, rotate the rectangular array grid
                  observing_dec:float=def_observing_dec,                            # declination to observe at (º)
-                 N_timesteps:float=def_N_timesteps,                                # number of timesteps in rotation synthesis
+                 N_timesteps:float=def_N_timesteps, N_hrs=hrs_per_night,                               # number of timesteps in rotation synthesis
                  nu_ctr:float=nu_HI_z0,                                            # central frequency of the survey of interest
                  Delta_nu:float=CHORD_channel_width_MHz,                           # channel width in frequency (MHz)
                  transverse_half_angle=flat_enough,
@@ -1652,7 +1652,7 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
         N_bl=N_ant*(N_ant-1)//2 # idem
         self.nu_ctr_MHz=nu_ctr.to(u.MHz)
         self.nu_ctr_Hz=nu_ctr.to(u.Hz)
-        self.N_hrs=hrs_per_night
+        self.N_hrs=N_hrs
         
         # antenna positions xyz
         antennas_EN=np.zeros((N_ant,2))
@@ -2304,7 +2304,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
               LoS_apo=True,transverse_apo=False,
                   
               freq_bin_width=CHORD_channel_width_MHz,
-              N_timesteps=def_N_timesteps,
+              N_timesteps=def_N_timesteps, N_hrs=hrs_per_night,
 
               CST_lo=None,CST_hi=None,CST_deltanu=None,
               beam_sim_directory=None,f_mid1="pol1/f_",f_mid2="pol2/f_",f_tail="_GHz.txt",
@@ -2435,7 +2435,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                     frac_tol_conv=frac_tol_conv,seed=seed,                                         
                                     ftol_deriv=1e-16,maxiter=5,   
                                     LoS_apo=LoS_apo,transverse_apo=transverse_apo,
-                                    N_timesteps=N_timesteps,
+                                    N_timesteps=N_timesteps, N_hrs=N_hrs,
 
                                     # CONVENIENCE
                                     heavy_beam_recalc=redo_box_calc                                                 
