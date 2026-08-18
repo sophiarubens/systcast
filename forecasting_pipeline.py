@@ -87,8 +87,7 @@ integration_s=10*u.s
 hrs_per_night=8*u.hr # borrowed from Debanjan / 21cmSense
 # N_nights=100 # also borrowed from Debanjan / 21cmSense
 N_nights=1
-# def_N_timesteps=1 # for local tests
-def_N_timesteps=360
+def_N_timesteps=1
 CHORD_antenna_mask=np.ones((24,22),dtype="bool")
 CHORD_antenna_mask[   0 ,   0  ]=False # NW corner observatory access road gap
 CHORD_antenna_mask[   6 ,  10  ]=False # N receiver hut
