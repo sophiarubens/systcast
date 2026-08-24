@@ -1771,10 +1771,12 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
         np.save("pb_types_"+supplementary_name+".npy",indices_of_constituent_ant_pb_types) # for the baseline type vs length histogram
 
         # rotation-synthesized uv-coverage *******(N_bl,3,N_timesteps), accumulating xyz->uvw transformations at each timestep
+        # rotation_synthesis_delta_theta=np.pi/12*self.N_hrs/self.N_timesteps
         hour_angle_ceiling=np.pi*self.N_hrs/12
         hour_angles=np.linspace(0,hour_angle_ceiling,self.N_timesteps)
         thetas=hour_angles.value*15*np.pi/180*u.rad # don't use built-in astropy conversions for this because it won't realize my hr<->rad conversion is about the rotation rate of the earth
-        
+        self.thetas=thetas
+
         try:
             observing_dec.to(u.rad)
         except:
@@ -1791,7 +1793,7 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
                                           [ 0,            0,            1]])
             uvw_rotated=uvw_inst@accumulate_rotation
             uvw_projected=uvw_rotated@project_to_dec.T
-            uv_synth[:,:,i]=uvw_projected/self.lambda_obs # this is just for one LoS slice, as intended
+            uv_synth[:,:,i]=uvw_projected/self.lambda_obs
         self.uv_synth=uv_synth # units are wavelengths
         print("synthesized rotation")
 
@@ -1812,6 +1814,7 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
 
     def calc_uv_slice(self):
         implane=np.zeros((self.Npix,self.Npix))
+        cell_oversubscription_factor=np.zeros((self.Npix,self.Npix))
         for i in range(self.N_total_beam_types):
             type_i=self.pb_types[i]
             for j in range(i+1):
@@ -1820,7 +1823,7 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
                 here=(self.indices_of_constituent_ant_pb_types[:,0]==i
                         )&(self.indices_of_constituent_ant_pb_types[:,1]==j
                            )|(self.indices_of_constituent_ant_pb_types[:,0]==j
-                                )&(self.indices_of_constituent_ant_pb_types[:,1]==i)
+                                )&(self.indices_of_constituent_ant_pb_types[:,1]==i) # self.indices_of_constituent_ant_pb_types is (N_bl,2)
                 u_here=self.uv_synth[here,0,:] # [N_bl,2,N_hr_angles]
                 v_here=self.uv_synth[here,1,:]
                 N_bl_here,N_hr_angles_here=u_here.shape # (N_bl,N_hr_angles)
@@ -1829,10 +1832,11 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
                 reshaped_v=np.reshape(v_here,N_here,order="C")
                 gridded_uv,_,_=np.histogram2d(reshaped_u,reshaped_v,bins=self.uvbins_use) # natural weighting
                 comb=np.nonzero(gridded_uv) # uv grid points where there are baseline(s)
+                cell_oversubscription_factor[here!=0]+=1
                 if self.weighting=="custom":
                     gridded_uv[comb]=1/gridded_uv[comb]
-                elif self.weighting=="uniform": # I'm kind of oversubscribing this concept here because I have multiple beam types, but I use the weights to make things less bad
-                    frac_baselines=np.sum(here!=0)/self.N_baselines # fraction of baselines in this beam category
+                elif self.weighting=="uniform": # (DEFAULT) I'm kind of oversubscribing this concept here because I have multiple beam types, but I use the weights to make things less bad
+                    frac_baselines=np.sum(here!=0)/self.N_baselines # fraction of baselines that fall into this beam category
                     gridded_uv[comb]=1 * frac_baselines
                 elif self.weighting!="natural":
                     raise ValueError("unknown uv plane weighting scheme")
@@ -1850,6 +1854,7 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
 
         # implane/=self.N_baselines # this doesn't make sense to me anymore
         implane/=np.max(implane)
+        implane[cell_oversubscription_factor!=0]/=cell_oversubscription_factor[cell_oversubscription_factor!=0]
         return implane
 
     def stack_to_box(self):
