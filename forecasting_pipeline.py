@@ -1814,7 +1814,7 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
 
     def calc_uv_slice(self):
         implane=np.zeros((self.Npix,self.Npix))
-        cell_oversubscription_factor=np.zeros((self.Npix,self.Npix))
+        # cell_oversubscription_factor=np.zeros((self.Npix,self.Npix))
         for i in range(self.N_total_beam_types):
             type_i=self.pb_types[i]
             for j in range(i+1):
@@ -1832,11 +1832,11 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
                 reshaped_v=np.reshape(v_here,N_here,order="C")
                 gridded_uv,_,_=np.histogram2d(reshaped_u,reshaped_v,bins=self.uvbins_use) # natural weighting
                 comb=np.nonzero(gridded_uv) # uv grid points where there are baseline(s)
-                cell_oversubscription_factor[comb]+=1
+                # cell_oversubscription_factor[comb]+=1
                 if self.weighting=="custom":
                     gridded_uv[comb]=1/gridded_uv[comb]
                 elif self.weighting=="uniform": # (DEFAULT) I'm kind of oversubscribing this concept here because I have multiple beam types, but I use the weights to make things less bad
-                    frac_baselines=np.sum(here!=0)/self.N_baselines # fraction of baselines that fall into this beam category
+                    frac_baselines=np.sum(here!=0)/(self.N_baselines*self.N_timesteps) # fraction of baselines that fall into this beam category
                     gridded_uv[comb]=1 * frac_baselines
                 elif self.weighting!="natural":
                     raise ValueError("unknown uv plane weighting scheme")
@@ -1853,7 +1853,7 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
                 implane+=gridded_im*beam_ij
 
         implane/=np.max(implane)
-        implane[cell_oversubscription_factor!=0]/=cell_oversubscription_factor[cell_oversubscription_factor!=0]
+        # implane[cell_oversubscription_factor!=0]/=cell_oversubscription_factor[cell_oversubscription_factor!=0]
         return implane
 
     def stack_to_box(self):
