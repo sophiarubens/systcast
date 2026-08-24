@@ -1832,7 +1832,7 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
                 reshaped_v=np.reshape(v_here,N_here,order="C")
                 gridded_uv,_,_=np.histogram2d(reshaped_u,reshaped_v,bins=self.uvbins_use) # natural weighting
                 comb=np.nonzero(gridded_uv) # uv grid points where there are baseline(s)
-                cell_oversubscription_factor[here!=0]+=1
+                cell_oversubscription_factor[comb]+=1
                 if self.weighting=="custom":
                     gridded_uv[comb]=1/gridded_uv[comb]
                 elif self.weighting=="uniform": # (DEFAULT) I'm kind of oversubscribing this concept here because I have multiple beam types, but I use the weights to make things less bad
@@ -1841,7 +1841,7 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
                 elif self.weighting!="natural":
                     raise ValueError("unknown uv plane weighting scheme")
                 gridded_im=fftshift(irfftn(ifftshift(gridded_uv*self.d2u), # irfftn silently discarding imag part of symmetry slices of the last transformed axis is not a problem here because the uv slices in question are entirely real-valued
-                                           norm="forward",s=(self.Npix,self.Npix)))
+                                           norm="backward",s=(self.Npix,self.Npix)))/(twopi**2)
                 LoS_1st,LoS_2nd=np.argsort(np.abs(self.nu_obs-self.CST_freqs_obs_units))[:2]
                 weight_1st=np.abs(self.nu_obs-self.CST_freqs_obs_units[LoS_1st])/self.CST_deltanu_obs_units
                 weight_2nd=np.abs(self.nu_obs-self.CST_freqs_obs_units[LoS_2nd])/self.CST_deltanu_obs_units
@@ -1852,7 +1852,6 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
                 
                 implane+=gridded_im*beam_ij
 
-        # implane/=self.N_baselines # this doesn't make sense to me anymore
         implane/=np.max(implane)
         implane[cell_oversubscription_factor!=0]/=cell_oversubscription_factor[cell_oversubscription_factor!=0]
         return implane
