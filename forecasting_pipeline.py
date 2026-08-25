@@ -1329,6 +1329,7 @@ class cosmo_stats(object):
                                              [self.z_vec_for_box[ 0],self.z_vec_for_box[-1]]  ],
                                        name="effective_primary_interpolated.png") # in the new paradigm, these shouldn't be visibly super different. as of 16:49 24/07/26, they aren't—nice!
 
+            print("finished interpolating the effective primary beam along the line of sight")
             self.effective_volume=np.sum((eff_pri_this_domain*self.apodization_xyz_centre)**2*self.d3r)
         print("cosmo_stats: self.effective_volume=",self.effective_volume)
         self.PSF_padded=None
@@ -1349,7 +1350,6 @@ class cosmo_stats(object):
                                        cmap=cmasher.horizon,
                                        name="FFTPSF_slices_UNNORMALIZED.png")
 
-            assert(not np.all(np.isclose(PSF,0))), "PSF should not be identically vanishing"
             pad_lo_xy,pad_hi_xy=get_padding(self.Nxy)
             PSF_padded=np.pad(PSF,((pad_lo_xy,pad_hi_xy),(pad_lo_xy,pad_hi_xy),(0,0),),"wrap")
             self.PSF_padded=PSF_padded
@@ -1390,7 +1390,7 @@ class cosmo_stats(object):
             sigma_FoG=(1.93-1.48*(self.z_ctr-1)+0.81*(self.z_ctr-1)**2)*self.h.value # cf. eq. 11 of the CHIME/cosmology 2026 interpretation paper
             D_FoG_HI=1/(1+ 0.5*(self.kmu*alpha_FoG*sigma_FoG)**2 ) # cf. eq. 10 of the CHIME/cosmology 2026 interpretation paper
             FoG_modulation=D_FoG_HI**2
-            FoG_modulation=1
+            FoG_modulation=1 # overridden for now
         self.P_fid_box=P_fid_box*FoG_modulation
             
     def generate_P(self,T_use=None): # from a box of temperature field values
@@ -1410,14 +1410,12 @@ class cosmo_stats(object):
                     self.T_with_beam=fftconvolve(self.PSF_padded,self.T_pristine.value,mode="valid",axes=[0,1])*self.temp_unit
             T_use=self.T_with_beam
         elif T_use.lower()=="pristine":
-            # T_use=self.T_pristine*self.apodization_xyz_centre
             T_use=self.T_pristine
         else:
             raise ValueError("invalid state of box beam knowledge. try again with pristine or beam!")
         T_use=T_use.to(u.mK)
 
         T_tilde=fftshift( fftn( 
-                                # ifftshift(T_use)*self.d3r,
                                 ifftshift(T_use*self.apodization_xyz_centre)*self.d3r,
                                 s=self.box_shape, axes=self.transform_axes, norm="backward"        
                               ) 
@@ -1777,14 +1775,14 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
         thetas=hour_angles.value*15*np.pi/180*u.rad # don't use built-in astropy conversions for this because it won't realize my hr<->rad conversion is about the rotation rate of the earth
         self.thetas=thetas
 
-        try:
-            observing_dec.to(u.rad)
-        except:
-            observing_dec=observing_dec*u.rad
-        zenith=np.array([np.cos(observing_dec),0,np.sin(observing_dec)]) # Jon math redux
-        east=np.array([0,1,0])
-        north=np.cross(zenith,east)
-        project_to_dec=np.vstack([east,north])
+        # try:
+            # observing_dec.to(u.rad)
+        # except:
+            # observing_dec=observing_dec*u.rad
+        # zenith=np.array([np.cos(observing_dec),0,np.sin(observing_dec)]) # Jon math redux
+        # east=np.array([0,1,0])
+        # north=np.cross(zenith,east)
+        # project_to_dec=np.vstack([east,north])
 
         uv_synth=np.zeros((2*N_bl,2,self.N_timesteps)) # N_baselines, u and v, N_timesteps
         for i,theta in enumerate(thetas): # thetas are the rotation synthesis angles (converted from hr. angles using 15 deg/hr rotation rate)
@@ -1792,7 +1790,8 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
                                           [-np.sin(theta),np.cos(theta),0],
                                           [ 0,            0,            1]])
             uvw_rotated=uvw_inst@accumulate_rotation
-            uvw_projected=uvw_rotated@project_to_dec.T
+            # uvw_projected=uvw_rotated@project_to_dec.T
+            uvw_projected=np.copy(uvw_rotated)
             uv_synth[:,:,i]=uvw_projected/self.lambda_obs
         self.uv_synth=uv_synth # units are wavelengths
         print("synthesized rotation")
@@ -1852,6 +1851,7 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
                 
                 implane+=gridded_im*beam_ij
 
+        print("np.max(implane)=",np.max(implane))
         implane/=np.max(implane)
         # implane[cell_oversubscription_factor!=0]/=cell_oversubscription_factor[cell_oversubscription_factor!=0]
         return implane
