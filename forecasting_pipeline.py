@@ -1348,6 +1348,7 @@ class cosmo_stats(object):
             absFFTPSF=np.abs(FFTPSF)
             comprehensive_slice_figure(absFFTPSF,
                                        cmap=cmasher.horizon,
+                                       norm=CenteredNorm(vcenter=1,halfrange=0.5*np.max(absFFTPSF)),
                                        name="FFTPSF_slices_UNNORMALIZED.png")
 
             pad_lo_xy,pad_hi_xy=get_padding(self.Nxy)
@@ -1473,7 +1474,6 @@ class cosmo_stats(object):
         
         self.T_pristine=T
         if self.PSF_padded is not None:
-            print("self.PSF_padded.shape,self.T_pristine.shape =",self.PSF_padded.shape,self.T_pristine.shape)
             self.T_with_beam=fftconvolve(self.PSF_padded,T.value,mode="valid",axes=[0,1])*self.temp_unit
 
     def power_Monte_Carlo(self,interfix:str=""): # since box generation is not deterministic
@@ -1672,8 +1672,12 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
             antennas_ENU=antennas_ENU[CHORD_antenna_mask_1d,:]
             N_ant=512
             N_bl=N_ant*(N_ant-1)//2
-        
-        zenith=np.array([np.cos(DRAO_lat),0,np.sin(DRAO_lat)]) # Jon math
+
+            try:
+                observing_dec.to(u.rad)
+            except:
+                observing_dec=observing_dec*u.rad
+        zenith=np.array([np.cos(observing_dec),0,np.sin(observing_dec)]) # Jon math
         east=np.array([0,1,0])
         north=np.cross(zenith,east)
         lat_mat=np.vstack([north,east,zenith])
@@ -1769,21 +1773,12 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
         np.save("pb_types_"+supplementary_name+".npy",indices_of_constituent_ant_pb_types) # for the baseline type vs length histogram
 
         # rotation-synthesized uv-coverage *******(N_bl,3,N_timesteps), accumulating xyz->uvw transformations at each timestep
-        # rotation_synthesis_delta_theta=np.pi/12*self.N_hrs/self.N_timesteps
         hour_angle_ceiling=np.pi*self.N_hrs/12
         hour_angles=np.linspace(0,hour_angle_ceiling,self.N_timesteps)
         thetas=hour_angles.value*15*np.pi/180*u.rad # don't use built-in astropy conversions for this because it won't realize my hr<->rad conversion is about the rotation rate of the earth
         self.thetas=thetas
 
-        # try:
-            # observing_dec.to(u.rad)
-        # except:
-            # observing_dec=observing_dec*u.rad
-        # zenith=np.array([np.cos(observing_dec),0,np.sin(observing_dec)]) # Jon math redux
-        # east=np.array([0,1,0])
-        # north=np.cross(zenith,east)
-        # project_to_dec=np.vstack([east,north])
-
+        # project_to_dec=np.vstack([east,north]) # more Jon math... but was this (apart from the w exclusion) already accomplished by the previous observing dec matrix multiplication?
         uv_synth=np.zeros((2*N_bl,2,self.N_timesteps)) # N_baselines, u and v, N_timesteps
         for i,theta in enumerate(thetas): # thetas are the rotation synthesis angles (converted from hr. angles using 15 deg/hr rotation rate)
             accumulate_rotation=np.array([[ np.cos(theta),np.sin(theta),0],
@@ -1791,7 +1786,7 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
                                           [ 0,            0,            1]])
             uvw_rotated=uvw_inst@accumulate_rotation
             # uvw_projected=uvw_rotated@project_to_dec.T
-            uvw_projected=np.copy(uvw_rotated)
+            uvw_projected=uvw_rotated[:,:2]
             uv_synth[:,:,i]=uvw_projected/self.lambda_obs
         self.uv_synth=uv_synth # units are wavelengths
         print("synthesized rotation")
@@ -1813,7 +1808,6 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
 
     def calc_uv_slice(self):
         implane=np.zeros((self.Npix,self.Npix))
-        # cell_oversubscription_factor=np.zeros((self.Npix,self.Npix))
         for i in range(self.N_total_beam_types):
             type_i=self.pb_types[i]
             for j in range(i+1):
@@ -1831,7 +1825,6 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
                 reshaped_v=np.reshape(v_here,N_here,order="C")
                 gridded_uv,_,_=np.histogram2d(reshaped_u,reshaped_v,bins=self.uvbins_use) # natural weighting
                 comb=np.nonzero(gridded_uv) # uv grid points where there are baseline(s)
-                # cell_oversubscription_factor[comb]+=1
                 if self.weighting=="custom":
                     gridded_uv[comb]=1/gridded_uv[comb]
                 elif self.weighting=="uniform": # (DEFAULT) I'm kind of oversubscribing this concept here because I have multiple beam types, but I use the weights to make things less bad
@@ -1851,9 +1844,7 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
                 
                 implane+=gridded_im*beam_ij
 
-        print("np.max(implane)=",np.max(implane))
         implane/=np.max(implane)
-        # implane[cell_oversubscription_factor!=0]/=cell_oversubscription_factor[cell_oversubscription_factor!=0]
         return implane
 
     def stack_to_box(self):
@@ -1868,11 +1859,12 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
             nu_obs=c/self.lambda_obs
             self.nu_obs=nu_obs.decompose()
 
-            chan_gridded_implane=self.calc_uv_slice() # compute this LoS slice's synthesized beam            
-            box_xyz[:,:,i]=chan_gridded_implane
+            PSF_slice=self.calc_uv_slice() # compute this LoS slice's synthesized beam            
+            box_xyz[:,:,i]=PSF_slice
             if ((i%(self.N_chan//3))==0):
                 print("{:7.1f} pct complete".format(i/self.N_chan*100))
         self.box=box_xyz
+        np.max("max of a representative implane for this box:", np.max(PSF_slice))
 
         # generate a box of r-values (necessary for interpolation to survey domain in cosmo_stats as called by beam_effects)
         self.xy_vec=self.CSTPSF_xy
