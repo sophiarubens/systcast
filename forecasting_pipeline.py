@@ -78,7 +78,7 @@ b_max_CHORD=np.sqrt((N_NS_full*b_NS)**2+(N_EW_full*b_EW)**2)*u.m
 DRAO_lat=49.320791*pi/180.*u.rad # Google Maps satellite view, eyeballing what looks like the middle of the CHORD site: 49.320791, -119.621842 (bc considering drift-scan CHIME-like "pointing at zenith" mode, same as dec)
 D=6.*u.m
 CHORD_channel_width_MHz=0.1953125*u.MHz
-def_observing_dec=pi/60.
+def_observing_dec=DRAO_lat
 def_offset=1.75*pi/180. # for this placeholder state where I build up the CHORD layout using rotation matrices instead of actual measurements. probably add Hans' mask at some point to punch the corners and receiver hut holes out...
 def_evolution_threshold=1/15 # HERA 1/15 was made up—for round number appeal, probably
                              # 1/15 is turn this down for a computationally less intense substitute if keeping the channel width the same
@@ -175,6 +175,16 @@ def Blackman_Harris_safe_for_FFT(N): # !!centre-origin!! apodization function
       +a2*np.cos(4.*pi*n/N) \
       -a3*np.cos(6.*pi*n/N)
     return w
+def get_two_closest_indices_monotonic(val,sortedarr):
+    i=0
+    comp=np.less if sortedarr[0]<sortedarr[1] else np.greater # if the array is monotonic increasing, use the comparison value being smaller than the current array value as the condition to keep going
+    while comp(sortedarr[i],val):
+        i+=1
+    i1=i-1
+    i2=i
+    if i2==len(sortedarr):
+        i2-=1
+    return i1,i2
 def comprehensive_slice_figure(box,                      # 3D box to plot slices of
                                norm=None,                # norm of the colour scale
                                name="placeholder.png",   # name of the output figure
@@ -509,6 +519,7 @@ class beam_effects(object):
                 print("finished synthesizing systematic-laden CST PSF")
 
                 np.save("fidu_box_PSF_"+ioname+".npy",fidu_box_PSF)
+                assert(1==0), "just re-synthesizing a single PSF for use in the end-to-end test"
                 np.save("syst_box_PSF_"+ioname+".npy",syst_box_PSF)
                 np.save("weights_PSF_"+ioname+".npy",weights_PSF)
                 print("saved synthesized beam")
@@ -1288,17 +1299,17 @@ class cosmo_stats(object):
         self.apodization_xyz_centre=apodization_xyz_product
 
         # beam
+        self.PSF_padded=None
+        uv_weight=np.ones((self.Nxy,self.Nxy,self.Nz))
         if effective_primary_CST is None:
-            if PSF is not None:
-                raise ValueError("not enough info")
-            else:
-                self.effective_volume=np.sum(self.apodization_xyz_centre**2*self.d3r)
+            self.effective_volume=np.sum(self.apodization_xyz_centre**2*self.d3r)
         else:
             CST_Deltaz=z_vec_for_CST[1]-z_vec_for_CST[0]
             eff_pri_this_domain=np.zeros(self.box_shape)
             CST_zmin=np.min(z_vec_for_CST)
             CST_zmax=np.max(z_vec_for_CST)
             print("cosmo_stats.__init__: extrema of z_vec_for_CST: ",z_vec_for_CST[0],z_vec_for_CST[-1])
+            t0=time.time()
             for i,z_PSF_i in enumerate(self.z_vec_for_box):
                 if z_PSF_i>CST_zmax:
                     LoS_1st=-1
@@ -1311,6 +1322,7 @@ class cosmo_stats(object):
                     weight_1st=1
                     weight_2nd=0
                 else:
+                    # LoS_1st,LoS_2nd=get_two_closest_indices_monotonic(z_PSF_i,z_vec_for_CST) 
                     LoS_1st,LoS_2nd=np.argsort(np.abs(z_PSF_i-z_vec_for_CST))[:2]
                     weight_1st=np.abs(z_PSF_i-z_vec_for_CST[LoS_1st])/CST_Deltaz
                     weight_2nd=np.abs(z_PSF_i-z_vec_for_CST[LoS_2nd])/CST_Deltaz
@@ -1330,10 +1342,17 @@ class cosmo_stats(object):
                                        name="effective_primary_interpolated.png") # in the new paradigm, these shouldn't be visibly super different. as of 16:49 24/07/26, they aren't—nice!
 
             print("finished interpolating the effective primary beam along the line of sight")
-            self.effective_volume=np.sum((eff_pri_this_domain*self.apodization_xyz_centre)**2*self.d3r)
-        print("cosmo_stats: self.effective_volume=",self.effective_volume)
-        self.PSF_padded=None
-        if PSF is not None: # non-identity PSF
+            FFTPSF=fftshift(fftn(ifftshift(PSF)*self.Deltaxy**2,axes=(0,1),norm="backward"))
+            self.FFTPSF=FFTPSF
+            absFFTPSF=np.abs(FFTPSF)
+            maxabsFFTPSF=np.max(absFFTPSF)
+            # absFFTPSF2=np.abs(fftshift(fftn(ifftshift(PSF*self.apodization_xyz_centre)*self.Deltaxy**2,axes=(0,1))))**2 # separate b/c needs to include apodization
+            absFFTPSF2 = absFFTPSF**2 # shouldn't actually apply apodization here because I'm just trying to calculate uv plane weights, not Fourier-space numerics
+            nonzero_uv_cells=np.nonzero(FFTPSF>1e-10)
+            eff_vol_arg=eff_pri_this_domain*self.apodization_xyz_centre
+            # eff_vol_arg=eff_vol_arg[nonzero_uv_cells]
+            self.effective_volume=np.sum(eff_vol_arg**2*self.d3r)
+
             PSFext=np.max(np.abs(PSF))
             manydBdown=1e-9
             PSF_norm=SymLogNorm(manydBdown*PSFext,vmin=-PSFext,vmax=PSFext)
@@ -1344,16 +1363,19 @@ class cosmo_stats(object):
                                              [self.xy_vec_for_box[0],self.xy_vec_for_box[-1]],
                                              [z_vec_for_CST[0],z_vec_for_CST[-1]]  ],
                                        name="PSF_slices.png")
-            FFTPSF=fftshift(fftn(ifftshift(PSF),axes=(0,1)))
-            absFFTPSF=np.abs(FFTPSF)
             comprehensive_slice_figure(absFFTPSF,
                                        cmap=cmasher.horizon,
-                                       norm=CenteredNorm(vcenter=1,halfrange=0.5*np.max(absFFTPSF)),
+                                       norm=CenteredNorm(vcenter=maxabsFFTPSF,halfrange=0.5*maxabsFFTPSF),
                                        name="FFTPSF_slices_UNNORMALIZED.png")
 
             pad_lo_xy,pad_hi_xy=get_padding(self.Nxy)
             PSF_padded=np.pad(PSF,((pad_lo_xy,pad_hi_xy),(pad_lo_xy,pad_hi_xy),(0,0),),"wrap")
             self.PSF_padded=PSF_padded
+
+            uv_weight*=np.inf
+            uv_weight[nonzero_uv_cells]=absFFTPSF2[nonzero_uv_cells] # can't use [absFFTPSF>0] since that gives the TypeError: NumPy boolean array indexing assignment requires a 0 or 1-dimensional input, input has 3 dimensions
+        self.uv_weight=uv_weight
+        print("cosmo_stats: self.effective_volume=",self.effective_volume)
         
         # strictness control for Monte Carlos
         self.frac_tol=frac_tol
@@ -1408,7 +1430,9 @@ class cosmo_stats(object):
                 else:
                     if self.PSF_padded is None:
                         raise ValueError("attempted to form T_with_beam from T_pristine and PSF, but PSF_padded is None")
-                    self.T_with_beam=fftconvolve(self.PSF_padded,self.T_pristine.value,mode="valid",axes=[0,1])*self.temp_unit
+                    self.T_with_beam=fftconvolve(self.PSF_padded,
+                                                 self.T_pristine.value*self.Deltaxy**2,
+                                                 mode="valid",axes=[0,1])*self.temp_unit
             T_use=self.T_with_beam
         elif T_use.lower()=="pristine":
             T_use=self.T_pristine
@@ -1422,10 +1446,9 @@ class cosmo_stats(object):
                               ) 
                         ) # centre-origin
         modsq_T_tilde=np.abs(T_tilde)**2 *self.temp_unit**2*self.length_unit**6
-        P_unbinned=modsq_T_tilde/self.effective_volume # box-shaped, but calculated according to the power spectrum estimator equation
+        P_unbinned=modsq_T_tilde/self.effective_volume/self.uv_weight # still box-shaped (haven't binned yet)
 
         self.P_unbinned=P_unbinned # centre-origin
-        
         self.P_unbinned_running_sum+=P_unbinned
 
     def bin_power(self,power_to_bin=None):
@@ -1474,7 +1497,9 @@ class cosmo_stats(object):
         
         self.T_pristine=T
         if self.PSF_padded is not None:
-            self.T_with_beam=fftconvolve(self.PSF_padded,T.value,mode="valid",axes=[0,1])*self.temp_unit
+            self.T_with_beam=fftconvolve(self.PSF_padded,
+                                         T.value*self.Deltaxy**2,
+                                         mode="valid",axes=[0,1])*self.temp_unit
 
     def power_Monte_Carlo(self,interfix:str=""): # since box generation is not deterministic
         self.MC_not_complete=True
@@ -1620,13 +1645,13 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
     def __init__(self,
                  array_version:str="full",                                         # run a simulation for full or pathfinder CHORD?
                  b_NS:float=b_NS,b_EW:float=b_EW,                                  # N-S and E-W baseline lengths (m)
-                 offset_rad:float=def_offset,                                      # (astropy-unitless because this class expects rad) CHORD is aligned with magnetic, not geographical north, so, when mathematically constructing the uv coverage, rotate the rectangular array grid
+                 offset_rad:float=def_offset,                                      # (astropy-unitless because this class expects rad, which I prefer to handle manually) CHORD is aligned with magnetic, not geographical north, so, when mathematically constructing the uv coverage, rotate the rectangular array grid
                  observing_dec:float=def_observing_dec,                            # declination to observe at (º)
                  N_timesteps:float=def_N_timesteps, N_hrs=hrs_per_night,                               # number of timesteps in rotation synthesis
                  nu_ctr:float=nu_HI_z0,                                            # central frequency of the survey of interest
                  Delta_nu:float=CHORD_channel_width_MHz,                           # channel width in frequency (MHz)
                  transverse_half_angle=flat_enough,
-                 distribution:str="random",                                        # distribution of per-antenna systematics. the options I've encoded for now are random, column, and corner, based on where the fiducial beam types are placed within the array
+                 distribution:str="random",                                        # distribution of per-antenna systematics. the options I've encoded for now are random, column, corner, frame, and hybrid based on where the fiducial beam types are placed within the array
                  evolution_threshold:float=def_evolution_threshold,  # max \delta z/z you will tolerate for the survey of interest and still consider the box close enough to coeval
                  weighting="uniform", Npix:int=def_PA_N_grid_pix,
 
@@ -1684,7 +1709,7 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
         antennas_xyz=antennas_ENU@lat_mat.T
         
         # line-of-sight quantities
-        bandwidth_MHz=self.nu_ctr_MHz*evolution_threshold # ongoing investigation into factor of two
+        bandwidth_MHz=self.nu_ctr_MHz*evolution_threshold
         halfbandwidth=bandwidth_MHz/2
         freq_lo=self.nu_ctr_MHz-halfbandwidth
         freq_hi=self.nu_ctr_MHz+halfbandwidth
@@ -1778,16 +1803,23 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
         thetas=hour_angles.value*15*np.pi/180*u.rad # don't use built-in astropy conversions for this because it won't realize my hr<->rad conversion is about the rotation rate of the earth
         self.thetas=thetas
 
-        # project_to_dec=np.vstack([east,north]) # more Jon math... but was this (apart from the w exclusion) already accomplished by the previous observing dec matrix multiplication?
+        try:
+            observing_dec.to(u.rad)
+        except:
+            observing_dec=observing_dec*u.rad
+        zenith=np.array([np.cos(observing_dec),0,np.sin(observing_dec)]) # Jon math redux
+        east=np.array([0,1,0])
+        north=np.cross(zenith,east)
+        project_to_dec=np.vstack([east,north])
+
         uv_synth=np.zeros((2*N_bl,2,self.N_timesteps)) # N_baselines, u and v, N_timesteps
         for i,theta in enumerate(thetas): # thetas are the rotation synthesis angles (converted from hr. angles using 15 deg/hr rotation rate)
             accumulate_rotation=np.array([[ np.cos(theta),np.sin(theta),0],
                                           [-np.sin(theta),np.cos(theta),0],
                                           [ 0,            0,            1]])
             uvw_rotated=uvw_inst@accumulate_rotation
-            # uvw_projected=uvw_rotated@project_to_dec.T
-            uvw_projected=uvw_rotated[:,:2]
-            uv_synth[:,:,i]=uvw_projected/self.lambda_obs
+            uv_projected=uvw_rotated@project_to_dec.T
+            uv_synth[:,:,i]=uv_projected/self.lambda_obs
         self.uv_synth=uv_synth # units are wavelengths
         print("synthesized rotation")
 
@@ -1823,17 +1855,18 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
                 N_here=N_bl_here*N_hr_angles_here
                 reshaped_u=np.reshape(u_here,N_here,order="C")
                 reshaped_v=np.reshape(v_here,N_here,order="C")
-                gridded_uv,_,_=np.histogram2d(reshaped_u,reshaped_v,bins=self.uvbins_use) # natural weighting
+                gridded_uv,_,_=np.histogram2d(reshaped_u,reshaped_v,bins=self.uvbins_use) # naïve gridding kernel
                 comb=np.nonzero(gridded_uv) # uv grid points where there are baseline(s)
                 if self.weighting=="custom":
                     gridded_uv[comb]=1/gridded_uv[comb]
                 elif self.weighting=="uniform": # (DEFAULT) I'm kind of oversubscribing this concept here because I have multiple beam types, but I use the weights to make things less bad
                     frac_baselines=np.sum(here!=0)/(self.N_baselines*self.N_timesteps) # fraction of baselines that fall into this beam category
-                    gridded_uv[comb]=1 * frac_baselines
+                    gridded_uv[comb]*= frac_baselines
                 elif self.weighting!="natural":
                     raise ValueError("unknown uv plane weighting scheme")
                 gridded_im=fftshift(irfftn(ifftshift(gridded_uv*self.d2u), # irfftn silently discarding imag part of symmetry slices of the last transformed axis is not a problem here because the uv slices in question are entirely real-valued
-                                           norm="backward",s=(self.Npix,self.Npix)))/(twopi**2)
+                                           norm="forward",s=(self.Npix,self.Npix))) # I *DON'T* need a /(2pi)**2 because this uses the other Fourier convention
+                # LoS_1st,LoS_2nd=get_two_closest_indices_monotonic(self.nu_obs,self.CST_freqs_obs_units)
                 LoS_1st,LoS_2nd=np.argsort(np.abs(self.nu_obs-self.CST_freqs_obs_units))[:2]
                 weight_1st=np.abs(self.nu_obs-self.CST_freqs_obs_units[LoS_1st])/self.CST_deltanu_obs_units
                 weight_2nd=np.abs(self.nu_obs-self.CST_freqs_obs_units[LoS_2nd])/self.CST_deltanu_obs_units
@@ -1860,11 +1893,11 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
             self.nu_obs=nu_obs.decompose()
 
             PSF_slice=self.calc_uv_slice() # compute this LoS slice's synthesized beam            
-            box_xyz[:,:,i]=PSF_slice
+            box_xyz[:,:,i]=PSF_slice #/np.sum(PSF_slice)
             if ((i%(self.N_chan//3))==0):
                 print("{:7.1f} pct complete".format(i/self.N_chan*100))
         self.box=box_xyz
-        np.max("max of a representative implane for this box:", np.max(PSF_slice))
+        print("max of a representative implane for this box:", np.max(PSF_slice))
 
         # generate a box of r-values (necessary for interpolation to survey domain in cosmo_stats as called by beam_effects)
         self.xy_vec=self.CSTPSF_xy

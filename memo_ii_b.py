@@ -38,7 +38,7 @@ with open("ptg_err.json", "w") as f:
 power_comparison_plots(redo_window_calc=True, # redo the Monte Carlos
                        redo_box_calc=True, # re-synthesize the PSF; reimports CST only if files DNE
                        which_power="P", # plotting choice
-                       nu_ctr=600.*u.MHz, frac_tol_conv=0.25, freq_bin_width=0.210*u.MHz, # k-parallel observation conditioning
+                       nu_ctr=600.*u.MHz, frac_tol_conv=1/np.sqrt(2), freq_bin_width=0.210*u.MHz, # k-parallel observation conditioning
                        array_version="full", Npix=512, transverse_half_angle=pi/2,# k-perp observation conditioning
                        antenna_dist="hybrid", # spatial distribution of systematics; "frame" is the default
                        LoS_apo=True,transverse_apo=False, 
