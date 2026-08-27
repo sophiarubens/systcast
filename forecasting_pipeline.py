@@ -721,12 +721,19 @@ class beam_effects(object):
             self.P_xx_xx_xx_fg=fg.P_binned *fg_box.unit**2 *self.comoving_mid.unit**3
             print("                           fg power calc complete")
 
+        forpower1=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_comoving_ext,
+                              Nxy=self.Npix,Nz=self.PSF_Nz,
+                              k_fid=self.k_for_flat,P_fid=P_flat) # moot to specify apodization since I'm not forming a power spec
+        forpower1.generate_GRF()
+        power1map=forpower1.T_pristine
+        print ("power1map is None", power1map is None)
+        assert power1map is not None
         print("Lz that will be used to initialize cosmo_stats: ",self.PSF_comoving_ext)
         print("fg_box.shape, self.Npix, self.PSF_Nz =",fg_box.shape, self.Npix, self.PSF_Nz)
         co_fi_xx_fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_comoving_ext,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
-                                effective_primary_CST=self.fi_eff_primary_box, z_vec_for_CST=self.CST_z_vec,
+                                power1map=power1map,
                                 PSF=self.fidu,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
@@ -736,14 +743,14 @@ class beam_effects(object):
         co_fi_sy_fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_comoving_ext,
                                 P_fid=P_cosmo,k_fid=self.ksph,
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
-                                effective_primary_CST=self.sy_eff_primary_box, z_vec_for_CST=self.CST_z_vec,
+                                power1map=power1map,
                                 PSF=self.syst,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
         xx_fi_sy_fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_comoving_ext,
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
-                                effective_primary_CST=self.sy_eff_primary_box, z_vec_for_CST=self.CST_z_vec,
+                                power1map=power1map,
                                 T_pristine=fg_box,
                                 PSF=self.syst,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
@@ -751,7 +758,7 @@ class beam_effects(object):
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
         xx_fi_xx_fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_comoving_ext,
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
-                                effective_primary_CST=self.fi_eff_primary_box, z_vec_for_CST=self.CST_z_vec,
+                                power1map=power1map,
                                 T_pristine=fg_box,
                                 PSF=self.fidu,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
@@ -760,7 +767,7 @@ class beam_effects(object):
         co_fi_xx_xx=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_comoving_ext,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
-                                effective_primary_CST=self.fi_eff_primary_box, z_vec_for_CST=self.CST_z_vec,
+                                power1map=power1map,
                                 PSF=self.fidu,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
@@ -768,7 +775,7 @@ class beam_effects(object):
         co_fi_sy_xx=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_comoving_ext,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
-                                effective_primary_CST=self.sy_eff_primary_box, z_vec_for_CST=self.CST_z_vec,
+                                power1map=power1map,
                                 PSF=self.syst,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
@@ -1068,8 +1075,7 @@ class cosmo_stats(object):
                  k_fid:np.ndarray=None,                                                 # Fourier space points where the fiducial power spectrum is sampled
                  Nxy:int=None,Nz:int=None,                                              # number of voxels in the x/y or z directions
                  PSF:np.ndarray=None,                                                   # PSF (box of values evaluated in config space)
-                 effective_primary_CST=None,                      # "average" primary beam with beam types weighted by the fraction of antennas with that beam type
-                 z_vec_for_CST=None,                                                   # formatted as (x_vec, y_vec, z_vec)
+                 power1map=None,
                  Nkperp:int=0,Nkpar:int=0,                                              # number of k-bins in the sky plane and line of sight directions
                  frac_tol:float=0.1,                                                    # fractional tolerance in cosmic variance of the Monte Carlo ensemble -> used to calculate the number of realizations
                  kperpbins_interp:np.ndarray=None,kparbins_interp:np.ndarray=None,      # bins where you want to know about the power spectrum (if you're interested in interpolating to some binning scheme other than what you get from chopping up the box)
@@ -1300,59 +1306,18 @@ class cosmo_stats(object):
 
         # beam
         self.PSF_padded=None
-        uv_weight=np.ones((self.Nxy,self.Nxy,self.Nz))
-        if effective_primary_CST is None:
-            self.effective_volume=np.sum(self.apodization_xyz_centre**2*self.d3r)
+        # uv_weight=np.ones((self.Nxy,self.Nxy,self.Nz))
+        if power1map is None:
+            self.power_spec_estimator_denom=np.sum(self.apodization_xyz_centre**2*self.d3r)
+            print("cosmo_stats: self.power_spec_estimator_denom=",self.power_spec_estimator_denom)
         else:
-            CST_Deltaz=z_vec_for_CST[1]-z_vec_for_CST[0]
-            eff_pri_this_domain=np.zeros(self.box_shape)
-            CST_zmin=np.min(z_vec_for_CST)
-            CST_zmax=np.max(z_vec_for_CST)
-            print("cosmo_stats.__init__: extrema of z_vec_for_CST: ",z_vec_for_CST[0],z_vec_for_CST[-1])
-            t0=time.time()
-            for i,z_PSF_i in enumerate(self.z_vec_for_box):
-                if z_PSF_i>CST_zmax:
-                    LoS_1st=-1
-                    LoS_2nd=-1
-                    weight_1st=1
-                    weight_2nd=0
-                elif z_PSF_i<CST_zmin:
-                    LoS_1st=0
-                    LoS_2nd=0
-                    weight_1st=1
-                    weight_2nd=0
-                else:
-                    # LoS_1st,LoS_2nd=get_two_closest_indices_monotonic(z_PSF_i,z_vec_for_CST) 
-                    LoS_1st,LoS_2nd=np.argsort(np.abs(z_PSF_i-z_vec_for_CST))[:2]
-                    weight_1st=np.abs(z_PSF_i-z_vec_for_CST[LoS_1st])/CST_Deltaz
-                    weight_2nd=np.abs(z_PSF_i-z_vec_for_CST[LoS_2nd])/CST_Deltaz
-                eff_pri_this_domain[:,:,i]=effective_primary_CST[:,:,LoS_2nd]*weight_1st +\
-                                           effective_primary_CST[:,:,LoS_2nd]*weight_2nd
-            comprehensive_slice_figure(effective_primary_CST,
-                                       norm=LogNorm(vmax=1),
-                                       exts=[[self.xy_vec_for_box[0],self.xy_vec_for_box[-1]],
-                                             [self.xy_vec_for_box[0],self.xy_vec_for_box[-1]],
-                                             [z_vec_for_CST[0],z_vec_for_CST[-1]]  ],
-                                       name="effective_primary.png")
-            comprehensive_slice_figure(eff_pri_this_domain,
-                                       norm=LogNorm(vmax=1),
-                                       exts=[[self.xy_vec_for_box[0],self.xy_vec_for_box[-1]],
-                                             [self.xy_vec_for_box[0],self.xy_vec_for_box[-1]],
-                                             [self.z_vec_for_box[ 0],self.z_vec_for_box[-1]]  ],
-                                       name="effective_primary_interpolated.png") # in the new paradigm, these shouldn't be visibly super different. as of 16:49 24/07/26, they aren't—nice!
-
-            print("finished interpolating the effective primary beam along the line of sight")
+            # print("finished interpolating the effective primary beam along the line of sight")
             FFTPSF=fftshift(fftn(ifftshift(PSF)*self.Deltaxy**2,axes=(0,1),norm="backward"))
             self.FFTPSF=FFTPSF
             absFFTPSF=np.abs(FFTPSF)
             maxabsFFTPSF=np.max(absFFTPSF)
             # absFFTPSF2=np.abs(fftshift(fftn(ifftshift(PSF*self.apodization_xyz_centre)*self.Deltaxy**2,axes=(0,1))))**2 # separate b/c needs to include apodization
             absFFTPSF2 = absFFTPSF**2 # shouldn't actually apply apodization here because I'm just trying to calculate uv plane weights, not Fourier-space numerics
-            nonzero_uv_cells=np.nonzero(FFTPSF>1e-10)
-            eff_vol_arg=eff_pri_this_domain*self.apodization_xyz_centre
-            # eff_vol_arg=eff_vol_arg[nonzero_uv_cells]
-            self.effective_volume=np.sum(eff_vol_arg**2*self.d3r)
-
             PSFext=np.max(np.abs(PSF))
             manydBdown=1e-9
             PSF_norm=SymLogNorm(manydBdown*PSFext,vmin=-PSFext,vmax=PSFext)
@@ -1361,21 +1326,47 @@ class cosmo_stats(object):
                                        cmap="RdBu",
                                        exts=[[self.xy_vec_for_box[0],self.xy_vec_for_box[-1]],
                                              [self.xy_vec_for_box[0],self.xy_vec_for_box[-1]],
-                                             [z_vec_for_CST[0],z_vec_for_CST[-1]]  ],
+                                             [self.z_vec_for_box[0],self.z_vec_for_box[-1]]  ],
                                        name="PSF_slices.png")
             comprehensive_slice_figure(absFFTPSF,
                                        cmap=cmasher.horizon,
                                        norm=CenteredNorm(vcenter=maxabsFFTPSF,halfrange=0.5*maxabsFFTPSF),
                                        name="FFTPSF_slices_UNNORMALIZED.png")
-
+            
             pad_lo_xy,pad_hi_xy=get_padding(self.Nxy)
-            PSF_padded=np.pad(PSF,((pad_lo_xy,pad_hi_xy),(pad_lo_xy,pad_hi_xy),(0,0),),"wrap")
+            PSF_padded=np.pad(PSF,
+                              ((pad_lo_xy,pad_hi_xy),(pad_lo_xy,pad_hi_xy),(0,0),),
+                              "wrap")
             self.PSF_padded=PSF_padded
+            # nonzero_uv_cells=np.nonzero(absFFTPSF2>1e-10)
 
-            uv_weight*=np.inf
-            uv_weight[nonzero_uv_cells]=absFFTPSF2[nonzero_uv_cells] # can't use [absFFTPSF>0] since that gives the TypeError: NumPy boolean array indexing assignment requires a 0 or 1-dimensional input, input has 3 dimensions
-        self.uv_weight=uv_weight
-        print("cosmo_stats: self.effective_volume=",self.effective_volume)
+            # uv_weight_quantity=absFFTPSF2
+
+            # nonzero_uv_cells=np.nonzero(uv_weight_quantity)
+            # eff_vol_arg=eff_pri_this_domain*self.apodization_xyz_centre
+            # eff_vol_arg=eff_vol_arg[nonzero_uv_cells]
+            # self.power_spec_estimator_denom=np.sum(eff_vol_arg**2*self.d3r)
+            print("cosmo_stats.__init__: power1map is None", power1map is None)
+            PSFterm=fftconvolve(self.PSF_padded,
+                                power1map*self.Deltaxy**2,
+                                mode="valid",axes=[0,1])
+            print("PSF term has nans, infs, zeros?",np.sum(np.isnan(PSFterm)),np.sum(np.isinf(PSFterm)),np.sum(PSFterm==0))
+            power_spec_estimator_denom=np.abs(fftshift(fftn(ifftshift(self.apodization_xyz_centre*PSFterm*self.d3r),norm="backward")))**2*self.length_unit**3
+            print("raw power spec estimator denom has nans, infs, zeros?",np.sum(np.isnan(power_spec_estimator_denom)),
+                                                                          np.sum(np.isinf(power_spec_estimator_denom)),
+                                                                          np.sum(power_spec_estimator_denom==0))
+            # unsampled_uv=np.nonzero(power_spec_estimator_denom)
+            # power_spec_estimator_denom[unsampled_uv]=np.inf
+            self.power_spec_estimator_denom=power_spec_estimator_denom
+            comprehensive_slice_figure(power_spec_estimator_denom.value,
+                                       cmap=cmasher.horizon,
+                                       name="power_spec_estimator_denom.png")
+            print("cosmo_stats: self.power_spec_estimator_denom IS BOX-SHAPED")
+            
+
+            # uv_weight*=np.inf
+            # uv_weight[nonzero_uv_cells]=uv_weight_quantity[nonzero_uv_cells] # can't use [absFFTPSF>0] since that gives the TypeError: NumPy boolean array indexing assignment requires a 0 or 1-dimensional input, input has 3 dimensions
+        # self.uv_weight=uv_weight
         
         # strictness control for Monte Carlos
         self.frac_tol=frac_tol
@@ -1446,7 +1437,7 @@ class cosmo_stats(object):
                               ) 
                         ) # centre-origin
         modsq_T_tilde=np.abs(T_tilde)**2 *self.temp_unit**2*self.length_unit**6
-        P_unbinned=modsq_T_tilde/self.effective_volume/self.uv_weight # still box-shaped (haven't binned yet)
+        P_unbinned=modsq_T_tilde/self.power_spec_estimator_denom #/self.uv_weight # still box-shaped (haven't binned yet)
 
         self.P_unbinned=P_unbinned # centre-origin
         self.P_unbinned_running_sum+=P_unbinned
