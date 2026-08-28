@@ -737,7 +737,7 @@ class beam_effects(object):
                                 P_fid=P_cosmo,k_fid=self.ksph,
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
                                 T1=T1,
-                                PSF=self.syst,
+                                PSF=self.syst,PSF2=self.fidu,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
@@ -745,7 +745,7 @@ class beam_effects(object):
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
                                 T1=T1,
                                 T_pristine=fg_box,
-                                PSF=self.syst,
+                                PSF=self.syst,PSF2=self.fidu,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
@@ -769,7 +769,7 @@ class beam_effects(object):
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
                                 T1=T1,
-                                PSF=self.syst,
+                                PSF=self.syst,PSF2=self.fidu,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
