@@ -8,8 +8,6 @@ from scipy.fft import fftshift,ifftshift,fftfreq, fftn, irfftn, set_workers
 from scipy.integrate import quad
 from scipy.interpolate import RegularGridInterpolator as RGI
 from scipy.interpolate import griddata as gd
-# from scipy.signal import convolve # can't handle convolution along a subset of axes
-# from scipy.ndimage import convolve # can't handle 2d conv of 3d arrays along a subset of axes
 from scipy.signal import fftconvolve
 from scipy.stats import binned_statistic_dd
 
@@ -721,15 +719,14 @@ class beam_effects(object):
                               Nxy=self.Npix,Nz=self.PSF_Nz,
                               k_fid=self.k_for_flat,P_fid=P_flat) # moot to specify apodization since I'm not forming a power spec
         forpower1.generate_GRF()
-        power1map=forpower1.T_pristine
-        print ("power1map is None", power1map is None)
-        assert power1map is not None
+        T1=forpower1.T_pristine
+        assert T1 is not None
         print("Lz that will be used to initialize cosmo_stats: ",self.PSF_comoving_ext)
         print("fg_box.shape, self.Npix, self.PSF_Nz =",fg_box.shape, self.Npix, self.PSF_Nz)
         co_fi_xx_fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_comoving_ext,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
-                                power1map=power1map,
+                                T1=T1,
                                 PSF=self.fidu,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
@@ -739,14 +736,14 @@ class beam_effects(object):
         co_fi_sy_fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_comoving_ext,
                                 P_fid=P_cosmo,k_fid=self.ksph,
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
-                                power1map=power1map,
+                                T1=T1,
                                 PSF=self.syst,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
         xx_fi_sy_fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_comoving_ext,
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
-                                power1map=power1map,
+                                T1=T1,
                                 T_pristine=fg_box,
                                 PSF=self.syst,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
@@ -754,7 +751,7 @@ class beam_effects(object):
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
         xx_fi_xx_fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_comoving_ext,
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
-                                power1map=power1map,
+                                T1=T1,
                                 T_pristine=fg_box,
                                 PSF=self.fidu,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
@@ -763,7 +760,7 @@ class beam_effects(object):
         co_fi_xx_xx=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_comoving_ext,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
-                                power1map=power1map,
+                                T1=T1,
                                 PSF=self.fidu,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
@@ -771,7 +768,7 @@ class beam_effects(object):
         co_fi_sy_xx=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_comoving_ext,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
-                                power1map=power1map,
+                                T1=T1,
                                 PSF=self.syst,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
@@ -815,7 +812,7 @@ class beam_effects(object):
             recalc_co_xx_xx_fg=True
 
         if recalc_co_fi_xx_fg:
-            co_fi_xx_fg.power_Monte_Carlo(interfix="fi")
+            co_fi_xx_fg.power_Monte_Carlo(interfix="co_fi_xx_fg")
             self.N_per_realization= co_fi_xx_fg.N_per_realization
             self.P_co_fi_xx_fg=     co_fi_xx_fg.P_binned_MC_complete
             self.kperp_for_cosmo=  co_fi_xx_fg.kperpbins
@@ -1069,7 +1066,7 @@ class cosmo_stats(object):
                  T_pristine:np.ndarray=None,T_with_beam:np.ndarray=None,                # brightness temperature box realizations without ("_pristine") or with ("_beam") the beam applied (primary would be multiplied, but now the vanguard PA-CST approach uses convolution)
                  P_fid:np.ndarray=None, k_fid:np.ndarray=None,                          # power spectrum you want to window. probably comes from cosmo (like CAMB) or is flat (for a reference calculation) & Fourier space points where the fiducial power spectrum is sampled
                  Nxy:int=None,Nz:int=None,                                              # number of voxels in the x/y or z directions
-                 PSF:np.ndarray=None, power1map=None,                                   # PSF (box of values evaluated in config space); and white noise map for normalization
+                 PSF:np.ndarray=None, T1=None,                                   # PSF (box of values evaluated in config space); and white noise map for normalization
                  LoS_apo=False,transverse_apo=False,                                     # apodize along the sky plane or line-of-sight directions to suppress ringing originating from features that cut off sharply?
                  fg_box:np.ndarray=None,                                                # foregrounds to add to the signal-of-interest map (T)
                  frac_tol:float=0.1,                                                    # fractional tolerance in cosmic variance of the Monte Carlo ensemble -> used to calculate the number of realizations
@@ -1301,7 +1298,7 @@ class cosmo_stats(object):
 
         # beam
         self.PSF_padded=None
-        if power1map is None:
+        if T1 is None:
             self.power_spec_estimator_denom=np.sum(self.apodization_xyz_centre**2*self.d3r)
         else:
             FFTPSF=fftshift(fftn(ifftshift(PSF)*self.Deltaxy**2,axes=(0,1),norm="backward"))
@@ -1329,13 +1326,17 @@ class cosmo_stats(object):
             self.PSF_padded=PSF_padded
 
             print("sum of absFFTPSF2 = ",np.sum((absFFTPSF*self.d3k)**2))
+
+            # B*T1
             PSFterm=fftconvolve(self.PSF_padded,
-                    power1map*self.Deltaxy**2,
-                    mode="valid",axes=[0,1])
+                                T1*self.Deltaxy**2,
+                                mode="valid",axes=[0,1])
+            # FT( X(B*T1) )
             fourier_arg=fftshift( fftn( ifftshift(self.apodization_xyz_centre*PSFterm)*self.d3r,
                                         s=self.box_shape, axes=self.transform_axes, norm="backward"
                                       )
                                 )
+            # | FT( X(B*T1) ) |^2
             power_spec_estimator_denom=np.abs(fourier_arg)**2 *self.length_unit**3 # needs dims of volume
             self.power_spec_estimator_denom=power_spec_estimator_denom
 
@@ -1488,6 +1489,7 @@ class cosmo_stats(object):
         self.bin_power(power_to_bin=P_unbinned_MC_complete)
         P_binned_MC_complete=self.P_binned
         self.P_binned_MC_complete=P_binned_MC_complete*self.power_unit
+        self.P_numerator=P_unbinned_MC_complete*self.power_spec_estimator_denom
 
         self.N_per_realization=self.N_cumul/self.N_realizations
 
