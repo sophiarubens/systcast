@@ -531,7 +531,6 @@ class beam_effects(object):
             print("finished importing/constructing synthesized CST beam")
             print("fidu_box_PSF.shape=",fidu_box_PSF.shape)
             
-            self.fi_eff_primary_box=fidu_box
             weighted_sum_syst_primary=np.zeros_like(fidu_box)
             Ntypes=len(weights_PSF) # this is super hacky and I need to streamline it
             if Ntypes>1:
@@ -542,9 +541,6 @@ class beam_effects(object):
                         if not np.allclose(syst_box_here,0):
                             weighted_sum_syst_primary+=weights_PSF[q]*syst_box_here
                         q+=1
-                self.sy_eff_primary_box=weighted_sum_syst_primary
-            else:
-                self.sy_eff_primary_box=np.copy(self.fi_eff_primary_box)
             
             self.fidu=fidu_box_PSF
             self.syst=syst_box_PSF
@@ -1070,21 +1066,19 @@ cosmological brighness temperature boxes for assorted interconnected use cases:
 class cosmo_stats(object):
     def __init__(self,
                  Lxy:float=600.*u.Mpc,Lz:float=None,                                    # physical box length (Mpc). one scaling is nonnegotiable for box->spec and spec->box calcs; the other would be useful for rectangular prism box considerations (sky plane slice is square, but LoS extent can differ)
-                 T_pristine:np.ndarray=None,T_with_beam:np.ndarray=None,                     # brightness temperature box realizations without ("_pristine") or with ("_beam") the beam applied (primary would be multiplied, but now the vanguard PA-CST approach uses convolution)
-                 P_fid:np.ndarray=None,                                                 # power spectrum you want to window. probably comes from cosmo (like CAMB) or is flat (for a reference calculation)
-                 k_fid:np.ndarray=None,                                                 # Fourier space points where the fiducial power spectrum is sampled
+                 T_pristine:np.ndarray=None,T_with_beam:np.ndarray=None,                # brightness temperature box realizations without ("_pristine") or with ("_beam") the beam applied (primary would be multiplied, but now the vanguard PA-CST approach uses convolution)
+                 P_fid:np.ndarray=None, k_fid:np.ndarray=None,                          # power spectrum you want to window. probably comes from cosmo (like CAMB) or is flat (for a reference calculation) & Fourier space points where the fiducial power spectrum is sampled
                  Nxy:int=None,Nz:int=None,                                              # number of voxels in the x/y or z directions
-                 PSF:np.ndarray=None,                                                   # PSF (box of values evaluated in config space)
-                 power1map=None,
-                 Nkperp:int=0,Nkpar:int=0,                                              # number of k-bins in the sky plane and line of sight directions
+                 PSF:np.ndarray=None, power1map=None,                                   # PSF (box of values evaluated in config space); and white noise map for normalization
+                 LoS_apo=False,transverse_apo=False,                                     # apodize along the sky plane or line-of-sight directions to suppress ringing originating from features that cut off sharply?
+                 fg_box:np.ndarray=None,                                                # foregrounds to add to the signal-of-interest map (T)
                  frac_tol:float=0.1,                                                    # fractional tolerance in cosmic variance of the Monte Carlo ensemble -> used to calculate the number of realizations
+
+                 Nkperp:int=0,Nkpar:int=0,                                              # number of k-bins in the sky plane and line of sight directions
                  kperpbins_interp:np.ndarray=None,kparbins_interp:np.ndarray=None,      # bins where you want to know about the power spectrum (if you're interested in interpolating to some binning scheme other than what you get from chopping up the box)
-                 P_MC_complete:np.ndarray=None,                                         # converged Monte Carlo power spectrum
                  avoid_extrapolation:bool=False,                                        # whether or not to avoid extrapolation
                  seed=None,                                                             # Monte Carlo realization logistics: whether or not to subtract the monopole moment when you generate boxes (the option is mostly there if you're interested in off-label uses of this code to compute power spectra from fields that are not cosmological overdensity fields); RNG seed for predictable ensemble behaviour
-                 LoS_apo=False,transverse_apo=False,                                     # apodize along the sky plane or line-of-sight directions to suppress ringing originating from features that cut off sharply?
                  wedge_cut:bool=False,nu_ctr=None,                                      # throw away info from k-modes inside the foreground wedge?; when using synchrotron foregrounds AND performing a wedge cut, the calling routine should specify the central frequency of the survey in question to have a physical anchor for the foregrounds. also need central freq for FoG
-                 fg_box:np.ndarray=None,                                                # foregrounds to add to the signal-of-interest map (T)
                  FoG=False):
 
         # spectrum and box
@@ -1168,10 +1162,9 @@ class cosmo_stats(object):
             self.box_shape=(self.Nz,)
         self.Deltaxy=self.Lxy/self.Nxy                           # sky plane: voxel side length
         self.xy_vec_for_box=self.Lxy*fftshift(fftfreq(self.Nxy)) # sky plane Cartesian config space coordinate axis
-        self.Deltaz= self.Lz/self.Nz                           # line of sight voxel side length
-        self.z_vec_for_box= self.Lz*fftshift(fftfreq(self.Nz)) # line of sight Cartesian config space coordinate axis
-        self.d3r=self.Deltaz*self.Deltaxy**2                      # volume element = voxel volume
-
+        self.Deltaz= self.Lz/self.Nz                             # line of sight voxel side length
+        self.z_vec_for_box= self.Lz*fftshift(fftfreq(self.Nz))   # line of sight Cartesian config space coordinate axis
+        self.d3r=self.Deltaz*self.Deltaxy**2                     # volume element = voxel volume
         print("cosmo_stats.__init__: extrema of xy vec for box",np.min(self.xy_vec_for_box),np.max(self.xy_vec_for_box))
 
         # Fourier space
@@ -1220,6 +1213,8 @@ class cosmo_stats(object):
             self.transform_axes=(0,1)
             self.d3k=self.Deltakxy**2
             self.iftnorm=twopi**2
+        else:
+            raise ValueError("Why assess a 1x1x1 box? Double-check your usage")
         
         # foreground groundwork
         self.wedge_cut=wedge_cut
@@ -1306,12 +1301,10 @@ class cosmo_stats(object):
 
         # beam
         self.PSF_padded=None
-        # uv_weight=np.ones((self.Nxy,self.Nxy,self.Nz))
         if power1map is None:
             self.power_spec_estimator_denom=np.sum(self.apodization_xyz_centre**2*self.d3r)
         else:
             FFTPSF=fftshift(fftn(ifftshift(PSF)*self.Deltaxy**2,axes=(0,1),norm="backward"))
-            self.FFTPSF=FFTPSF
             absFFTPSF=np.abs(FFTPSF)
             maxabsFFTPSF=np.max(absFFTPSF)
             PSFext=np.max(np.abs(PSF))
@@ -1335,15 +1328,17 @@ class cosmo_stats(object):
                               "wrap")
             self.PSF_padded=PSF_padded
 
+            print("sum of absFFTPSF2 = ",np.sum((absFFTPSF*self.d3k)**2))
             PSFterm=fftconvolve(self.PSF_padded,
-                                power1map*self.Deltaxy**2,
-                                mode="valid",axes=[0,1])
-            power_spec_estimator_denom=np.abs(fftshift(fftn(ifftshift(self.apodization_xyz_centre*PSFterm*self.d3r),
-                                                            norm="backward")))**2*self.length_unit**3
-            print("raw power spec estimator denom has nans, infs, zeros?",np.sum(np.isnan(power_spec_estimator_denom)),
-                                                                          np.sum(np.isinf(power_spec_estimator_denom)),
-                                                                          np.sum(power_spec_estimator_denom==0))
+                    power1map*self.Deltaxy**2,
+                    mode="valid",axes=[0,1])
+            fourier_arg=fftshift( fftn( ifftshift(self.apodization_xyz_centre*PSFterm)*self.d3r,
+                                        s=self.box_shape, axes=self.transform_axes, norm="backward"
+                                      )
+                                )
+            power_spec_estimator_denom=np.abs(fourier_arg)**2 *self.length_unit**3 # needs dims of volume
             self.power_spec_estimator_denom=power_spec_estimator_denom
+
             comprehensive_slice_figure(power_spec_estimator_denom.value,
                                        cmap=cmasher.horizon,
                                        name="power_spec_estimator_denom.png")
@@ -1358,7 +1353,6 @@ class cosmo_stats(object):
 
         # realization, averaging, and interpolation placeholders if no prior info
         self.P_unbinned_running_sum=np.zeros(self.box_shape)*self.power_unit
-        self.P_MC_complete=P_MC_complete
         self.P_interp=None
         self.MC_not_complete=None
         if self.Nkpar>0 and self.Nkpar is not None:
