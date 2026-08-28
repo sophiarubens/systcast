@@ -519,7 +519,7 @@ class beam_effects(object):
                 print("finished synthesizing systematic-laden CST PSF")
 
                 np.save("fidu_box_PSF_"+ioname+".npy",fidu_box_PSF)
-                assert(1==0), "just re-synthesizing a single PSF for use in the end-to-end test"
+                # assert(1==0), "just re-synthesizing a single PSF for use in the end-to-end test"
                 np.save("syst_box_PSF_"+ioname+".npy",syst_box_PSF)
                 np.save("weights_PSF_"+ioname+".npy",weights_PSF)
                 print("saved synthesized beam")
@@ -1309,15 +1309,11 @@ class cosmo_stats(object):
         # uv_weight=np.ones((self.Nxy,self.Nxy,self.Nz))
         if power1map is None:
             self.power_spec_estimator_denom=np.sum(self.apodization_xyz_centre**2*self.d3r)
-            print("cosmo_stats: self.power_spec_estimator_denom=",self.power_spec_estimator_denom)
         else:
-            # print("finished interpolating the effective primary beam along the line of sight")
             FFTPSF=fftshift(fftn(ifftshift(PSF)*self.Deltaxy**2,axes=(0,1),norm="backward"))
             self.FFTPSF=FFTPSF
             absFFTPSF=np.abs(FFTPSF)
             maxabsFFTPSF=np.max(absFFTPSF)
-            # absFFTPSF2=np.abs(fftshift(fftn(ifftshift(PSF*self.apodization_xyz_centre)*self.Deltaxy**2,axes=(0,1))))**2 # separate b/c needs to include apodization
-            absFFTPSF2 = absFFTPSF**2 # shouldn't actually apply apodization here because I'm just trying to calculate uv plane weights, not Fourier-space numerics
             PSFext=np.max(np.abs(PSF))
             manydBdown=1e-9
             PSF_norm=SymLogNorm(manydBdown*PSFext,vmin=-PSFext,vmax=PSFext)
@@ -1338,35 +1334,19 @@ class cosmo_stats(object):
                               ((pad_lo_xy,pad_hi_xy),(pad_lo_xy,pad_hi_xy),(0,0),),
                               "wrap")
             self.PSF_padded=PSF_padded
-            # nonzero_uv_cells=np.nonzero(absFFTPSF2>1e-10)
 
-            # uv_weight_quantity=absFFTPSF2
-
-            # nonzero_uv_cells=np.nonzero(uv_weight_quantity)
-            # eff_vol_arg=eff_pri_this_domain*self.apodization_xyz_centre
-            # eff_vol_arg=eff_vol_arg[nonzero_uv_cells]
-            # self.power_spec_estimator_denom=np.sum(eff_vol_arg**2*self.d3r)
-            print("cosmo_stats.__init__: power1map is None", power1map is None)
             PSFterm=fftconvolve(self.PSF_padded,
                                 power1map*self.Deltaxy**2,
                                 mode="valid",axes=[0,1])
-            print("PSF term has nans, infs, zeros?",np.sum(np.isnan(PSFterm)),np.sum(np.isinf(PSFterm)),np.sum(PSFterm==0))
-            power_spec_estimator_denom=np.abs(fftshift(fftn(ifftshift(self.apodization_xyz_centre*PSFterm*self.d3r),norm="backward")))**2*self.length_unit**3
+            power_spec_estimator_denom=np.abs(fftshift(fftn(ifftshift(self.apodization_xyz_centre*PSFterm*self.d3r),
+                                                            norm="backward")))**2*self.length_unit**3
             print("raw power spec estimator denom has nans, infs, zeros?",np.sum(np.isnan(power_spec_estimator_denom)),
                                                                           np.sum(np.isinf(power_spec_estimator_denom)),
                                                                           np.sum(power_spec_estimator_denom==0))
-            # unsampled_uv=np.nonzero(power_spec_estimator_denom)
-            # power_spec_estimator_denom[unsampled_uv]=np.inf
             self.power_spec_estimator_denom=power_spec_estimator_denom
             comprehensive_slice_figure(power_spec_estimator_denom.value,
                                        cmap=cmasher.horizon,
                                        name="power_spec_estimator_denom.png")
-            print("cosmo_stats: self.power_spec_estimator_denom IS BOX-SHAPED")
-            
-
-            # uv_weight*=np.inf
-            # uv_weight[nonzero_uv_cells]=uv_weight_quantity[nonzero_uv_cells] # can't use [absFFTPSF>0] since that gives the TypeError: NumPy boolean array indexing assignment requires a 0 or 1-dimensional input, input has 3 dimensions
-        # self.uv_weight=uv_weight
         
         # strictness control for Monte Carlos
         self.frac_tol=frac_tol
