@@ -1066,7 +1066,7 @@ class cosmo_stats(object):
                  T_pristine:np.ndarray=None,T_with_beam:np.ndarray=None,                # brightness temperature box realizations without ("_pristine") or with ("_beam") the beam applied (primary would be multiplied, but now the vanguard PA-CST approach uses convolution)
                  P_fid:np.ndarray=None, k_fid:np.ndarray=None,                          # power spectrum you want to window. probably comes from cosmo (like CAMB) or is flat (for a reference calculation) & Fourier space points where the fiducial power spectrum is sampled
                  Nxy:int=None,Nz:int=None,                                              # number of voxels in the x/y or z directions
-                 PSF:np.ndarray=None, T1=None,                                   # PSF (box of values evaluated in config space); and white noise map for normalization
+                 PSF:np.ndarray=None, PSF2=None, T1=None,                                   # PSF (box of values evaluated in config space); and white noise map for normalization
                  LoS_apo=False,transverse_apo=False,                                     # apodize along the sky plane or line-of-sight directions to suppress ringing originating from features that cut off sharply?
                  fg_box:np.ndarray=None,                                                # foregrounds to add to the signal-of-interest map (T)
                  frac_tol:float=0.1,                                                    # fractional tolerance in cosmic variance of the Monte Carlo ensemble -> used to calculate the number of realizations
@@ -1301,13 +1301,16 @@ class cosmo_stats(object):
         if T1 is None:
             self.power_spec_estimator_denom=np.sum(self.apodization_xyz_centre**2*self.d3r)
         else:
-            FFTPSF=fftshift(fftn(ifftshift(PSF)*self.Deltaxy**2,axes=(0,1),norm="backward"))
+            PSFuse=PSF
+            if PSF2 is not None:
+                PSFuse=PSF2
+            FFTPSF=fftshift(fftn(ifftshift(PSFuse)*self.Deltaxy**2,axes=(0,1),norm="backward"))
             absFFTPSF=np.abs(FFTPSF)
             maxabsFFTPSF=np.max(absFFTPSF)
-            PSFext=np.max(np.abs(PSF))
+            PSFext=np.max(np.abs(PSFuse))
             manydBdown=1e-9
             PSF_norm=SymLogNorm(manydBdown*PSFext,vmin=-PSFext,vmax=PSFext)
-            comprehensive_slice_figure(PSF, 
+            comprehensive_slice_figure(PSFuse, 
                                        norm=PSF_norm,
                                        cmap="RdBu",
                                        exts=[[self.xy_vec_for_box[0],self.xy_vec_for_box[-1]],
@@ -1320,7 +1323,7 @@ class cosmo_stats(object):
                                        name="FFTPSF_slices_UNNORMALIZED.png")
             
             pad_lo_xy,pad_hi_xy=get_padding(self.Nxy)
-            PSF_padded=np.pad(PSF,
+            PSF_padded=np.pad(PSFuse,
                               ((pad_lo_xy,pad_hi_xy),(pad_lo_xy,pad_hi_xy),(0,0),),
                               "wrap")
             self.PSF_padded=PSF_padded
