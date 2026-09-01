@@ -1420,7 +1420,7 @@ class cosmo_stats(object):
                         ) # centre-origin
         modsq_T_tilde=np.abs(T_tilde)**2 *self.temp_unit**2*self.length_unit**6
 
-        if self.PSF is not None: 
+        if self.PSF_padded is not None: 
             self.generate_GRF(T1=True)
 
             # B*(A T1)
