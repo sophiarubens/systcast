@@ -1066,8 +1066,9 @@ class cosmo_stats(object):
                  T_pristine:np.ndarray=None,T_with_beam:np.ndarray=None,                # brightness temperature box realizations without ("_pristine") or with ("_beam") the beam applied (primary would be multiplied, but now the vanguard PA-CST approach uses convolution)
                  P_fid:np.ndarray=None, k_fid:np.ndarray=None,                          # power spectrum you want to window. probably comes from cosmo (like CAMB) or is flat (for a reference calculation) & Fourier space points where the fiducial power spectrum is sampled
                  Nxy:int=None,Nz:int=None,                                              # number of voxels in the x/y or z directions
-                 PSF:np.ndarray=None, PSF2=None, T1=None,                                   # PSF (box of values evaluated in config space); and white noise map for normalization
-                 LoS_apo=False,transverse_apo=False,                                     # apodize along the sky plane or line-of-sight directions to suppress ringing originating from features that cut off sharply?
+                 PSF:np.ndarray=None, PSF2=None, T1=None,                               # PSF (box of values evaluated in config space); and white noise map for normalization
+                 Aeff:np.ndarray=None, Aeff2:np.ndarray=None,
+                 LoS_apo=False,transverse_apo=False,                                    # apodize along the sky plane or line-of-sight directions to suppress ringing originating from features that cut off sharply?
                  fg_box:np.ndarray=None,                                                # foregrounds to add to the signal-of-interest map (T)
                  frac_tol:float=0.1,                                                    # fractional tolerance in cosmic variance of the Monte Carlo ensemble -> used to calculate the number of realizations
 
@@ -1304,7 +1305,11 @@ class cosmo_stats(object):
             PSFuse=PSF
             if PSF2 is not None:
                 PSFuse=PSF2
-            FFTPSF=fftshift(fftn(ifftshift(PSFuse)*self.Deltaxy**2,axes=(0,1),norm="backward"))
+            FFTPSF=fftshift(fftn(
+                                    ifftshift(PSFuse,axes=(0,1))*self.Deltaxy**2,
+                                    axes=(0,1),norm="backward"),
+
+                                    axes=(0,1))
             absFFTPSF=np.abs(FFTPSF)
             maxabsFFTPSF=np.max(absFFTPSF)
             PSFext=np.max(np.abs(PSFuse))
