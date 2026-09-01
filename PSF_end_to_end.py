@@ -61,102 +61,116 @@ double_T1=bwP.P_binned
 for P_case in P_in_options:
     P_in,P_name,e2enorm=P_case
     print("Nxy,Nz=",Nxy,Nz)
-    stats_container0=cosmo_stats(Lxy,Lz=Lz,
-                                P_fid=P_in,k_fid=k_in,
-                                Nxy=Nxy,Nz=Nz,
-                                LoS_apo=True,transverse_apo=False,
-                                frac_tol=ft, nu_ctr=600*u.MHz)
-    stats_container0.power_Monte_Carlo()
-    stats_container1=cosmo_stats(Lxy,Lz=Lz,
-                                 P_fid=P_in,k_fid=k_in,
-                                 Nxy=Nxy,Nz=Nz,
-                                 PSF=PSF,T1=T1,
-                                 LoS_apo=True,transverse_apo=False,
-                                 frac_tol=ft, nu_ctr=600*u.MHz)
-    stats_container1.power_Monte_Carlo()
-    stats_container2=cosmo_stats(Lxy,Lz=Lz,
-                                 P_fid=P_in,k_fid=k_in,
-                                 Nxy=Nxy,Nz=Nz,
-                                 PSF=PSF,T1=stats_container0.T_pristine,
-                                 LoS_apo=True,transverse_apo=False,
-                                 frac_tol=ft, nu_ctr=600*u.MHz)
-    stats_container2.power_Monte_Carlo()
-    stats_container3=cosmo_stats(Lxy,Lz=Lz,
-                                 P_fid=P_in,k_fid=k_in,
-                                 Nxy=Nxy,Nz=Nz,
-                                 PSF=PSF,T1=stats_container0.T_pristine,
-                                 LoS_apo=False,transverse_apo=False,
-                                 frac_tol=ft, nu_ctr=600*u.MHz)
-    stats_container3.power_Monte_Carlo()
-    print("completed Monte Carlo")
+    fromTb=cosmo_stats(Lxy,Lz=Lz,
+                       P_fid=P_in,k_fid=k_in,
+                       Nxy=Nxy,Nz=Nz,
+                       frac_tol=ft, nu_ctr=600*u.MHz)
+    fromTb.power_Monte_Carlo()
+    P_Tb=fromTb.P_binned_MC_complete.value
+    fromTbA=cosmo_stats(Lxy,Lz=Lz,
+                        P_fid=P_in,k_fid=k_in,
+                        Nxy=Nxy,Nz=Nz,
+                        Aeff=,
+                        frac_tol=ft, nu_ctr=600*u.MHz)
+    fromTbA.power_Monte_Carlo()
+    P_TbA=fromTbA.P_binned_MC_complete.value
+    fromTbB=cosmo_stats(Lxy,Lz=Lz,
+                        P_fid=P_in,k_fid=k_in,
+                        Nxy=Nxy,Nz=Nz,
+                        PSF=PSF,T1=T1,
+                        frac_tol=ft, nu_ctr=600*u.MHz)
+    fromTbB.power_Monte_Carlo()
+    P_TbB=fromTbB.P_binned_MC_complete.value
+    fromTbX=cosmo_stats(Lxy,Lz=Lz,
+                        P_fid=P_in,k_fid=k_in,
+                        Nxy=Nxy,Nz=Nz,
+                        LoS_apo=True,
+                        frac_tol=ft, nu_ctr=600*u.MHz)
+    fromTbX.power_Monte_Carlo()
+    P_TbX=fromTbX.P_binned_MC_complete.value
+    fromTbAB=cosmo_stats(Lxy,Lz=Lz,
+                         P_fid=P_in,k_fid=k_in,
+                         Nxy=Nxy,Nz=Nz,
+                         Aeff=,
+                         PSF=PSF,T1=T1,
+                         frac_tol=ft, nu_ctr=600*u.MHz)
+    fromTbAB.power_Monte_Carlo()
+    P_TbAB=fromTbAB.P_binned_MC_complete.value
+    fromTbAX=cosmo_stats(Lxy,Lz=Lz,
+                         P_fid=P_in,k_fid=k_in,
+                         Nxy=Nxy,Nz=Nz,
+                         Aeff=,
+                         LoS_apo=True,
+                         frac_tol=ft, nu_ctr=600*u.MHz)
+    fromTbAX.power_Monte_Carlo()
+    P_TbAX=fromTbAX.P_binned_MC_complete.value
+    fromTbBX=cosmo_stats(Lxy,Lz=Lz,
+                         P_fid=P_in,k_fid=k_in,
+                         Nxy=Nxy,Nz=Nz,
+                         PSF=PSF,T1=T1,
+                         LoS_apo=True,
+                         frac_tol=ft, nu_ctr=600*u.MHz)
+    fromTbBX.power_Monte_Carlo()
+    P_TbBX=fromTbBX.P_binned_MC_complete.value
+    fromTbABX=cosmo_stats(Lxy,Lz=Lz,
+                          P_fid=P_in,k_fid=k_in,
+                          Nxy=Nxy,Nz=Nz,
+                          Aeff=,
+                          PSF=PSF,T1=T1,
+                          LoS_apo=True,
+                          frac_tol=ft, nu_ctr=600*u.MHz)
+    fromTbABX.power_Monte_Carlo()
+    P_TbABX=fromTbABX.P_binned_MC_complete.value
+    print("completed Monte Carlos")
 
-    k_perp_out=stats_container0.kperpbins[:-1]
-    k_par_out= stats_container0.kparbins[:-1]
+    k_perp_out=fromTb.kperpbins[:-1]
+    k_par_out= fromTb.kparbins[:-1]
     cyl_extent=[k_perp_out[0].value,k_perp_out[-1].value,k_par_out[0].value,k_par_out[-1].value]
-    P0=stats_container0.P_binned_MC_complete.value.T
-    P1=stats_container1.P_binned_MC_complete.value.T
-    double_Tdata=stats_container2.P_binned_MC_complete.value.T
-    noXyesB=stats_container3.P_binned_MC_complete.value.T
-    noXyesB_numerator=stats_container3.P_numerator.value
-    # custom_denom=np.abs(FFTPSF0)**2 # math is super wrong
-    custom_denom_arg=fftshift(fftn(
-                                    ifftshift(FFTPSF*Lxy**2*Lz),
-                                    axes=(2),norm="backward"
-                                  ))
-    custom_denom=np.abs(custom_denom_arg)**2
-    noXyesB_customdenom_unbinned=noXyesB_numerator/custom_denom
-    # need to bin this so make a new cosmo_stats object just to bin it
-    stats_container3.P_unbinned=noXyesB_customdenom_unbinned
-    stats_container3.bin_power()
-    noXyesB_customdenom=stats_container3.P_binned.T
-    SimpNumRealizRat_unbinned=forpower1.P_numerator/forpower1_2.P_numerator
-    stats_container3.P_unbinned=SimpNumRealizRat_unbinned
-    stats_container3.bin_power()
-    SimpNumRealizRat=stats_container3.P_binned.T
 
     _,axs=plt.subplots(2,4,layout="constrained",figsize=(11,9))
-    im=axs[0,0].imshow(power1E2E,extent=cyl_extent,cmap=cmasher.horizon,origin="lower",
+    im=axs[0,0].imshow(P_Tb,extent=cyl_extent,cmap=cmasher.horizon,origin="lower",
                        norm=Norm1)
     plt.colorbar(im,ax=axs[0,0])
-    axs[0,0].set_title("E2E w/o PSF or apodization\nmean,med={:.4f}, {:.4f}".format(np.mean(power1E2E),np.median(power1E2E)))
+    axs[0,0].set_title("P from T$_b$\nmean,med={:.4f}, {:.4f}".format(np.mean(P_Tb),np.median(P_Tb)))
 
-    im=axs[0,1].imshow(P1,extent=cyl_extent,cmap=cmasher.horizon,origin="lower",
-                       norm=e2enorm)
+    im=axs[0,1].imshow(P_TbA,extent=cyl_extent,cmap=cmasher.horizon,origin="lower",
+                       norm=Norm1)
     plt.colorbar(im,ax=axs[0,1])
-    axs[0,1].set_title("E2E w/ PSF\non target scale\nmean,med={:.4f}, {:.4f}".format(np.mean(P1),np.median(P1)))
+    axs[0,1].set_title("P from T$_b$, A\nmean,med={:.4f}, {:.4f}".format(np.mean(P_TbA),np.median(P_TbA)))
 
-    im=axs[0,2].imshow(SimpNumRealizRat,extent=cyl_extent,cmap=cmasher.horizon,origin="lower",
-                       norm=CenteredNorm(vcenter=np.median(SimpNumRealizRat),halfrange=0.5*np.median(SimpNumRealizRat)))
+    im=axs[0,2].imshow(P_TbB,extent=cyl_extent,cmap=cmasher.horizon,origin="lower",
+                       norm=Norm1)
     plt.colorbar(im,ax=axs[0,2])
-    axs[0,2].set_title("simple ratio of \nnumerator realizations\nmean,med={:.4f}, {:.4f}".format(np.mean(P0),np.median(P0)))
+    axs[0,1].set_title("P from T$_b$, B\nmean,med={:.4f}, {:.4f}".format(np.mean(P_TbB),np.median(P_TbB)))
 
-    im=axs[0,3].imshow(P1,extent=cyl_extent,cmap=cmasher.horizon,origin="lower",
-                       norm=CenteredNorm(vcenter=np.median(P1),halfrange=0.5*np.median(P1)))
+    im=axs[0,3].imshow(P_TbX,extent=cyl_extent,cmap=cmasher.horizon,origin="lower",
+                       norm=Norm1)
     plt.colorbar(im,ax=axs[0,3])
-    axs[0,3].set_title("E2E w/ PSF\non data scale\nmean,med={:.4f}, {:.4f}".format(np.mean(P1),np.median(P1)))
+    axs[0,3].set_title("P from T$_b$, X\nmean,med={:.4f}, {:.4f}".format(np.mean(P_TbX),np.median(P_TbX)))
 
 
 
-    im=axs[1,0].imshow(double_T1,extent=cyl_extent,cmap=cmasher.horizon,origin="lower",
-                       norm=CenteredNorm(vcenter=np.median(double_T1),halfrange=0.5*np.median(double_T1)))
+    im=axs[1,0].imshow(P_TbAB,extent=cyl_extent,cmap=cmasher.horizon,origin="lower",
+                       norm=Norm1)
     plt.colorbar(im,ax=axs[1,0])
-    axs[1,0].set_title("double T1; PSF\nmean,med={:.4f}, {:.4f}".format(np.mean(double_T1),np.median(double_T1)))
+    axs[1,0].set_title("P from T$_b$, A, B\nmean,med={:.4f}, {:.4f}".format(np.mean(P_TbAB),np.median(P_TbAB)))
 
-    im=axs[1,1].imshow(double_Tdata,extent=cyl_extent,cmap=cmasher.horizon,origin="lower",
-                       norm=CenteredNorm(vcenter=np.median(double_Tdata),halfrange=0.5*np.median(double_Tdata)))
+    im=axs[1,1].imshow(P_TbAX,extent=cyl_extent,cmap=cmasher.horizon,origin="lower",
+                       norm=Norm1)
     plt.colorbar(im,ax=axs[1,1])
-    axs[1,1].set_title("double Tdata; PSF\nmean,med={:.4f}, {:.4f}".format(np.mean(double_Tdata),np.median(double_Tdata)))
+    axs[1,1].set_title("P from T$_b$, A, X\nmean,med={:.4f}, {:.4f}".format(np.mean(P_TbAX),np.median(P_TbAX)))
 
-    im=axs[1,2].imshow(noXyesB,extent=cyl_extent,cmap=cmasher.horizon,origin="lower",
-                       norm=CenteredNorm(vcenter=np.median(noXyesB),halfrange=0.5*np.median(noXyesB)))
+    im=axs[1,2].imshow(P_TbBX,extent=cyl_extent,cmap=cmasher.horizon,origin="lower",
+                       norm=Norm1)
     plt.colorbar(im,ax=axs[1,2])
-    axs[1,2].set_title("PSF but no apo\nmean,med={:.4f}, {:.4f}".format(np.mean(noXyesB),np.median(noXyesB)))
+    axs[1,2].set_title("P from T$_b$, B, X\nmean,med={:.4f}, {:.4f}".format(np.mean(P_TbBX),np.median(P_TbBX)))
 
-    # im=axs[1,3].imshow(noXyesB_customdenom,extent=cyl_extent,cmap=cmasher.horizon,origin="lower",
-                      #  norm=CenteredNorm(vcenter=np.median(noXyesB_customdenom),halfrange=0.5*np.median(noXyesB_customdenom)))
-    # plt.colorbar(im,ax=axs[1,3])
-    # axs[1,3].set_title("PSF but no apo\ncustom denom\nmean,med={:.4e}, {:.4e}".format(np.mean(noXyesB_customdenom),np.median(noXyesB_customdenom)))
+    im=axs[1,3].imshow(P_TbABX,extent=cyl_extent,cmap=cmasher.horizon,origin="lower",
+                       norm=Norm1)
+    plt.colorbar(im,ax=axs[1,3])
+    axs[1,3].set_title("P from T$_b$, A, B, X\nmean,med={:.4f}, {:.4f}".format(np.mean(P_TbABX),np.median(ABX)))
 
+    
     plt.suptitle(P_name+" power end-to-end comparison")
     plt.savefig("PSF_A_B_"+P_name+"_end_to_end.png",dpi=400)
     plt.close()
