@@ -20,6 +20,9 @@ power_unit=u.mK**2*u.Mpc**3
 
 P_flat=np.ones(N_in)*power_unit
 Norm1=CenteredNorm(vcenter=1,halfrange=0.1)
+ioname="full_cont__none__600MHz__N_CST_types_1__N_ptg_err_0_dist_hybr__layer_True__wedge_False__seed_None"
+PSF=np.load("fidu_box_PSF_"+ioname+".npy")
+Aeff=np.load("fidu_Aeff_"+ioname+".npy")
 
 P_in_options=[
             #   [dec_pwr/dec_pwr_norm *power_unit, "decaying_power_law", None],
@@ -27,36 +30,7 @@ P_in_options=[
               [P_flat, "flat"              , Norm1] 
 
               ]
-# P_in_options=[[np.ones(N_in)        *power_unit, "flat"              ]]
-ft=1/np.sqrt(2)
-PSF=np.load("fidu_box_PSF_full_cont__none__600MHz__N_CST_types_1__N_ptg_err_0_dist_hybr__layer_True__wedge_False__seed_None.npy")
-FFTPSF=fftshift(fftn(ifftshift(PSF)*Deltaxy**2,axes=(0,1),norm="backward"))
-FFTPSF0=FFTPSF[Nxy//2,Nxy//2,Nz//2]
-print(FFTPSF0)
-
-forpower1=cosmo_stats(Lxy,Lz=Lz,
-                      P_fid=P_flat,k_fid=k_in,
-                      frac_tol=ft,
-                      Nxy=Nxy,Nz=Nz)
-forpower1.generate_GRF()
-T1=forpower1.T_pristine
-np.save("T1.npy",T1.value)
-forpower1.power_Monte_Carlo()
-power1E2E=forpower1.P_binned_MC_complete.value.T
-forpower1_2=cosmo_stats(Lxy,Lz=Lz,
-                        P_fid=P_flat,k_fid=k_in,
-                        frac_tol=ft,
-                        Nxy=Nxy,Nz=Nz)
-forpower1_2.power_Monte_Carlo()
-
-bwP=cosmo_stats(Lxy,Lz,
-                T_pristine=T1,
-                PSF=PSF,T1=T1,
-                frac_tol=ft,
-                Nxy=Nxy,Nz=Nz)
-bwP.generate_P()
-bwP.bin_power()
-double_T1=bwP.P_binned
+ft=1 # 1/np.sqrt(2)
 
 for P_case in P_in_options:
     P_in,P_name,e2enorm=P_case
@@ -66,61 +40,69 @@ for P_case in P_in_options:
                        Nxy=Nxy,Nz=Nz,
                        frac_tol=ft, nu_ctr=600*u.MHz)
     fromTb.power_Monte_Carlo()
+    print("P Tb calc complete")
     P_Tb=fromTb.P_binned_MC_complete.value
     fromTbA=cosmo_stats(Lxy,Lz=Lz,
                         P_fid=P_in,k_fid=k_in,
                         Nxy=Nxy,Nz=Nz,
-                        Aeff=,
+                        Aeff=Aeff,
                         frac_tol=ft, nu_ctr=600*u.MHz)
     fromTbA.power_Monte_Carlo()
-    P_TbA=fromTbA.P_binned_MC_complete.value
+    print("P Tb A calc complete")
+    P_TbA=fromTbA.P_binned_MC_complete.value.T
     fromTbB=cosmo_stats(Lxy,Lz=Lz,
                         P_fid=P_in,k_fid=k_in,
                         Nxy=Nxy,Nz=Nz,
-                        PSF=PSF,T1=T1,
+                        PSF=PSF,
                         frac_tol=ft, nu_ctr=600*u.MHz)
     fromTbB.power_Monte_Carlo()
-    P_TbB=fromTbB.P_binned_MC_complete.value
+    print("P Tb B calc complete")
+    P_TbB=fromTbB.P_binned_MC_complete.value.T
     fromTbX=cosmo_stats(Lxy,Lz=Lz,
                         P_fid=P_in,k_fid=k_in,
                         Nxy=Nxy,Nz=Nz,
                         LoS_apo=True,
                         frac_tol=ft, nu_ctr=600*u.MHz)
     fromTbX.power_Monte_Carlo()
-    P_TbX=fromTbX.P_binned_MC_complete.value
+    print("P Tb X calc complete")
+    P_TbX=fromTbX.P_binned_MC_complete.value.T
     fromTbAB=cosmo_stats(Lxy,Lz=Lz,
                          P_fid=P_in,k_fid=k_in,
                          Nxy=Nxy,Nz=Nz,
-                         Aeff=,
-                         PSF=PSF,T1=T1,
+                         Aeff=Aeff,
+                         PSF=PSF,
                          frac_tol=ft, nu_ctr=600*u.MHz)
     fromTbAB.power_Monte_Carlo()
-    P_TbAB=fromTbAB.P_binned_MC_complete.value
+    print("P Tb A B calc complete")
+    P_TbAB=fromTbAB.P_binned_MC_complete.value.T
     fromTbAX=cosmo_stats(Lxy,Lz=Lz,
                          P_fid=P_in,k_fid=k_in,
                          Nxy=Nxy,Nz=Nz,
-                         Aeff=,
+                         Aeff=Aeff,
                          LoS_apo=True,
                          frac_tol=ft, nu_ctr=600*u.MHz)
     fromTbAX.power_Monte_Carlo()
-    P_TbAX=fromTbAX.P_binned_MC_complete.value
+    print("P Tb A X calc complete")
+    P_TbAX=fromTbAX.P_binned_MC_complete.value.T
     fromTbBX=cosmo_stats(Lxy,Lz=Lz,
                          P_fid=P_in,k_fid=k_in,
                          Nxy=Nxy,Nz=Nz,
-                         PSF=PSF,T1=T1,
+                         PSF=PSF,
                          LoS_apo=True,
                          frac_tol=ft, nu_ctr=600*u.MHz)
     fromTbBX.power_Monte_Carlo()
-    P_TbBX=fromTbBX.P_binned_MC_complete.value
+    print("P Tb B X calc complete")
+    P_TbBX=fromTbBX.P_binned_MC_complete.value.T
     fromTbABX=cosmo_stats(Lxy,Lz=Lz,
                           P_fid=P_in,k_fid=k_in,
                           Nxy=Nxy,Nz=Nz,
-                          Aeff=,
-                          PSF=PSF,T1=T1,
+                          Aeff=Aeff,
+                          PSF=PSF,
                           LoS_apo=True,
                           frac_tol=ft, nu_ctr=600*u.MHz)
     fromTbABX.power_Monte_Carlo()
-    P_TbABX=fromTbABX.P_binned_MC_complete.value
+    print("P Tb A B X calc complete")
+    P_TbABX=fromTbABX.P_binned_MC_complete.value.T
     print("completed Monte Carlos")
 
     k_perp_out=fromTb.kperpbins[:-1]
@@ -168,7 +150,7 @@ for P_case in P_in_options:
     im=axs[1,3].imshow(P_TbABX,extent=cyl_extent,cmap=cmasher.horizon,origin="lower",
                        norm=Norm1)
     plt.colorbar(im,ax=axs[1,3])
-    axs[1,3].set_title("P from T$_b$, A, B, X\nmean,med={:.4f}, {:.4f}".format(np.mean(P_TbABX),np.median(ABX)))
+    axs[1,3].set_title("P from T$_b$, A, B, X\nmean,med={:.4f}, {:.4f}".format(np.mean(P_TbABX),np.median(P_TbABX)))
 
     
     plt.suptitle(P_name+" power end-to-end comparison")
