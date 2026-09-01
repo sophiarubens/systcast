@@ -1297,10 +1297,21 @@ class cosmo_stats(object):
             apodization_xyz_product=apodization_xx*apodization_yy
         self.apodization_xyz_centre=apodization_xyz_product
 
-        # beam
+        # beams
+        self.Aeff=1
+        self.Aeff2=1
+        if Aeff is not None:
+            assert(Aeff.shape==self.box_shape)
+            self.Aeff=Aeff
+            if Aeff2 is not None:
+                assert(Aeff2.shape==self.box_shape)
+                self.Aeff2=Aeff2
+            else:
+                self.Aeff2=Aeff
+        
         self.PSF_padded=None
-        if T1 is None:
-            self.power_spec_estimator_denom=np.sum(self.apodization_xyz_centre**2*self.d3r)
+        if T1 is None: # technically just a special case of the else, but doing it this way lets me skip superfluous convolutions
+            self.power_spec_estimator_denom=np.sum((self.apodization_xyz_centre*self.Aeff2)**2*self.d3r)
         else:
             PSFuse=PSF
             if PSF2 is not None:
@@ -1335,16 +1346,16 @@ class cosmo_stats(object):
 
             print("sum of absFFTPSF2 = ",np.sum((absFFTPSF*self.d3k)**2))
 
-            # B*T1
+            # B*(A T1)
             PSFterm=fftconvolve(self.PSF_padded,
-                                T1*self.Deltaxy**2,
+                                self.Aeff2*T1*self.Deltaxy**2,
                                 mode="valid",axes=[0,1])
-            # FT( X(B*T1) )
+            # FT( X(B*(A T1)) )
             fourier_arg=fftshift( fftn( ifftshift(self.apodization_xyz_centre*PSFterm)*self.d3r,
                                         s=self.box_shape, axes=self.transform_axes, norm="backward"
                                       )
                                 )
-            # | FT( X(B*T1) ) |^2
+            # | FT( X(B*(A T1)) ) |^2
             power_spec_estimator_denom=np.abs(fourier_arg)**2 *self.length_unit**3 # needs dims of volume
             self.power_spec_estimator_denom=power_spec_estimator_denom
 

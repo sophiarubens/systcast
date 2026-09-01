@@ -97,7 +97,7 @@ for P_case in P_in_options:
     P1=stats_container1.P_binned_MC_complete.value.T
     double_Tdata=stats_container2.P_binned_MC_complete.value.T
     noXyesB=stats_container3.P_binned_MC_complete.value.T
-    noXyesB_numerator=stats_container3.P_numerator.value.T
+    noXyesB_numerator=stats_container3.P_numerator.value
     # custom_denom=np.abs(FFTPSF0)**2 # math is super wrong
     custom_denom_arg=fftshift(fftn(
                                     ifftshift(FFTPSF*Lxy**2*Lz),
@@ -152,10 +152,10 @@ for P_case in P_in_options:
     plt.colorbar(im,ax=axs[1,2])
     axs[1,2].set_title("PSF but no apo\nmean,med={:.4f}, {:.4f}".format(np.mean(noXyesB),np.median(noXyesB)))
 
-    im=axs[1,3].imshow(noXyesB_customdenom,extent=cyl_extent,cmap=cmasher.horizon,origin="lower",
-                       norm=CenteredNorm(vcenter=np.median(noXyesB_customdenom),halfrange=0.5*np.median(noXyesB_customdenom)))
-    plt.colorbar(im,ax=axs[1,3])
-    axs[1,3].set_title("PSF but no apo\ncustom denom\nmean,med={:.4e}, {:.4e}".format(np.mean(noXyesB_customdenom),np.median(noXyesB_customdenom)))
+    # im=axs[1,3].imshow(noXyesB_customdenom,extent=cyl_extent,cmap=cmasher.horizon,origin="lower",
+                      #  norm=CenteredNorm(vcenter=np.median(noXyesB_customdenom),halfrange=0.5*np.median(noXyesB_customdenom)))
+    # plt.colorbar(im,ax=axs[1,3])
+    # axs[1,3].set_title("PSF but no apo\ncustom denom\nmean,med={:.4e}, {:.4e}".format(np.mean(noXyesB_customdenom),np.median(noXyesB_customdenom)))
 
     plt.suptitle(P_name+" power end-to-end comparison")
     plt.savefig("PSF_A_B_"+P_name+"_end_to_end.png",dpi=400)
