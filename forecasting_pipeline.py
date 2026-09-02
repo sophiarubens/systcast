@@ -1312,8 +1312,10 @@ class cosmo_stats(object):
                 self.Aeff2=Aeff
         
         self.PSF_padded=None
+        effective_volume_sans_apodization=np.sum((self.apodization_xyz_centre*self.Aeff2)**2*self.d3r)
+        self.effective_volume_sans_apodization=effective_volume_sans_apodization
         if PSF is None: # technically just a special case of the else, but doing it this way lets me skip superfluous convolutions
-            self.power_spec_estimator_denom=np.sum((self.apodization_xyz_centre*self.Aeff2)**2*self.d3r)
+            self.estimator_denom=effective_volume_sans_apodization
         else:
             PSFuse=PSF
             if PSF2 is not None:
@@ -1431,15 +1433,15 @@ class cosmo_stats(object):
             fourier_arg=fftshift( fftn( ifftshift(self.apodization_xyz_centre*PSFterm)*self.d3r,
                                         s=self.box_shape, axes=self.transform_axes, norm="backward"
                                       )
-                                )
+                                ) # centre-origin
             # | FT( X(B*(A T1)) ) |^2
-            power_spec_estimator_denom=np.abs(fourier_arg)**2 *self.length_unit**3 # needs dims of volume
-            self.power_spec_estimator_denom=power_spec_estimator_denom
+            estimator_denom=np.abs(fourier_arg)**2 *self.length_unit**3 # needs dims of volume
+            self.estimator_denom=estimator_denom
             
-            comprehensive_slice_figure(power_spec_estimator_denom.value,
+            comprehensive_slice_figure(estimator_denom.value,
                                        cmap=cmasher.horizon,
-                                       name="power_spec_estimator_denom.png")
-        P_unbinned=modsq_T_tilde/self.power_spec_estimator_denom
+                                       name="estimator_denom.png")
+        P_unbinned=modsq_T_tilde/self.estimator_denom
 
         self.P_unbinned=P_unbinned # centre-origin
         self.P_unbinned_running_sum+=P_unbinned
@@ -1464,7 +1466,7 @@ class cosmo_stats(object):
         assert self.Nkperp<self.Nxy, "Nxy should be >= Nkperp"
         assert self.Nkpar<self.Nz, "Nz should be >= Nkpar"
         if T1:
-            P_fid_box_use=np.ones(self.box_shape)
+            P_fid_box_use=np.ones(self.box_shape)/self.effective_volume_sans_apodization
         else:
             P_fid_box_use=self.P_fid_box
 
@@ -1524,7 +1526,7 @@ class cosmo_stats(object):
         self.bin_power(power_to_bin=P_unbinned_MC_complete)
         P_binned_MC_complete=self.P_binned
         self.P_binned_MC_complete=P_binned_MC_complete*self.power_unit
-        self.P_numerator=P_unbinned_MC_complete*self.power_spec_estimator_denom
+        self.P_numerator=P_unbinned_MC_complete*self.estimator_denom
 
         self.N_per_realization=self.N_cumul/self.N_realizations
 
