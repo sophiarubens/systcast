@@ -466,9 +466,6 @@ class beam_effects(object):
             CST_domain=(CSTPSF_xy_vec,CSTPSF_xy_vec,CST_z_vec)
             self.CST_z_vec=CST_z_vec
             self.CSTPSF_xy_ext=CSTPSF_xy_ext
-            print("beam_effects.__init__: extrema of xy vec",np.min(CSTPSF_xy_vec),np.max(CSTPSF_xy_vec))
-            print("beam_effects.__init__: extrema of CST z vec:",np.min(CST_z_vec),np.max(CST_z_vec))
-            print("beam_effects.__init__: extrema of PSF z vec:",np.min(PSF_z_vec),np.max(PSF_z_vec))
 
             CST_syst_ensemble=np.zeros((N_CST_types,N_pointing_errors_max+1,Npix,Npix,N_CST_z)) # shape of CST_syst_ensemble is (N_CST_types,Npix,Npix,N_CST_z) but the sub-ensembles passed to generate_PSF have shapes  ////////replace
             CST_syst_ensemble[:,0,:,:,:]=syst_boxes # situate the pointing error–free versions
@@ -497,7 +494,6 @@ class beam_effects(object):
                 fidu_synthesis.stack_to_box()
                 print("finished synthesizing fiducial CST PSF")
                 fidu_box_PSF=fidu_synthesis.PSFbox
-                fidu_Aeff=fidu_synthesis.Aeffbox
                 if N_CST_types>1 or N_pointing_errors_max>0:
                     syst_synthesis=generate_PSF(array_version=array_version,N_timesteps=self.N_timesteps,N_hrs=N_hrs,
                                                         nu_ctr=nu_ctr,
@@ -508,7 +504,6 @@ class beam_effects(object):
                                                         supplementary_name=ioname)
                     syst_synthesis.stack_to_box()
                     syst_box_PSF=syst_synthesis.PSFbox
-                    syst_Aeff=syst_synthesis.Aeffbox
                     weights_PSF=syst_synthesis.weights
                     Ntypes=syst_synthesis.N_total_beam_types
                 else:
@@ -519,17 +514,13 @@ class beam_effects(object):
                 print("finished synthesizing systematic-laden CST PSF")
 
                 np.save("fidu_box_PSF_"+ioname+".npy",fidu_box_PSF)
-                np.save("fidu_Aeff_"+ioname+".npy",fidu_Aeff)
                 assert(1==0), "just re-synthesizing a single PSF for use in the end-to-end test"
                 np.save("syst_box_PSF_"+ioname+".npy",syst_box_PSF)
-                np.save("syst_Aeff_"+ioname+".npy",syst_Aeff)
                 np.save("weights_PSF_"+ioname+".npy",weights_PSF)
                 print("saved synthesized beam")
             else: 
                 fidu_box_PSF=np.load("fidu_box_PSF_"+ioname+".npy")
-                fidu_Aeff=np.load("fidu_Aeff_"+ioname+".npy")
                 syst_box_PSF=np.load("syst_box_PSF_"+ioname+".npy")
-                syst_Aeff=np.load("syst_Aeff_"+ioname+".npy")
                 weights_PSF=np.load("weights_PSF_"+ioname+".npy")
                 print("loaded synthesized beam")
             print("finished importing/constructing synthesized CST beam")
@@ -548,8 +539,6 @@ class beam_effects(object):
             
             self.fiduPSF=fidu_box_PSF
             self.systPSF=syst_box_PSF
-            self.fiduAeff=fidu_Aeff
-            self.systAeff=syst_Aeff
 
             self.PSF_Delta_z=self.PSF_comoving_ext/self.PSF_Nz
 
@@ -729,7 +718,6 @@ class beam_effects(object):
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
                                 PSF=self.fiduPSF,
-                                Aeff=self.fiduAeff,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
@@ -739,7 +727,6 @@ class beam_effects(object):
                                 P_fid=P_cosmo,k_fid=self.ksph,
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
                                 PSF=self.systPSF,PSF2=self.fiduPSF,
-                                Aeff=self.systAeff,Aeff2=self.fiduAeff,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
@@ -747,7 +734,6 @@ class beam_effects(object):
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
                                 T_pristine=fg_box,
                                 PSF=self.systPSF,PSF2=self.fiduPSF,
-                                Aeff=self.systAeff,Aeff2=self.fiduAeff,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
@@ -755,7 +741,6 @@ class beam_effects(object):
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
                                 T_pristine=fg_box,
                                 PSF=self.fiduPSF,
-                                Aeff=self.fiduAeff,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
@@ -763,7 +748,6 @@ class beam_effects(object):
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
                                 PSF=self.fiduPSF,
-                                Aeff=self.fiduAeff,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
@@ -771,7 +755,6 @@ class beam_effects(object):
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
                                 PSF=self.systPSF,PSF2=self.fiduPSF,
-                                Aeff=self.systAeff,Aeff2=self.fiduAeff,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
@@ -1069,7 +1052,6 @@ class cosmo_stats(object):
                  P_fid:np.ndarray=None, k_fid:np.ndarray=None,                          # power spectrum you want to window. probably comes from cosmo (like CAMB) or is flat (for a reference calculation) & Fourier space points where the fiducial power spectrum is sampled
                  Nxy:int=None,Nz:int=None,                                              # number of voxels in the x/y or z directions
                  PSF:np.ndarray=None, PSF2=None,                             # PSF (box of values evaluated in config space); and white noise map for normalization
-                 Aeff:np.ndarray=None, Aeff2:np.ndarray=None,
                  LoS_apo=False,transverse_apo=False,                                    # apodize along the sky plane or line-of-sight directions to suppress ringing originating from features that cut off sharply?
                  fg_box:np.ndarray=None,                                                # foregrounds to add to the signal-of-interest map (T)
                  frac_tol:float=0.1,                                                    # fractional tolerance in cosmic variance of the Monte Carlo ensemble -> used to calculate the number of realizations
@@ -1165,7 +1147,6 @@ class cosmo_stats(object):
         self.Deltaz= self.Lz/self.Nz                             # line of sight voxel side length
         self.z_vec_for_box= self.Lz*fftshift(fftfreq(self.Nz))   # line of sight Cartesian config space coordinate axis
         self.d3r=self.Deltaz*self.Deltaxy**2                     # volume element = voxel volume
-        print("cosmo_stats.__init__: extrema of xy vec for box",np.min(self.xy_vec_for_box),np.max(self.xy_vec_for_box))
 
         # Fourier space
         self.Deltakxy=twopi/self.Lxy                                        # voxel side length
@@ -1300,21 +1281,11 @@ class cosmo_stats(object):
         self.apodization_xyz_centre=apodization_xyz_product
 
         # beams
-        self.Aeff=1
-        self.Aeff2=1
-        if Aeff is not None:
-            assert(Aeff.shape==self.box_shape)
-            self.Aeff=Aeff
-            if Aeff2 is not None:
-                assert(Aeff2.shape==self.box_shape)
-                self.Aeff2=Aeff2
-            else:
-                self.Aeff2=Aeff
         
         self.PSF_padded=None
-        effective_volume_sans_apodization=np.sum((self.apodization_xyz_centre*self.Aeff2)**2*self.d3r)
+        effective_volume_sans_apodization=np.sum((self.apodization_xyz_centre)**2*self.d3r)
         self.effective_volume_sans_apodization=effective_volume_sans_apodization
-        if PSF is None: # technically just a special case of the else, but doing it this way lets me skip superfluous convolutions
+        if PSF is None: # technically just a special case, but doing it this way lets me skip superfluous convolutions
             self.estimator_denom=effective_volume_sans_apodization
         else:
             PSFuse=PSF
@@ -1347,11 +1318,6 @@ class cosmo_stats(object):
                               ((pad_lo_xy,pad_hi_xy),(pad_lo_xy,pad_hi_xy),(0,0),),
                               "wrap")
             self.PSF_padded=PSF_padded
-
-            print("sum of absFFTPSF2 = ",np.sum((absFFTPSF*self.d3k)**2))
-
-            # DENOMINATOR CALCULATION IS NOW NONDETERMINISTIC FOR THIS CASE, SO ITS 
-            # COMPUTATION WILL BE DEFERRED TO A REALIZATION-BY-REALIZATION BASIS
         
         # strictness control for Monte Carlos
         self.frac_tol=frac_tol
@@ -1406,11 +1372,11 @@ class cosmo_stats(object):
                     if self.PSF_padded is None:
                         raise ValueError("attempted to form T_with_beam from T_pristine and PSF, but PSF_padded is None")
                     self.T_with_beam=fftconvolve(self.PSF_padded,
-                                                 self.Aeff*self.T_pristine.value*self.Deltaxy**2,
+                                                 self.T_pristine.value*self.Deltaxy**2,
                                                  mode="valid",axes=[0,1])*self.temp_unit
             T_use=self.T_with_beam
         elif T_use.lower()=="pristine":
-            T_use=self.Aeff*self.T_pristine
+            T_use=self.T_pristine
         else:
             raise ValueError("invalid state of box beam knowledge. try again with pristine or beam!")
         T_use=T_use.to(u.mK)
@@ -1423,19 +1389,27 @@ class cosmo_stats(object):
         modsq_T_tilde=np.abs(T_tilde)**2 *self.temp_unit**2*self.length_unit**6
 
         if self.PSF_padded is not None: 
-            self.generate_GRF(T1=True)
+            # CONVOLUTION THEOREM APPROACH -> INFO IS ACTUALLY MIXED AND THIS IS NOT VALID
+            FTed_version=fftshift( fftn( ifftshift(self.PSF)*self.d3r,
+                                            s=self.box_shape, axes=self.transform_axes, norm="backward" 
+                                        ) 
+                                    )
+            estimator_denom=np.abs(FTed_version)**2 *self.length_unit**3
 
-            # B*(A T1)
-            PSFterm=fftconvolve(self.PSF_padded,
-                                self.Aeff2*self.T1*self.Deltaxy**2,
-                                mode="valid",axes=[0,1])
-            # FT( X(B*(A T1)) )
-            fourier_arg=fftshift( fftn( ifftshift(self.apodization_xyz_centre*PSFterm)*self.d3r,
-                                        s=self.box_shape, axes=self.transform_axes, norm="backward"
-                                      )
-                                ) # centre-origin
-            # | FT( X(B*(A T1)) ) |^2
-            estimator_denom=np.abs(fourier_arg)**2 *self.length_unit**3 # needs dims of volume
+            # TRANSFER FUNCTION APPROACH
+            # self.generate_GRF(T1=True)
+
+            # # B*T1
+            # PSFterm=fftconvolve(self.PSF_padded,
+            #                     self.T1*self.Deltaxy**2,
+            #                     mode="valid",axes=[0,1])
+            # # FT( X(B*T1) )
+            # fourier_arg=fftshift( fftn( ifftshift(self.apodization_xyz_centre*PSFterm)*self.d3r,
+            #                             s=self.box_shape, axes=self.transform_axes, norm="backward"
+            #                           )
+            #                     ) # centre-origin
+            # # | FT( X(B*T1) ) |^2
+            # estimator_denom=np.abs(fourier_arg)**2 *self.length_unit**3 # needs dims of volume
             self.estimator_denom=estimator_denom
             
             comprehensive_slice_figure(estimator_denom.value,
@@ -1465,8 +1439,15 @@ class cosmo_stats(object):
     def generate_GRF(self,T1=False): # Gaussian random field realization consistent with a power spectrum of choice
         assert self.Nkperp<self.Nxy, "Nxy should be >= Nkperp"
         assert self.Nkpar<self.Nz, "Nz should be >= Nkpar"
-        if T1:
-            P_fid_box_use=np.ones(self.box_shape)/self.effective_volume_sans_apodization
+        if T1: # different attempts at normalizing the transfer function approach to calculating the PSF-aware denominators. seems wrong because there is a chicken-and-egg problem with the PSF and unsampled voxels
+            P_fid_box_use=np.ones(self.box_shape) # PSF-aware powers slightly too large
+            # P_fid_box_use=np.ones(self.box_shape)/self.effective_volume_sans_apodization # PSF-aware powers vastly too large (!! DOESN'T MAKE MATHEMATICAL SENSE)
+            # P_fid_box_use=np.ones(self.box_shape)*self.effective_volume_sans_apodization # PSF-aware powers vastly too small (!! DOESN'T MAKE MATHEMATICAL SENSE)
+            # P_fid_box_use=np.ones(self.box_shape)*self.d3r # some too big, some too small
+            # P_fid_box_use=np.ones(self.box_shape)/self.d3r # motivated by estimator equation !! Wait highkey I'm starting to think the math supports this. no /2 since i need the variance to be split between real and imag parts
+            # P_fid_box_use=np.ones(self.box_shape)/self.effective_volume_sans_apodization*self.Nxy**2*self.Nz # PSF-aware powers too large (wires crossed oops)
+            # P_fid_box_use=np.ones(self.box_shape)*self.effective_volume_sans_apodization/self.Nxy**2*self.Nz # PSF-aware powers too small
+            # P_fid_box_use=np.ones(self.box_shape) # template for more versions...
         else:
             P_fid_box_use=self.P_fid_box
 
@@ -1492,7 +1473,7 @@ class cosmo_stats(object):
                           norm="forward"))/self.iftnorm
 
         T*=self.temp_unit # centre_origin
-        if self.fg_box is not None:
+        if self.fg_box is not None and not T1:
             T+=self.fg_box
 
         if T1:
@@ -1732,7 +1713,6 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
 
         # helper args
         self.CSTPSF_xy=CSTPSF_xy
-        print("generate_PSF.__init__: extrema of xy vec:",np.min(CSTPSF_xy),np.max(CSTPSF_xy))
         N_CSTPSF_xy=len(CSTPSF_xy)
         self.CST_freqs=CST_freqs
         self.CST_deltanu=CST_freqs[1]-CST_freqs[0]
@@ -1844,7 +1824,6 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
 
     def calc_uv_slice(self):
         PSF_slice=np.zeros((self.Npix,self.Npix))
-        Aeff_slice=np.zeros((self.Npix,self.Npix))
         for i in range(self.N_total_beam_types):
             type_i=self.pb_types[i]
             for j in range(i+1):
@@ -1879,13 +1858,11 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
                 beam_j=self.all_boxes[type_j,:,:,LoS_1st]*weight_1st + self.all_boxes[type_j,:,:,LoS_2nd]*weight_2nd
                 beam_ij=np.sqrt(beam_i*beam_j) # geo mean of the beams of this baseline's two constituent antennas. still on initial CST grid
                 beam_ij/=np.max(beam_ij) # beam should already be peak-normalized, pero mejor asegurarse que no haya nada raro... for example, a 2-3-pixel offset in the peak location
-                Aeff_slice+=beam_ij
                 PSF_slice+=gridded_im*beam_ij
 
         PSF_slice/=np.max(PSF_slice)
-        Aeff_slice/=np.max(Aeff_slice)
         # return PSF_slice # return statement as of 15:02 01 Sept
-        return PSF_slice, Aeff_slice
+        return PSF_slice
 
     def stack_to_box(self):
         if (self.nu_ctr_MHz.value<(350/(1-self.evolution_threshold/2)) or 
@@ -1893,18 +1870,16 @@ class generate_PSF(beam_effects): # developed with rectangular arrays in mind
             raise ValueError("{:6.2f} is out of bounds".format(self.nu_ctr_MHz))
 
         PSF_xyz=np.zeros((self.Npix,self.Npix,self.N_chan))
-        Aeff_xyz=np.zeros((self.Npix,self.Npix,self.N_chan))
         for i in range(self.N_chan): # rescale the uv-coverage to this channel's frequency
             self.uv_synth=self.uv_synth*self.lambda_obs/self.surv_wavelengths[i] # rescale according to observing frequency: multiply up by the prev lambda to cancel, then divide by the current/new lambda
             self.lambda_obs=self.surv_wavelengths[i] # update the observing frequency for next time
             nu_obs=c/self.lambda_obs
             self.nu_obs=nu_obs.decompose()
 
-            PSF_xyz[:,:,i],Aeff_xyz[:,:,i]=self.calc_uv_slice() # compute this LoS slice's synthesized beam            
+            PSF_xyz[:,:,i]=self.calc_uv_slice() # compute this LoS slice's synthesized beam            
             if ((i%(self.N_chan//3))==0):
                 print("{:7.1f} pct complete".format(i/self.N_chan*100))
         self.PSFbox=PSF_xyz
-        self.Aeffbox=Aeff_xyz
 
         # generate a box of r-values (necessary for interpolation to survey domain in cosmo_stats as called by beam_effects)
         self.xy_vec=self.CSTPSF_xy
@@ -1953,7 +1928,6 @@ class reconfigure_CST_beam(object):
 
         L_xy=2*transverse_half_angle*comoving_middle
         xy_for_box=L_xy*fftshift(fftfreq(Nxy))
-        print("reconfigure_CST_beam.__init__: extrema of xy vec:",np.min(xy_for_box),np.max(xy_for_box))
         self.xy_for_box=xy_for_box
         self.Nxy=Nxy
         self.xx_grid,self.yy_grid=np.meshgrid(xy_for_box,xy_for_box, indexing="ij") # config space points of interest for the slice (guided by the transverse extent of the eventual config-space box)
