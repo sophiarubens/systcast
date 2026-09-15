@@ -20,7 +20,6 @@ N_systs_use=len(systnames) # exhaustive case
 N_systs_use=1 # pared-down case for debugging.
 N_CST_total=N_systs_use+1
 
-
 # configure pointing errors
 base_pointing_error=[1.2,-0.7,0.4]
 base_seed=5920185708
@@ -35,8 +34,8 @@ with open("ptg_err.json", "w") as f:
    json.dump(pointingerrs, f, indent=2, default=str)
 
 # re-simulate / re-plot
-power_comparison_plots(redo_window_calc=True, # redo the Monte Carlos
-                       redo_box_calc=True, # re-synthesize the PSF; reimports CST only if files DNE
+power_comparison_plots(redo_window_calc=False, # redo the Monte Carlos
+                       redo_box_calc=False, # re-synthesize the PSF; reimports CST only if files DNE
                        which_power="P", # plotting choice
                        nu_ctr=600.*u.MHz, frac_tol_conv=1/np.sqrt(2), freq_bin_width=0.210*u.MHz, # k-parallel observation conditioning
                        array_version="full", Npix=512, transverse_half_angle=pi/2,# k-perp observation conditioning
