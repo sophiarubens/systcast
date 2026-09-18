@@ -191,7 +191,6 @@ def comprehensive_slice_figure(box,                      # 3D box to plot slices
                                fracs=[0,1e-5,1/3,1/2,1], # fractions along each axis at which to slice the box
                                exts=None,                # [[xlo, xhi], [ylo, yhi], [lzo, zhi]] for non-index axis labels
                                cmap=None                 # colour map for the imshow
-                                                         # kind of hacky because pixel indices are baked in as the axis labels. but
                                ):
     box_shape=box.shape
     assert len(box_shape)==3, "this plotting function requires a 3D box"
@@ -258,6 +257,19 @@ def comprehensive_slice_figure(box,                      # 3D box to plot slices
     plt.suptitle(title)
     plt.savefig(name, dpi=dpi)
     plt.close()
+def fftconvolve_perp(kernel, map, area_element): # assumes centre-origin arrays are passed; also returns centre-origin arrays
+    # TODO: fix this: assumes 3D boxes and would freeze up for lower-dimensional boxes; not a practical obstacle because I never try to apply a beam box to a FG slice or similar
+    kernel_corner_origin=ifftshift(kernel, axes=(0,1))
+    pad_lo_xy,pad_hi_xy=get_padding(map.shape[0])
+    padded_kernel_corner_origin=np.pad(kernel_corner_origin,
+                                       ((pad_lo_xy,pad_hi_xy),(pad_lo_xy,pad_hi_xy),(0,0),),
+                                       "wrap")
+    map_corner_origin=ifftshift(map, axes=(0,1))
+    convolution_corner_origin=fftconvolve(padded_kernel_corner_origin, map_corner_origin*area_element,
+                                          mode="valid",axes=[0,1])
+
+    convolution=fftshift(convolution_corner_origin)
+    return convolution
 
 # main computations
 """
@@ -497,7 +509,7 @@ class beam_effects(object):
                 print("finished synthesizing fiducial CST PSF")
                 # fidu_box_PSF=fidu_synthesis.PSFbox
                 # fidu_box_A=fidu_synthesis.Abox
-                fidu_box_UA=fidu_synthesis.UA
+                fidu_box_Q=fidu_synthesis.Q
                 if N_CST_types>1 or N_pointing_errors_max>0:
                     syst_synthesis=simulate_array(array_version=array_version,N_timesteps=self.N_timesteps,N_hrs=N_hrs,
                                                         nu_ctr=nu_ctr,
@@ -507,28 +519,28 @@ class beam_effects(object):
                                                         CSTPSF_xy=CSTPSF_xy_vec,CST_freqs=CST_freqs,
                                                         supplementary_name=ioname)
                     syst_synthesis.stack_to_box()
-                    syst_box_UA=syst_synthesis.UA
+                    syst_box_Q=syst_synthesis.Q
                     weights_PSF=syst_synthesis.weights
                     Ntypes=syst_synthesis.N_total_beam_types
                 else:
-                    syst_box_UA=np.copy(fidu_box_UA)
+                    syst_box_Q=np.copy(fidu_box_Q)
                     weights_PSF=fidu_synthesis.weights
                     Ntypes=1
 
                 print("finished synthesizing systematic-laden CST PSF")
 
-                np.save("fidu_box_UA_"+ioname+".npy",fidu_box_UA)
+                np.save("fidu_box_Q_"+ioname+".npy",fidu_box_Q)
                 # assert 1==0, "just re-synthesizing a single PSF for use in the end-to-end test"
-                np.save("syst_box_UA_"+ioname+".npy",syst_box_UA)
+                np.save("syst_box_Q_"+ioname+".npy",syst_box_Q)
                 np.save("weights_PSF_"+ioname+".npy",weights_PSF)
                 print("saved synthesized beam")
             else: 
-                fidu_box_UA=np.load("fidu_box_UA_"+ioname+".npy")
-                syst_box_UA=np.load("syst_box_UA_"+ioname+".npy")
+                fidu_box_Q=np.load("fidu_box_Q_"+ioname+".npy")
+                syst_box_Q=np.load("syst_box_Q_"+ioname+".npy")
                 weights_PSF=np.load("weights_PSF_"+ioname+".npy")
                 print("loaded synthesized beam")
             print("finished importing/constructing synthesized CST beam")
-            print("fidu_box_UA.shape=",fidu_box_UA.shape)
+            print("fidu_box_Q.shape=",fidu_box_Q.shape)
             
             weighted_sum_syst_primary=np.zeros_like(fidu_box)
             Ntypes=len(weights_PSF) # this is super hacky and I need to streamline it
@@ -541,8 +553,8 @@ class beam_effects(object):
                             weighted_sum_syst_primary+=weights_PSF[q]*syst_box_here
                         q+=1
             
-            self.fiduUA=fidu_box_UA
-            self.systUA=syst_box_UA
+            self.fiduQ=fidu_box_Q
+            self.systQ=syst_box_Q
 
             self.PSF_Delta_z=self.PSF_comoving_ext/self.PSF_Nz
 
@@ -721,7 +733,7 @@ class beam_effects(object):
         co_fi_xx_fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_comoving_ext,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
-                                UA=self.fiduUA,
+                                Q=self.fiduQ,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
@@ -730,35 +742,35 @@ class beam_effects(object):
         co_fi_sy_fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_comoving_ext,
                                 P_fid=P_cosmo,k_fid=self.ksph,
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
-                                UA=self.systUA,UA2=self.fiduUA,
+                                Q=self.systQ,# Q2=self.fiduQ,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
         xx_fi_sy_fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_comoving_ext,
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
                                 T_pristine=fg_box,
-                                UA=self.systUA,UA2=self.fiduUA,
+                                Q=self.systQ,# Q2=self.fiduQ,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
         xx_fi_xx_fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_comoving_ext,
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
                                 T_pristine=fg_box,
-                                UA=self.fiduUA,
+                                Q=self.fiduQ,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
         co_fi_xx_xx=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_comoving_ext,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
-                                UA=self.fiduUA,
+                                Q=self.fiduQ,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
         co_fi_sy_xx=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_comoving_ext,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nxy=self.Npix,Nz=self.PSF_Nz,
-                                UA=self.systUA,UA2=self.fiduUA,
+                                Q=self.systQ, #Q2=self.fiduQ,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
@@ -1055,7 +1067,7 @@ class cosmo_stats(object):
                  T_pristine:np.ndarray=None,T_with_beam:np.ndarray=None,                # brightness temperature box realizations without ("_pristine") or with ("_beam") the beam applied (primary would be multiplied, but now the vanguard PA-CST approach uses convolution)
                  P_fid:np.ndarray=None, k_fid:np.ndarray=None,                          # power spectrum you want to window. probably comes from cosmo (like CAMB) or is flat (for a reference calculation) & Fourier space points where the fiducial power spectrum is sampled
                  Nxy:int=None,Nz:int=None,                                              # number of voxels in the x/y or z directions
-                 UA:np.ndarray=None, UA2=None,                             # PSF (box of values evaluated in config space); and white noise map for normalization
+                 Q:np.ndarray=None, Q2=None,                             # PSF (box of values evaluated in config space); and white noise map for normalization
                  LoS_apo=False,transverse_apo=False,                                    # apodize along the sky plane or line-of-sight directions to suppress ringing originating from features that cut off sharply?
                  fg_box:np.ndarray=None,                                                # foregrounds to add to the signal-of-interest map (T)
                  frac_tol:float=0.1,                                                    # fractional tolerance in cosmic variance of the Monte Carlo ensemble -> used to calculate the number of realizations
@@ -1118,7 +1130,7 @@ class cosmo_stats(object):
                 Pfidshape=P_fid.shape
                 Pfiddims=len(Pfidshape)
                 if (Pfiddims==2):
-                    if UA is None: # trying to do a minimalistic instantiation where I merely provide a fiducial power spectrum and interpolate it
+                    if Q is None: # trying to do a minimalistic instantiation where I merely provide a fiducial power spectrum and interpolate it
                         self.fid_Nkperp,self.fid_Nkpar=Pfidshape
                     else:
                         try: # see if the power spec is a CAMB-esque (1,npts) array
@@ -1285,40 +1297,26 @@ class cosmo_stats(object):
         self.apodization_xyz_centre=apodization_xyz_product
 
         # beams
-        
-        self.UA=None
-        effective_volume_sans_apodization=np.sum((self.apodization_xyz_centre)**2*self.d3r)
-        self.effective_volume_sans_apodization=effective_volume_sans_apodization
-        if UA is None: # technically just a special case, but doing it this way lets me skip superfluous convolutions
-            self.estimator_denom=effective_volume_sans_apodization
-        else:
-            self.UA=UA
-            UAuse=UA
-            if UA2 is not None:
-                UAuse=UA2
+        Quse=np.ones((self.Nxy,self.Nxy,self.Nz))
+        self.Q=None
+        if Q is not None:
+            self.Q=Q
+            Quse=Q
+            if Q2 is not None:
+                Quse=Q2
 
-            denom_arg=self.apodization_xyz_centre*UAuse
-            denom_arg_FTed=fftshift(fftn(
-                                         ifftshift(denom_arg,axes=(0,1))*self.Deltaxy**2,
-                                         axes=(0,1),norm="backward"),
-
-                                         axes=(0,1))
-            denom=np.abs(denom_arg_FTed)**2
-            
-            # denom[denom==0]=np.nan
-            denom[np.abs(denom)<1e-8]=np.inf
-            filtered_denom=denom
-            self.estimator_denom=filtered_denom*u.Mpc**3
-
-            UAext=np.max(np.abs(UAuse))
+            Qext=np.max(np.abs(Quse))
             manydBdown=1e-9
-            comprehensive_slice_figure(UAuse, 
-                                       norm=SymLogNorm(manydBdown*UAext,vmin=-UAext,vmax=UAext),
+            comprehensive_slice_figure(Quse, 
+                                       norm=SymLogNorm(manydBdown*Qext,vmin=-Qext,vmax=Qext),
                                        cmap="RdBu",
                                        exts=[[self.xy_vec_for_box[0],self.xy_vec_for_box[-1]],
                                              [self.xy_vec_for_box[0],self.xy_vec_for_box[-1]],
                                              [self.z_vec_for_box[0],self.z_vec_for_box[-1]]  ],
-                                       name="PSF_slices.png")
+                                       name="Q_slices.png")
+
+        effective_volume=np.sum((self.apodization_xyz_centre*Quse)**2*self.d3r)
+        self.estimator_denom=effective_volume
         
         # strictness control for Monte Carlos
         self.frac_tol=frac_tol
@@ -1360,7 +1358,7 @@ class cosmo_stats(object):
             
     def generate_P(self,T_use=None): # from a box of temperature field values
         if T_use is None:            # establish common string flags
-            if self.UA is None:
+            if self.Q is None:
                 T_use="pristine"
             else:
                 T_use="beam"
@@ -1370,7 +1368,7 @@ class cosmo_stats(object):
                 if self.T_pristine is None:
                     raise ValueError("T_with_beam is None, but it also cannot be formed because the T_pristine from which it needs to be formed is also None")
                 else:
-                    self.T_with_beam=self.T_pristine*self.UA
+                    self.T_with_beam=self.T_pristine*self.Q
             T_use=self.T_with_beam
         elif T_use.lower()=="pristine":
             T_use=self.T_pristine
@@ -1439,12 +1437,12 @@ class cosmo_stats(object):
             T+=self.fg_box
 
         self.T_pristine=T
-        if self.UA is not None:
-            self.T_with_beam=self.UA*T
+        if self.Q is not None:
+            self.T_with_beam=self.Q*T
 
     def power_Monte_Carlo(self,interfix:str=""): # since box generation is not deterministic
         self.MC_not_complete=True
-        if self.UA is None:
+        if self.Q is None:
             T_use="pristine"
         else: 
             T_use="beam"
@@ -1595,7 +1593,7 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
                  b_NS:float=b_NS,b_EW:float=b_EW,                                  # N-S and E-W baseline lengths (m)
                  offset_rad:float=def_offset,                                      # (astropy-unitless because this class expects rad, which I prefer to handle manually) CHORD is aligned with magnetic, not geographical north, so, when mathematically constructing the uv coverage, rotate the rectangular array grid
                  observing_dec:float=def_observing_dec,                            # declination to observe at (º)
-                 N_timesteps:float=def_N_timesteps, N_hrs=hrs_per_night,                               # number of timesteps in rotation synthesis
+                 N_timesteps:float=def_N_timesteps, N_hrs=hrs_per_night,           # number of timesteps in rotation synthesis
                  nu_ctr:float=nu_HI_z0,                                            # central frequency of the survey of interest
                  Delta_nu:float=CHORD_channel_width_MHz,                           # channel width in frequency (MHz)
                  transverse_half_angle=flat_enough,
@@ -1791,6 +1789,12 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
     def calc_uv_slice(self):
         PSF_slice=np.zeros((self.Nij,self.Npix,self.Npix))
         primary_beam_slice=np.zeros((self.Nij,self.Npix,self.Npix))
+        N_tot=self.N_baselines*self.N_timesteps
+        everything_gridded,_,_=np.histogram2d(np.reshape(self.uv_synth[:,0,:],N_tot,order="C"),
+                                              np.reshape(self.uv_synth[:,1,:],N_tot,order="C"),
+                                              bins=self.uvbins_use)
+        adjust_weights=np.ones((self.Npix,self.Npix))
+        adjust_weights[everything_gridded!=0]=everything_gridded[everything_gridded!=0]
         k=0
         for i in range(self.N_total_beam_types):
             type_i=self.pb_types[i]
@@ -1812,8 +1816,11 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
                 if self.weighting=="custom":
                     gridded_uv[comb]=1/gridded_uv[comb]
                 elif self.weighting=="uniform": # (DEFAULT) I'm kind of oversubscribing this concept here because I have multiple beam types, but I use the weights to make things less bad
-                    frac_baselines=np.sum(here!=0)/(self.N_baselines*self.N_timesteps) # fraction of baselines that fall into this beam category
-                    gridded_uv[comb]*= frac_baselines
+                    # frac_baselines=np.sum(here!=0)/(self.N_baselines*self.N_timesteps) # fraction of baselines that fall into this beam category
+                    # gridded_uv[comb]*= frac_baselines
+                    
+                    #
+                    gridded_uv/=adjust_weights
                 elif self.weighting!="natural":
                     raise ValueError("unknown uv plane weighting scheme")
                 PSF_ij=fftshift(irfftn(ifftshift(gridded_uv*self.d2u), # irfftn silently discarding imag part of symmetry slices of the last transformed axis is not a problem here because the uv slices in question are entirely real-valued
@@ -1850,17 +1857,22 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
             if ((i%(self.N_chan//3))==0):
                 print("{:7.1f} pct complete".format(i/self.N_chan*100))
 
-        pad_lo_xy,pad_hi_xy=get_padding(self.Npix)
-        UA=np.zeros((self.Npix,self.Npix,self.N_chan))
+        Q=np.zeros((self.Npix,self.Npix,self.N_chan))
         for k in range(self.Nij):
-            PSFk_padded=np.pad(PSF_xyz[k,:,:,:],
-                               ((pad_lo_xy,pad_hi_xy),(pad_lo_xy,pad_hi_xy),(0,0),),
-                               "wrap")
             Ak=A_xyz[k,:,:,:]
+            PSFk=PSF_xyz[k,:,:,:]
 
-            UA+=fftconvolve(PSFk_padded, Ak*self.Deltaxy**2,
-                            mode="valid",axes=[0,1])
-        self.UA=UA
+            Q+=fftconvolve_perp(PSFk, Ak, self.Deltaxy**2)
+        Q/=np.sum(Q) # volume-normalize so different Q have analogous effects?!
+        self.Q=Q
+
+        PSF_summed=np.sum(PSF_xyz,axis=0)
+        print("PSF_summed.shape==(self.Npix,self.Npix,self.N_chan) =",PSF_summed.shape==(self.Npix,self.Npix,self.N_chan))
+        comprehensive_slice_figure(PSF_summed,
+                                   norm=None,
+                                   name="PSF_summed.png",
+                                   title="PSF summed over ij",
+                                   cmap=cmasher.horizon)
 
         # generate a box of r-values (necessary for interpolation to survey domain in cosmo_stats as called by beam_effects)
         self.xy_vec=self.CSTPSF_xy
@@ -2145,8 +2157,8 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
                     k_perp:np.ndarray, k_par:np.ndarray,                  # k-perp and k-par bins that anchor each plotted spectrum
                     case_title:str, case_units:str,                       # title describing this power spectrum quantity and the corresponding units
                     save_name:str,                                        # name for the summary figure
-                    norm_ext,                                             # if there is a physically motivated natural middle of the colour bar (e.g. 1 for a ratio or 0 for a residual), pass it to the plotter along with the extent of the range about this midpoint (possibly informed by the extent of the systematics you plugged into the simulation)
-                    nu_ctr:float,                                         # only necessary if I insist on plotting the wedge 
+                    norm_ext=None,                                             # if there is a physically motivated natural middle of the colour bar (e.g. 1 for a ratio or 0 for a residual), pass it to the plotter along with the extent of the range about this midpoint (possibly informed by the extent of the systematics you plugged into the simulation)
+                    nu_ctr:float=600*u.MHz,                                         # only necessary if I insist on plotting the wedge 
                     k1_inset:float=0.06/u.Mpc, 
                     k2_inset:float=0.1/u.Mpc,
                     k3_inset:float=0.4/u.Mpc): #2.5/u.Mpc): # k-scales of interest to sample each spectrum in the ensemble
@@ -2186,19 +2198,24 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
             spec_to_plot_de_dimensionalized=spec_to_plot
             ensemble_of_spectra_de_dimensionalized=ensemble_of_spectra
         if plot_log:
-            spec_to_plot=np.log10(spec_to_plot_de_dimensionalized)
+            # if (type(norm_ext)==list):
+                # vminlog,vmaxlog=norm_ext
+            # else:
+            if True:
+                off=2
+                vminlog=np.log10(np.nanpercentile(spec_to_plot_de_dimensionalized,off))
+                vmaxlog=np.log10(np.nanpercentile(spec_to_plot_de_dimensionalized,100-off))
 
-            vminlog=np.log10(np.nanmin(spec_to_plot_de_dimensionalized))
-            if (type(norm_ext)==list):
-                vminlog,vmaxlog=norm_ext
-            if vminlog>0:
-                vminlog=-0.01
-            vmaxlog=np.log10(np.nanmax(spec_to_plot_de_dimensionalized))
-            if vmaxlog<0:
-                vmaxlog=0.01
-            norm=TwoSlopeNorm(0.,vmin=vminlog,
-                                 vmax=vmaxlog)
+            if vminlog*vmaxlog>0: # if they have the same sign
+                vcentre=np.log10(np.nanmean(spec_to_plot_de_dimensionalized))
+            else:
+                vcentre=0
+            print("vminlog,vcentre,vmaxlog=",vminlog,vcentre,vmaxlog)
+            norm=TwoSlopeNorm(vcentre,
+                                vmin=vminlog,vmax=vmaxlog)
         else:
+            actualmax=np.nanmax(ensemble_of_spectra_de_dimensionalized)
+            actualmin=np.nanmin(ensemble_of_spectra_de_dimensionalized)
             large=np.nanmax(np.abs(ensemble_of_spectra_de_dimensionalized))
             half_middle=0.5*large # fallback: put all power spectra in the ensemble on the same colour scales, informed by the extreme range
             if norm_ext is None:
@@ -2209,17 +2226,22 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
                     ne=0.01*vmax
                 elif ne==0:
                     ne=1e-9
-                norm=SymLogNorm(ne,vmin=-vmax,vmax=vmax)
             else:
                 ne=norm_ext
-                if np.nanmin(ensemble_of_spectra_de_dimensionalized)>=0:
-                    norm=LogNorm(vmin=0.01*norm_ext,vmax=2*norm_ext)
-                else:
-                    if isinstance(ne, u.Quantity):
-                        ne=ne.value
-                    norm=SymLogNorm(0.01*ne,vmin=-ne,vmax=ne)
+                vmax=np.nanmax(ensemble_of_spectra_de_dimensionalized)
+            print("norm_ext=",norm_ext)
+            if np.nanmin(ensemble_of_spectra_de_dimensionalized)>=0:
+                vmin_use=actualmin
+                if actualmin<0:
+                    vmin_use=1e-6
+                norm=LogNorm(vmin=vmin_use,vmax=actualmax)
+            else:
+                if isinstance(ne, u.Quantity):
+                    ne=ne.value
+                # norm=SymLogNorm(0.01*ne,vmin=-ne,vmax=ne)# worked-ish at 15:00 on Sept 17th 2026
+                norm=SymLogNorm(1e-5*large,vmin=-1.5*large,vmax=1.5*large)
         
-        im=axs[i][j].imshow(spec_to_plot.T, cmap=colourmap, origin="lower", extent=cyl_extent, norm=None) #, norm=norm)
+        im=axs[i][j].imshow(spec_to_plot.T, cmap=colourmap, origin="lower", extent=cyl_extent, norm=norm)
         xlims_to_use=axs[i][j].get_xlim()
         ylims_to_use=axs[i][j].get_ylim()
         axs[i][j].plot(k_perp,wedge_kpar(nu_ctr,k_perp),c="tab:red",label="extent of FG wedge\nno horizon limit")
@@ -2558,7 +2580,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                                    P_xx_xx_xx_fg.value,  Pisoratio,           P_co_xx_xx_xx.value, P_co_fi_xx_xx.value, P_co_fi_sy_xx.value, 
                                                    P_co_xx_xx_fg.value,                                              P_xx_fi_xx_fg.value, P_CO_XX_XX_XX.value,
                                                    co_xx_xx_fg_lin,      co_fi_xx_fg_lin,     co_fi_sy_fg_lin,     co__divby__fg  ,
-                                                   P_co_fi_sy_fg/P_co_fi_xx_fg, P_co_fi_sy_xx-P_co_fi_xx_xx]) # N_pspec_types x Nkperp x Nkpar
+                                                   P_co_fi_sy_fg/P_co_fi_xx_fg-1, P_co_fi_sy_xx-P_co_fi_xx_xx]) # N_pspec_types x Nkperp x Nkpar
         power_quantities_all.append(power_quantities_this_complexity) # N_complexity_cases x N_pspec_types x Nkperp x Nkpar
         
         Delta2_quantities_this_complexity=[P_qty*k_mag_grid**3/(2*pi**2) for P_qty in power_quantities_this_complexity]
@@ -2583,6 +2605,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     abs_co_fg_indices=np.r_[1,2,10]
     abs_co_beam_indices=np.r_[8,9]
     abs_co_indices=np.r_[7,12]
+    cosmoratio_indices=np.r_[4,6]
 
     abs_residual=[np.percentile(Presidual.value,90),
                     np.nanmax(np.abs(Presidual.value))]
@@ -2592,19 +2615,9 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                     np.nanmax(np.abs(co_fi_xx_fg_lin)) if not np.all(np.isnan(co_fi_xx_fg_lin)) else 1]
     cofisyfg_lin=[np.percentile(co_fi_sy_fg_lin,90),
                     np.nanmax(np.abs(co_fi_sy_fg_lin)) if not np.all(np.isnan(co_fi_sy_fg_lin)) else 1]
-    co_d_fg=[np.nanmin(np.log10(co__divby__fg)),
-             np.percentile(np.log10(co__divby__fg),98)]
-    fgext=None
-    if which_power=="P":
-        abs_co_no_fg=np.percentile(power_quantities_all[:,abs_co_no_fg_indices,:,:],98) 
-        abs_co_beam=np.percentile(power_quantities_all[:,abs_co_beam_indices,:,:],98)
-        abs_co_fg=np.percentile(power_quantities_all[:,abs_co_fg_indices,:,:],90)
-        abs_co=np.percentile(power_quantities_all[:,abs_co_indices,:,:],90)
-        # fgext=np.percentile(P_xx_xx_xx_fg.value,97)
-    elif which_power=="Delta2":
-        abs_co_no_fg=None
-        abs_co_fg=np.percentile(Delta2_quantities_all[:,abs_co_fg_indices,:,:],90) # good for whole dynamic range
-        # fgext=np.percentile(Delta2_quantities_all[:,5,:,:],97)
+    co_d_fg=[np.nanmax(co__divby__fg.value)-np.nanmin(co__divby__fg.value),
+             np.nanmax(co__divby__fg.value)] #   if (type(norm_ext)==list): ne,vmax=norm_ext
+    if which_power=="Delta2":
         abs_residual=[np.percentile(Delta2_quantities_all[:,3,:,:],90),
                       np.nanmax(np.abs(Delta2_quantities_all[:,3,:,:]))]
         coxxxxfg_lin=[np.percentile(Delta2_quantities_all[:,-6,:,:],90),
@@ -2613,31 +2626,31 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                       np.nanmax(np.abs(Delta2_quantities_all[:,-5,:,:]))]
         cofisyfg_lin=[np.percentile(Delta2_quantities_all[:,-4,:,:],90),
                       np.nanmax(np.abs(Delta2_quantities_all[:,-4,:,:]))]
-        co_d_fg=[np.nanmin(np.log10(Delta2_quantities_all[:,-3,:,:])),
-                 np.percentile(np.abs(np.log10(Delta2_quantities_all[:,-3,:,:])),98)]
+        co_d_fg=[1e-3*np.percentile(Delta2_quantities_all[:,-3,:,:].value,98),
+                 np.nanmax(np.abs(Delta2_quantities_all[:,-3,:,:].value))]
 
     co_fi_sy_fg_str="cosmo + fidu beam + syst + fg"
     co_fi_xx_fg_str="cosmo + fidu beam + fg"
 
     # vers_name, units, save_name, norm_ext, cmap, plotlog
-    xx_fi_sy_fg_params=                       ["log10[ fidu beam + syst + fg ]",
+    xx_fi_sy_fg_params=                       ["fidu beam + syst + fg", # ["log10[ fidu beam + syst + fg ]",
                                                 absolute_units, 
                                                "fidu_syst_fg",
-                                                fgext,
+                                                None,
                                                 abs_map,
-                                                True]
+                                                False]
     
     co_fi_xx_fg_params=                       [ co_fi_xx_fg_str,
                                                 absolute_units,
                                                "cosmo_fidu_fg",
-                                                abs_co_fg,
+                                                None,
                                                 abs_map,
                                                 False]
     
     co_fi_sy_fg_params=                       [ co_fi_sy_fg_str,
                                                 absolute_units,
                                                "cosmo_fidu_syst_fg",
-                                                abs_co_fg,
+                                                None,
                                                 abs_map,
                                                 False]
     
@@ -2648,70 +2661,67 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                                 rel_map,
                                                 False]
     
-    Pratio_params=                            ["log10[ (fidu beam + syst + fg) / cosmo ]", 
+    Pratio_params=                            ["(fidu beam + syst + fg) / cosmo", #["log10[ (fidu beam + syst + fg) / cosmo ]", 
                                                 relative_units,
                                                "fidu_syst_fg__divby__cosmo",
                                                 None,
                                                 rel_map,
-                                                True]
+                                                False]
     
-    xx_xx_xx_fg_params=                       ["log10[ fg ]",                                
+    xx_xx_xx_fg_params=                       ["fg", #["log10[ fg ]",                                
                                                 absolute_units,
                                                "fg",
-                                                fgext,
+                                                None,
                                                 abs_map,
-                                                True]
+                                                False]
     
-    isoratio_params=                          ["log10[ (fidu beam + fg) / cosmo ]",
+    isoratio_params=                          ["(fidu beam + fg) / cosmo", #["log10[ (fidu beam + fg) / cosmo ]",
                                                 relative_units,
                                                "fidu_fg__divby__cosmo",
                                                 None,
                                                 rel_map,
-                                                True]
+                                                False]
     
     co_xx_xx_xx_params=                       ["cosmo",
                                                 absolute_units,
                                                "cosmo",
-                                                # abs_co_no_fg,
-                                                abs_co,
+                                                None,
                                                 abs_map,
                                                 False]
     
     co_fi_xx_xx_params=                       ["cosmo + fidu beam",
                                                 absolute_units,
                                                "cosmo_fidu",
-                                                # abs_co_no_fg,
-                                                abs_co_beam,
+                                                None,
                                                 abs_map,
                                                 False]
     
     co_fi_sy_xx_params=                       ["cosmo + fidu beam + syst",
                                                 absolute_units,
                                                "cosmo_fidu_syst",
-                                                # abs_co_no_fg,
-                                                abs_co_beam,
+                                                None,
                                                 abs_map,
                                                 False]
     
     co_xx_xx_fg_params=                       ["cosmo + fg",
                                                 absolute_units,
                                                "cosmo_fg",
-                                                abs_co_fg,
+                                                None,
                                                 abs_map,
                                                 False]
     
-    xx_fi_xx_fg_params=                       ["log10[ fidu beam + fg ]",
+    xx_fi_xx_fg_params=                       ["fidu beam + fg", #["log10[ fidu beam + fg ]",
                                                 absolute_units,
                                                "fidu_fg",
-                                                fgext,
+                                                None,
                                                 abs_map,
-                                                True]
+                                                False]
     
     P_CO_XX_XX_XX_params=                     ["COSMO",
                                                 absolute_units,
                                                "COSMOCOSMO",
                                                 # abs_co_no_fg,
-                                                abs_co,
+                                                None,
                                                 abs_map,
                                                 False]
     
@@ -2736,19 +2746,19 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                                 rel_map,
                                                 False]
     
-    co__divby__fg_params=                     ["log10[ cosmo / fg ]",
+    co__divby__fg_params=                     ["cosmo / fg", #["log10[ cosmo / fg ]",
                                                 relative_units,
                                                "cosmo__divby__fg",
                                                 co_d_fg,
                                                 rel_map,
-                                                True]
+                                                False]
     
-    co_fi_sy_fg__divby__P_co_fi_xx_fg_params= ["( "+co_fi_sy_fg_str+") / ("+co_fi_xx_fg_str+" )",
+    co_fi_sy_fg__divby__P_co_fi_xx_fg_params= ["( "+co_fi_sy_fg_str+") / ("+co_fi_xx_fg_str+" ) - 1",
                                                 relative_units,
                                                "cosmo_fidu_syst_fg__divby__cosmo_fidu_fg",
                                                 None,
                                                 rel_map,
-                                                True]
+                                                False]
     
     co_fi_sy_xx__minus__co_fi_xx_xx_params=   ["( cosmo + fidu beam + syst ) - ( cosmo + fidu beam )",
                                                 relative_units,
