@@ -27,6 +27,7 @@ import pandas as pd
 from pathlib import Path
 import pygtc
 import time
+from tqdm import tqdm
 
 set_workers(6)
 
@@ -118,7 +119,7 @@ def discretize_LoS(freq_lo, freq_hi, freq_delta, rest_freq=nu_HI_z0):
     comoving_ext=comoving_absolute[-1]-comoving_absolute[0]
     freq_mid=(freq_hi+freq_lo)/2
     redshift_ctr=rest_freq/freq_mid-1
-    comoving_ctr=comoving_distance(redshift_ctr) # seems like a superfluous call, but this is to establish consistency with the PSF-box ecosystem. the old way was not robust against there being an even vs. odd number of voxels along the LoS. another fix could've been to fftfreq-ify these channels, but that is lowkey super overengineered because these are CST channels and the the box I form here never gets Fourier operated on until a bunch of interpolation and postprocessing down the line
+    comoving_ctr=comoving_distance(redshift_ctr) # seems like a superfluous call, but this is to establish consistency with the box ecosystem. the old way was not robust against there being an even vs. odd number of voxels along the LoS. another fix could've been to fftfreq-ify these channels, but that is lowkey super overengineered because these are CST channels and the the box I form here never gets Fourier operated on until a bunch of interpolation and postprocessing down the line
     comoving_centred=comoving_absolute-comoving_ctr
     flat_sky_centred=comoving_ext*fftshift(fftfreq(Nz))
     flat_sky_absolute=flat_sky_centred+comoving_ctr
@@ -173,16 +174,6 @@ def Blackman_Harris_safe_for_FFT(N): # !!centre-origin!! apodization function
       +a2*np.cos(4.*pi*n/N) \
       -a3*np.cos(6.*pi*n/N)
     return w
-def get_two_closest_indices_monotonic(val,sortedarr):
-    i=0
-    comp=np.less if sortedarr[0]<sortedarr[1] else np.greater # if the array is monotonic increasing, use the comparison value being smaller than the current array value as the condition to keep going
-    while comp(sortedarr[i],val):
-        i+=1
-    i1=i-1
-    i2=i
-    if i2==len(sortedarr):
-        i2-=1
-    return i1,i2
 def comprehensive_slice_figure(box,                      # 3D box to plot slices of
                                norm=None,                # norm of the colour scale
                                name="placeholder.png",   # name of the output figure
@@ -325,7 +316,7 @@ class beam_effects(object):
                  N_timesteps=def_N_timesteps, N_hrs=hrs_per_night,
 
                  # CONVENIENCE
-                 heavy_beam_recalc:bool=True,         # save time by using pre-saved PSFs?
+                 heavy_beam_recalc:bool=True,         # save time by using pre-saved beams?
                  ):   
                 
         # forecasting considerations
@@ -367,10 +358,10 @@ class beam_effects(object):
         
         # cylindrically binned survey k-modes and box considerations
         _, \
-        self.Nchan, self.PSF_comoving_ext, _, \
+        self.Nchan, self.synth_comoving_extent, _, \
         _, \
         _, _, \
-        _, PSF_flat_sky_comoving_centred = discretize_LoS(self.nu_lo, self.nu_hi, delta_nu)
+        _, _ = discretize_LoS(self.nu_lo, self.nu_hi, delta_nu) # last one was P S F_flat_sky_comoving_centred
 
         kpar_surv=kpar(self.nu_ctr,self.Deltanu,self.Nchan) # not used for cosmo_stats calculations, but convenient to keep around for forecasting
         self.kpar_surv=kpar_surv
@@ -393,9 +384,8 @@ class beam_effects(object):
         self.kmin_surv=np.sqrt(kperpmin_surv**2+kparmin_surv**2)
         self.kmax_surv=np.sqrt(kperpmax_surv**2+kparmax_surv**2)
 
-        PSF_z_vec=PSF_flat_sky_comoving_centred
-        self.PSF_Nz=self.Nchan
-        print("beam_effects.__init__: self.PSF_Nz=",self.PSF_Nz)
+        self.synth_Nz=self.Nchan
+        print("beam_effects.__init__: self.synth_Nz=",self.synth_Nz)
         print("beam_effects.__init__: self.bandwidth,self.Deltanu,self.Nchan=",self.bandwidth,self.Deltanu,self.Nchan)
 
         self.fgfreqs=np.asarray([self.nu_lo.value,self.nu_hi.value])*self.nu_ctr.unit
@@ -420,15 +410,15 @@ class beam_effects(object):
         _, CST_z_vec, \
         _, _ = discretize_LoS(CST_lo_safe, CST_hi_safe, CST_deltanu)
     
-        CSTPSF_xy_ext=2*transverse_half_angle*self.comoving_mid # stricter than the horizon limit. 2x is to account for +/- approved-small-angle from boresight
-        CSTPSF_xy_vec= CSTPSF_xy_ext*fftshift(fftfreq(Npix))
+        CSTsynth_xy_ext=2*transverse_half_angle*self.comoving_mid # stricter than the horizon limit. 2x is to account for +/- approved-small-angle from boresight
+        CSTsynth_xy_vec= CSTsynth_xy_ext*fftshift(fftfreq(Npix))
         self.Npix=Npix
-        kperpmin_PSFCST=twopi/CSTPSF_xy_ext
-        kperpmax_PSFCST=Npix/CSTPSF_xy_ext*pi
-        kparmin_PSF=twopi/self.PSF_comoving_ext
-        kparmax_PSF=self.Nchan/self.PSF_comoving_ext*pi
-        print("PSF k-perp extent:",kperpmin_PSFCST,kperpmax_PSFCST)
-        print("PSF k-par  extent:",kparmin_PSF,kparmax_PSF)
+        kperpmin_synthCST=twopi/CSTsynth_xy_ext
+        kperpmax_synthCST=Npix/CSTsynth_xy_ext*pi
+        kparmin_synth=twopi/self.synth_comoving_extent
+        kparmax_synth=self.Nchan/self.synth_comoving_extent*pi
+        print("synth k-perp extent:",kperpmin_synthCST,kperpmax_synthCST)
+        print("synth k-par  extent:",kparmin_synth,kparmax_synth)
 
         if beam_sim_directory!="":
             already_imported_fidu_CST=Path("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy").is_file()
@@ -477,9 +467,9 @@ class beam_effects(object):
                 syst_boxes=np.load("syst_CST_"+str(N_CST_types)+"_"+middle_name+"_MHz.npy")
                 print("syst_boxes.shape=",syst_boxes.shape)
 
-            CST_domain=(CSTPSF_xy_vec,CSTPSF_xy_vec,CST_z_vec)
+            CST_domain=(CSTsynth_xy_vec,CSTsynth_xy_vec,CST_z_vec)
             self.CST_z_vec=CST_z_vec
-            self.CSTPSF_xy_ext=CSTPSF_xy_ext
+            self.CSTsynth_xy_ext=CSTsynth_xy_ext
 
             CST_syst_ensemble=np.zeros((N_CST_types,N_pointing_errors_max+1,Npix,Npix,N_CST_z)) # shape of CST_syst_ensemble is (N_CST_types,Npix,Npix,N_CST_z) but the sub-ensembles passed to simulate_array have shapes  ////////replace
             CST_syst_ensemble[:,0,:,:,:]=syst_boxes # situate the pointing error–free versions
@@ -503,60 +493,58 @@ class beam_effects(object):
                                                     distribution="random",Npix=Npix, transverse_half_angle=transverse_half_angle,
                                                     Delta_nu=delta_nu,
                                                     sub_ensemble_of_CST_beams=fidu_box,
-                                                    CSTPSF_xy=CSTPSF_xy_vec,CST_freqs=CST_freqs,
+                                                    CSTsynth_xy=CSTsynth_xy_vec,CST_freqs=CST_freqs,
                                                     supplementary_name=ioname)
                 fidu_synthesis.stack_to_box()
-                print("finished synthesizing fiducial CST PSF")
-                # fidu_box_PSF=fidu_synthesis.PSFbox
-                # fidu_box_A=fidu_synthesis.Abox
-                fidu_box_Q=fidu_synthesis.Q
+                print("finished synthesizing fiducial CST synth beam")
+                fidu_box_MM=fidu_synthesis.MM
                 if N_CST_types>1 or N_pointing_errors_max>0:
                     syst_synthesis=simulate_array(array_version=array_version,N_timesteps=self.N_timesteps,N_hrs=N_hrs,
                                                         nu_ctr=nu_ctr,
                                                         distribution=antenna_distribution,Npix=Npix, transverse_half_angle=transverse_half_angle,
                                                         Delta_nu=delta_nu,
                                                         sub_ensemble_of_CST_beams=[fidu_box,CST_syst_ensemble],
-                                                        CSTPSF_xy=CSTPSF_xy_vec,CST_freqs=CST_freqs,
+                                                        CSTsynth_xy=CSTsynth_xy_vec,CST_freqs=CST_freqs,
                                                         supplementary_name=ioname)
                     syst_synthesis.stack_to_box()
-                    syst_box_Q=syst_synthesis.Q
-                    weights_PSF=syst_synthesis.weights
+                    syst_box_MM=syst_synthesis.MM
+                    weights_synth=syst_synthesis.weights
                     Ntypes=syst_synthesis.N_total_beam_types
                 else:
-                    syst_box_Q=np.copy(fidu_box_Q)
-                    weights_PSF=fidu_synthesis.weights
+                    syst_box_MM=np.copy(fidu_box_MM)
+                    weights_synth=fidu_synthesis.weights
                     Ntypes=1
 
-                print("finished synthesizing systematic-laden CST PSF")
+                print("finished synthesizing systematic-laden CST synth beam")
 
-                np.save("fidu_box_Q_"+ioname+".npy",fidu_box_Q)
-                # assert 1==0, "just re-synthesizing a single PSF for use in the end-to-end test"
-                np.save("syst_box_Q_"+ioname+".npy",syst_box_Q)
-                np.save("weights_PSF_"+ioname+".npy",weights_PSF)
+                np.save("fidu_box_MM_"+ioname+".npy",fidu_box_MM)
+                assert 1==0, "just re-synthesizing a single MM for use in the end-to-end test"
+                np.save("syst_box_MM_"+ioname+".npy",syst_box_MM)
+                np.save("weights_synth_"+ioname+".npy",weights_synth)
                 print("saved synthesized beam")
             else: 
-                fidu_box_Q=np.load("fidu_box_Q_"+ioname+".npy")
-                syst_box_Q=np.load("syst_box_Q_"+ioname+".npy")
-                weights_PSF=np.load("weights_PSF_"+ioname+".npy")
+                fidu_box_MM=np.load("fidu_box_MM_"+ioname+".npy")
+                syst_box_MM=np.load("syst_box_MM_"+ioname+".npy")
+                weights_synth=np.load("weights_synth_"+ioname+".npy")
                 print("loaded synthesized beam")
             print("finished importing/constructing synthesized CST beam")
-            print("fidu_box_Q.shape=",fidu_box_Q.shape)
+            print("fidu_box_MM.shape=",fidu_box_MM.shape)
             
             weighted_sum_syst_primary=np.zeros_like(fidu_box)
-            Ntypes=len(weights_PSF) # this is super hacky and I need to streamline it
+            Ntypes=len(weights_synth) # this is super hacky and I need to streamline it
             if Ntypes>1:
                 q=0
                 for i in range(N_CST_types):
                     for j in range(N_pointing_errors_max+1):
                         syst_box_here=CST_syst_ensemble[i,j,:,:,:]
                         if not np.allclose(syst_box_here,0):
-                            weighted_sum_syst_primary+=weights_PSF[q]*syst_box_here
+                            weighted_sum_syst_primary+=weights_synth[q]*syst_box_here
                         q+=1
             
-            self.fiduQ=fidu_box_Q
-            self.systQ=syst_box_Q
+            self.fiduMM=fidu_box_MM
+            self.systMM=syst_box_MM
 
-            self.PSF_Delta_z=self.PSF_comoving_ext/self.PSF_Nz
+            self.synth_Delta_z=self.synth_comoving_extent/self.synth_Nz
 
         # groundwork-informed forecasting considerations
         self.P_fid_for_cont_pwr=P_fid_for_cont_pwr
@@ -668,7 +656,7 @@ class beam_effects(object):
                                   rngseed=438): 
         
         # generate a slice of white noise
-        fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_Delta_z,
+        fg=cosmo_stats(self.CSTsynth_xy_ext,Lz=self.synth_Delta_z,
                        P_fid=self.P_flat,k_fid=self.k_for_flat,
                        Nxy=self.Npix,Nz=1,
                        seed=rngseed,nu_ctr=self.nu_ctr) 
@@ -712,14 +700,14 @@ class beam_effects(object):
             fg_box=np.zeros((self.Npix,self.Npix,self.Nchan))*u.mK
             fg_info_cases=[ [335.4*foreground_temp_unit, 150*u.MHz, -2.8,  0.1],   # synchrotron
                             [33.5 *foreground_temp_unit, 150*u.MHz, -2.15, 0.01] ] # free-free
-            for fg_info in fg_info_cases:
+            for fg_info in tqdm(fg_info_cases):
                 Tref,nuref,alpha,sigma_alpha=fg_info
                 fg_box_ingredient=self.get_pwr_law_FG_ingredient(Tref,nuref,alpha,sigma_alpha)
                 fg_box+=fg_box_ingredient
             self.fg_box=fg_box # centre-origin
             print("beam_effects.calc_power_contamination: fg_box.shape =",fg_box.shape)
 
-            fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_comoving_ext,
+            fg=cosmo_stats(self.CSTsynth_xy_ext,Lz=self.synth_comoving_extent,
                            LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                            T_pristine=fg_box)
             fg.generate_P()
@@ -728,55 +716,55 @@ class beam_effects(object):
             self.P_xx_xx_xx_fg=fg.P_binned *fg_box.unit**2 *self.comoving_mid.unit**3
             print("                           fg power calc complete")
 
-        print("Lz that will be used to initialize cosmo_stats: ",self.PSF_comoving_ext)
-        print("fg_box.shape, self.Npix, self.PSF_Nz =",fg_box.shape, self.Npix, self.PSF_Nz)
-        co_fi_xx_fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_comoving_ext,
+        print("Lz that will be used to initialize cosmo_stats: ",self.synth_comoving_extent)
+        print("fg_box.shape, self.Npix, self.synth_Nz =",fg_box.shape, self.Npix, self.synth_Nz)
+        co_fi_xx_fg=cosmo_stats(self.CSTsynth_xy_ext,Lz=self.synth_comoving_extent,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
-                                Nxy=self.Npix,Nz=self.PSF_Nz,
-                                Q=self.fiduQ,
+                                Nxy=self.Npix,Nz=self.synth_Nz,
+                                MM=self.fiduMM,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
         self.kperpbins_internal=co_fi_xx_fg.kperpbins
         self.kparbins_internal=co_fi_xx_fg.kparbins
-        co_fi_sy_fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_comoving_ext,
+        co_fi_sy_fg=cosmo_stats(self.CSTsynth_xy_ext,Lz=self.synth_comoving_extent,
                                 P_fid=P_cosmo,k_fid=self.ksph,
-                                Nxy=self.Npix,Nz=self.PSF_Nz,
-                                Q=self.systQ,# Q2=self.fiduQ,
+                                Nxy=self.Npix,Nz=self.synth_Nz,
+                                MM=self.systMM,# MM2=self.fiduMM,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
-        xx_fi_sy_fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_comoving_ext,
-                                Nxy=self.Npix,Nz=self.PSF_Nz,
+        xx_fi_sy_fg=cosmo_stats(self.CSTsynth_xy_ext,Lz=self.synth_comoving_extent,
+                                Nxy=self.Npix,Nz=self.synth_Nz,
                                 T_pristine=fg_box,
-                                Q=self.systQ,# Q2=self.fiduQ,
+                                MM=self.systMM,# MM2=self.fiduMM,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
-        xx_fi_xx_fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_comoving_ext,
-                                Nxy=self.Npix,Nz=self.PSF_Nz,
+        xx_fi_xx_fg=cosmo_stats(self.CSTsynth_xy_ext,Lz=self.synth_comoving_extent,
+                                Nxy=self.Npix,Nz=self.synth_Nz,
                                 T_pristine=fg_box,
-                                Q=self.fiduQ,
+                                MM=self.fiduMM,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
-        co_fi_xx_xx=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_comoving_ext,
+        co_fi_xx_xx=cosmo_stats(self.CSTsynth_xy_ext,Lz=self.synth_comoving_extent,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
-                                Nxy=self.Npix,Nz=self.PSF_Nz,
-                                Q=self.fiduQ,
+                                Nxy=self.Npix,Nz=self.synth_Nz,
+                                MM=self.fiduMM,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
-        co_fi_sy_xx=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_comoving_ext,
+        co_fi_sy_xx=cosmo_stats(self.CSTsynth_xy_ext,Lz=self.synth_comoving_extent,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
-                                Nxy=self.Npix,Nz=self.PSF_Nz,
-                                Q=self.systQ, #Q2=self.fiduQ,
+                                Nxy=self.Npix,Nz=self.synth_Nz,
+                                MM=self.systMM, #MM2=self.fiduMM,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
-        co_xx_xx_fg=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_comoving_ext,
+        co_xx_xx_fg=cosmo_stats(self.CSTsynth_xy_ext,Lz=self.synth_comoving_extent,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
-                                Nxy=self.Npix,Nz=self.PSF_Nz,
+                                Nxy=self.Npix,Nz=self.synth_Nz,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
@@ -869,9 +857,9 @@ class beam_effects(object):
                 self.kpar_for_cosmo=   co_xx_xx_fg.kparbins
             self.P_co_xx_xx_fg= co_xx_xx_fg.P_binned_MC_complete
             print("cosmo +                    fg MC         complete")
-        COSMOTEST=cosmo_stats(self.CSTPSF_xy_ext,Lz=self.PSF_comoving_ext,
+        COSMOTEST=cosmo_stats(self.CSTsynth_xy_ext,Lz=self.synth_comoving_extent,
                               P_fid=P_cosmo,k_fid=self.ksph, 
-                              Nxy=self.Npix,Nz=self.PSF_Nz,
+                              Nxy=self.Npix,Nz=self.synth_Nz,
                               LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                               frac_tol=self.frac_tol_conv,seed=self.seed,nu_ctr=self.nu_ctr)
         COSMOTEST.power_Monte_Carlo(interfix="CO_XX_XX_XX_") # extra underscore is because numpy is fine with case-sensitive file names but MacOS is not :(
@@ -1067,7 +1055,7 @@ class cosmo_stats(object):
                  T_pristine:np.ndarray=None,T_with_beam:np.ndarray=None,                # brightness temperature box realizations without ("_pristine") or with ("_beam") the beam applied (primary would be multiplied, but now the vanguard PA-CST approach uses convolution)
                  P_fid:np.ndarray=None, k_fid:np.ndarray=None,                          # power spectrum you want to window. probably comes from cosmo (like CAMB) or is flat (for a reference calculation) & Fourier space points where the fiducial power spectrum is sampled
                  Nxy:int=None,Nz:int=None,                                              # number of voxels in the x/y or z directions
-                 Q:np.ndarray=None, Q2=None,                             # PSF (box of values evaluated in config space); and white noise map for normalization
+                 MM:np.ndarray=None, MM2=None,                             # synth beam (box of values evaluated in config space); and white noise map for normalization
                  LoS_apo=False,transverse_apo=False,                                    # apodize along the sky plane or line-of-sight directions to suppress ringing originating from features that cut off sharply?
                  fg_box:np.ndarray=None,                                                # foregrounds to add to the signal-of-interest map (T)
                  frac_tol:float=0.1,                                                    # fractional tolerance in cosmic variance of the Monte Carlo ensemble -> used to calculate the number of realizations
@@ -1103,7 +1091,7 @@ class cosmo_stats(object):
         self.P_fid_box=None
         self.T_with_beam=T_with_beam
         self.T_pristine=T_pristine
-        if ((T_with_beam is None) and (T_pristine is None) and (P_fid is None) and (PSF is None)): # require either a box or a fiducial power spec (il faut some way of determining #voxels/side; passing just Nxy is not good enough)
+        if ((T_with_beam is None) and (T_pristine is None) and (P_fid is None) and (MM is None)): # require either a box or a fiducial power spec (il faut some way of determining #voxels/side; passing just Nxy is not good enough)
             raise ValueError("not enough info")
         else:                                                                  # there is possibly enough info to proceed, but still need to check for conflicts and gaps
             if ((T_pristine is not None) and (T_with_beam is not None)):
@@ -1130,7 +1118,7 @@ class cosmo_stats(object):
                 Pfidshape=P_fid.shape
                 Pfiddims=len(Pfidshape)
                 if (Pfiddims==2):
-                    if Q is None: # trying to do a minimalistic instantiation where I merely provide a fiducial power spectrum and interpolate it
+                    if MM is None: # trying to do a minimalistic instantiation where I merely provide a fiducial power spectrum and interpolate it
                         self.fid_Nkperp,self.fid_Nkpar=Pfidshape
                     else:
                         try: # see if the power spec is a CAMB-esque (1,npts) array
@@ -1297,25 +1285,15 @@ class cosmo_stats(object):
         self.apodization_xyz_centre=apodization_xyz_product
 
         # beams
-        Quse=np.ones((self.Nxy,self.Nxy,self.Nz))
-        self.Q=None
-        if Q is not None:
-            self.Q=Q
-            Quse=Q
-            if Q2 is not None:
-                Quse=Q2
+        MMuse=np.ones((self.Nxy,self.Nxy,self.Nz))
+        self.MM=None
+        if MM is not None:
+            self.MM=MM
+            MMuse=MM
+            if MM2 is not None:
+                MMuse=MM2
 
-            Qext=np.max(np.abs(Quse))
-            manydBdown=1e-9
-            comprehensive_slice_figure(Quse, 
-                                       norm=SymLogNorm(manydBdown*Qext,vmin=-Qext,vmax=Qext),
-                                       cmap="RdBu",
-                                       exts=[[self.xy_vec_for_box[0],self.xy_vec_for_box[-1]],
-                                             [self.xy_vec_for_box[0],self.xy_vec_for_box[-1]],
-                                             [self.z_vec_for_box[0],self.z_vec_for_box[-1]]  ],
-                                       name="Q_slices.png")
-
-        effective_volume=np.sum((self.apodization_xyz_centre*Quse)**2*self.d3r)
+        effective_volume=np.sum((self.apodization_xyz_centre*MMuse)**2*self.d3r)
         self.estimator_denom=effective_volume
         
         # strictness control for Monte Carlos
@@ -1358,7 +1336,7 @@ class cosmo_stats(object):
             
     def generate_P(self,T_use=None): # from a box of temperature field values
         if T_use is None:            # establish common string flags
-            if self.Q is None:
+            if self.MM is None:
                 T_use="pristine"
             else:
                 T_use="beam"
@@ -1368,7 +1346,7 @@ class cosmo_stats(object):
                 if self.T_pristine is None:
                     raise ValueError("T_with_beam is None, but it also cannot be formed because the T_pristine from which it needs to be formed is also None")
                 else:
-                    self.T_with_beam=self.T_pristine*self.Q
+                    self.T_with_beam=self.T_pristine*self.MM
             T_use=self.T_with_beam
         elif T_use.lower()=="pristine":
             T_use=self.T_pristine
@@ -1437,19 +1415,19 @@ class cosmo_stats(object):
             T+=self.fg_box
 
         self.T_pristine=T
-        if self.Q is not None:
-            self.T_with_beam=self.Q*T
+        if self.MM is not None:
+            self.T_with_beam=self.MM*T
 
     def power_Monte_Carlo(self,interfix:str=""): # since box generation is not deterministic
         self.MC_not_complete=True
-        if self.Q is None:
+        if self.MM is None:
             T_use="pristine"
         else: 
             T_use="beam"
         i=0
 
         t0=time.time()
-        for i in range(self.N_realizations):
+        for i in tqdm(range(self.N_realizations)):
             self.generate_GRF()
             self.generate_P(T_use=T_use)
             ti=time.time()
@@ -1602,7 +1580,7 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
                  weighting="uniform", Npix:int=def_PA_N_grid_pix,
 
                  sub_ensemble_of_CST_beams=None,                                   # array-like with shape (N_CST_types, N_pointing_errors+1, N_CST_xy, N_CST_xy, N_CST_freqs)
-                 CSTPSF_xy=None,CST_freqs=None,                                       # domain of each CST box in the ensemble. this domain is currently assumed to be the same for each box (not very rigorous/robust, but in practice, if you're running a simulation for a given survey frequency, it would be fairly pathological/ unintuitive/ anti–Occam's razor to get these boxes from CST slices at different frequencies. I guess the practical guidance/takeaway here is that my initial implementation will not support getting different boxes from different CST box resolutions)
+                 CSTsynth_xy=None,CST_freqs=None,                                       # domain of each CST box in the ensemble. this domain is currently assumed to be the same for each box (not very rigorous/robust, but in practice, if you're running a simulation for a given survey frequency, it would be fairly pathological/ unintuitive/ anti–Occam's razor to get these boxes from CST slices at different frequencies. I guess the practical guidance/takeaway here is that my initial implementation will not support getting different boxes from different CST box resolutions)
                  supplementary_name=None # literally just for the July 16th 2026 histogram validation
                  ): 
         # array and observation geometry
@@ -1673,12 +1651,12 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
         self.lambda_obs=surv_wavelengths[0]
 
         # helper args
-        self.CSTPSF_xy=CSTPSF_xy
-        self.Deltaxy=CSTPSF_xy[1]-CSTPSF_xy[0]
-        N_CSTPSF_xy=len(CSTPSF_xy)
+        self.CSTsynth_xy=CSTsynth_xy
+        self.Deltaxy=CSTsynth_xy[1]-CSTsynth_xy[0]
+        N_CSTsynth_xy=len(CSTsynth_xy)
         self.CST_freqs=CST_freqs
         self.CST_deltanu=CST_freqs[1]-CST_freqs[0]
-        self.N_CSTPSF_xy=N_CSTPSF_xy
+        self.N_CSTsynth_xy=N_CSTsynth_xy
         self.N_CST_freqs=len(CST_freqs)
         self.CST_freqs_obs_units=self.CST_freqs.to(u.Hz)
         self.CST_deltanu_obs_units=self.CST_deltanu.to(u.Hz)
@@ -1776,7 +1754,7 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
             print("\nWARNING: the uv extent that follows from the chosen Npix and transverse half-angle is too\nconstrained to fit all baselines of the array simulated here = this info gets discarded\n")
         print("simulate_array.__init__: theta_ext, deltauv, Luv =",theta_ext, deltauv, Luv)
         self.Luv=Luv
-        self.CSTPSF_xy=theta_ext*self.comoving_ctr*fftshift(fftfreq(Npix))
+        self.CSTsynth_xy=theta_ext*self.comoving_ctr*fftshift(fftfreq(Npix))
 
         uvbins_use=Luv*fftshift(fftfreq(Npix))
         print("simulate_array.__init__: check uv gridding resolution: deltauv - (uvbins_use[-1]-uvbins_use[-2]), same for -2/-3 =",deltauv - (uvbins_use[-1]-uvbins_use[-2]),deltauv - (uvbins_use[-2]-uvbins_use[-3]))
@@ -1790,11 +1768,11 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
         PSF_slice=np.zeros((self.Nij,self.Npix,self.Npix))
         primary_beam_slice=np.zeros((self.Nij,self.Npix,self.Npix))
         N_tot=self.N_baselines*self.N_timesteps
-        everything_gridded,_,_=np.histogram2d(np.reshape(self.uv_synth[:,0,:],N_tot,order="C"),
+        sampling_function,_,_=np.histogram2d(np.reshape(self.uv_synth[:,0,:],N_tot,order="C"),
                                               np.reshape(self.uv_synth[:,1,:],N_tot,order="C"),
                                               bins=self.uvbins_use)
         adjust_weights=np.ones((self.Npix,self.Npix))
-        adjust_weights[everything_gridded!=0]=everything_gridded[everything_gridded!=0]
+        adjust_weights[sampling_function!=0]=sampling_function[sampling_function!=0]
         k=0
         for i in range(self.N_total_beam_types):
             type_i=self.pb_types[i]
@@ -1811,20 +1789,16 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
                 N_here=N_bl_here*N_hr_angles_here
                 reshaped_u=np.reshape(u_here,N_here,order="C")
                 reshaped_v=np.reshape(v_here,N_here,order="C")
-                gridded_uv,_,_=np.histogram2d(reshaped_u,reshaped_v,bins=self.uvbins_use) # naïve gridding kernel
-                comb=np.nonzero(gridded_uv) # uv grid points where there are baseline(s)
+                sampling_ij,_,_=np.histogram2d(reshaped_u,reshaped_v,bins=self.uvbins_use) # naïve gridding kernel
+                comb=np.nonzero(sampling_ij) # uv grid points where there are baseline(s)
                 if self.weighting=="custom":
-                    gridded_uv[comb]=1/gridded_uv[comb]
+                    sampling_ij[comb]=1/sampling_ij[comb]
                 elif self.weighting=="uniform": # (DEFAULT) I'm kind of oversubscribing this concept here because I have multiple beam types, but I use the weights to make things less bad
-                    # frac_baselines=np.sum(here!=0)/(self.N_baselines*self.N_timesteps) # fraction of baselines that fall into this beam category
-                    # gridded_uv[comb]*= frac_baselines
-                    
-                    #
-                    gridded_uv/=adjust_weights
+                    sampling_ij/=adjust_weights
                 elif self.weighting!="natural":
                     raise ValueError("unknown uv plane weighting scheme")
-                PSF_ij=fftshift(irfftn(ifftshift(gridded_uv*self.d2u), # irfftn silently discarding imag part of symmetry slices of the last transformed axis is not a problem here because the uv slices in question are entirely real-valued
-                                           norm="forward",s=(self.Npix,self.Npix))) # I *DON'T* need a /(2pi)**2 because this uses the other Fourier convention
+                PSF_ij=fftshift(irfftn(ifftshift(sampling_ij)*self.d2u, # irfftn silently discarding imag part of symmetry slices of the last transformed axis is not a problem here because the uv slices in question are entirely real-valued
+                                       norm="forward",s=(self.Npix,self.Npix))) # I *DON'T* need a /(2pi)**2 because this uses the other Fourier convention
                 LoS_1st,LoS_2nd=np.argsort(np.abs(self.nu_obs-self.CST_freqs_obs_units))[:2]
                 weight_1st=np.abs(self.nu_obs-self.CST_freqs_obs_units[LoS_1st])/self.CST_deltanu_obs_units
                 weight_2nd=np.abs(self.nu_obs-self.CST_freqs_obs_units[LoS_2nd])/self.CST_deltanu_obs_units
@@ -1836,8 +1810,8 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
                 primary_beam_slice[k,:,:]=primary_beam_ij
                 k+=1
 
-        PSF_slice/=np.max(PSF_slice)
-        primary_beam_slice/=np.max(primary_beam_slice)
+        # PSF_slice/=np.max(PSF_slice)
+        # primary_beam_slice/=np.max(primary_beam_slice) # this was redundant but, if it hadn't been, it would've messed up the primary beams by giving them all the same normalization
         return PSF_slice,primary_beam_slice
 
     def stack_to_box(self):
@@ -1847,24 +1821,22 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
 
         PSF_xyz=np.zeros((self.Nij,self.Npix,self.Npix,self.N_chan))
         A_xyz=np.zeros((self.Nij,self.Npix,self.Npix,self.N_chan))
-        for i in range(self.N_chan): # rescale the uv-coverage to this channel's frequency
+        for i in tqdm(range(self.N_chan)): # rescale the uv-coverage to this channel's frequency
             self.uv_synth=self.uv_synth*self.lambda_obs/self.surv_wavelengths[i] # rescale according to observing frequency: multiply up by the prev lambda to cancel, then divide by the current/new lambda
             self.lambda_obs=self.surv_wavelengths[i] # update the observing frequency for next time
             nu_obs=c/self.lambda_obs
             self.nu_obs=nu_obs.decompose()
 
             PSF_xyz[:,:,:,i],A_xyz[:,:,:,i]=self.calc_uv_slice() # compute this LoS slice's synthesized beam            
-            if ((i%(self.N_chan//3))==0):
-                print("{:7.1f} pct complete".format(i/self.N_chan*100))
 
-        Q=np.zeros((self.Npix,self.Npix,self.N_chan))
-        for k in range(self.Nij):
+        MM=np.zeros((self.Npix,self.Npix,self.N_chan))
+        for k in tqdm(range(self.Nij)):
             Ak=A_xyz[k,:,:,:]
-            PSFk=PSF_xyz[k,:,:,:]
+            synthk=PSF_xyz[k,:,:,:]
 
-            Q+=fftconvolve_perp(PSFk, Ak, self.Deltaxy**2)
-        Q/=np.sum(Q) # volume-normalize so different Q have analogous effects?!
-        self.Q=Q
+            MM+=synthk*Ak # convolved in Fourier space = multiplied in config space
+        MM/=np.sum(MM) # volume-normalize so different MM have analogous effects?!
+        self.MM=MM
 
         PSF_summed=np.sum(PSF_xyz,axis=0)
         print("PSF_summed.shape==(self.Npix,self.Npix,self.N_chan) =",PSF_summed.shape==(self.Npix,self.Npix,self.N_chan))
@@ -1874,8 +1846,15 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
                                    title="PSF summed over ij",
                                    cmap=cmasher.horizon)
 
+        MMext=1.05*np.max(np.abs(MM))
+        manydBdown=1e-4
+        comprehensive_slice_figure(MM, 
+                                   norm=SymLogNorm(manydBdown*MMext,vmin=-MMext,vmax=MMext),
+                                   cmap="RdBu",
+                                   name="MM_Nij_eq_{}.png".format(self.Nij))
+
         # generate a box of r-values (necessary for interpolation to survey domain in cosmo_stats as called by beam_effects)
-        self.xy_vec=self.CSTPSF_xy
+        self.xy_vec=self.CSTsynth_xy
         self.z_vec=self.flat_sky_centred
         print("simulate_array.stack_to_box: z_vec min,max =",np.min(self.z_vec),np.max(self.z_vec))
 ####################################################################################################################################################################################################################################
@@ -1958,7 +1937,7 @@ class reconfigure_CST_beam(object):
     def construct_CST_box(self):
         slice_grid_points=np.array([self.xx_grid,self.yy_grid]).T
         box=np.zeros((self.Nxy,self.Nxy,self.Nfreqs)) # hold interpolated beam slices
-        for i in range (self.Nfreqs):
+        for i in tqdm(range (self.Nfreqs)):
             if self.multi_CST:
                 name1=self.beam_sim_directory+self.f_head+self.f_mid1+self.freq_names[i]+self.f_tail
                 name2=self.beam_sim_directory+self.f_head+self.f_mid2+self.freq_names[i]+self.f_tail
@@ -1974,8 +1953,6 @@ class reconfigure_CST_beam(object):
             power=product_interpolated/np.max(product_interpolated)
             box[:,:,i]=power
 
-            if ((i%(self.Nfreqs//3))==0):
-                print("{:7.1f} pct complete".format(i/self.Nfreqs*100))
         np.save("CST_box_"+self.box_outname,box)
         self.box=box # centre-origin
 
@@ -2153,7 +2130,6 @@ class CHORD_sense(object): # modified from a notebook helpfully shared by Debanj
 def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # indexed as (N_complexity_cases, N_k_perp, N_k_par)
                     ensemble_ids:np.ndarray,                              # names for each power spectrum quantity ("spectrum" for short, even though this is a misnomer in the case of ratios and residuals) in the ensemble according to the number of fiducial and perturbed beam types (N_complexity_cases,)
                     colourmap,                                            # for imshowing each power spectrum quantity
-                    plot_log:bool,                                        # plot absolute or log of the power spectrum quantity?
                     k_perp:np.ndarray, k_par:np.ndarray,                  # k-perp and k-par bins that anchor each plotted spectrum
                     case_title:str, case_units:str,                       # title describing this power spectrum quantity and the corresponding units
                     save_name:str,                                        # name for the summary figure
@@ -2161,7 +2137,8 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
                     nu_ctr:float=600*u.MHz,                                         # only necessary if I insist on plotting the wedge 
                     k1_inset:float=0.06/u.Mpc, 
                     k2_inset:float=0.1/u.Mpc,
-                    k3_inset:float=0.4/u.Mpc): #2.5/u.Mpc): # k-scales of interest to sample each spectrum in the ensemble
+                    k3_inset:float=0.4/u.Mpc, # 2.5/u.Mpc): # k-scales of interest to sample each spectrum in the ensemble
+                    plot_log:bool=False):
     N_spectra=len(ensemble_of_spectra)
     assert(N_spectra==len(ensemble_ids)), "mismatched number of spectra and spectrum names"
     Na=int(np.ceil(np.sqrt(N_spectra)))
@@ -2238,7 +2215,6 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
             else:
                 if isinstance(ne, u.Quantity):
                     ne=ne.value
-                # norm=SymLogNorm(0.01*ne,vmin=-ne,vmax=ne)# worked-ish at 15:00 on Sept 17th 2026
                 norm=SymLogNorm(1e-5*large,vmin=-1.5*large,vmax=1.5*large)
         
         im=axs[i][j].imshow(spec_to_plot.T, cmap=colourmap, origin="lower", extent=cyl_extent, norm=norm)
@@ -2637,135 +2613,116 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                                 absolute_units, 
                                                "fidu_syst_fg",
                                                 None,
-                                                abs_map,
-                                                False]
+                                                abs_map]
     
     co_fi_xx_fg_params=                       [ co_fi_xx_fg_str,
                                                 absolute_units,
                                                "cosmo_fidu_fg",
                                                 None,
-                                                abs_map,
-                                                False]
+                                                abs_map]
     
     co_fi_sy_fg_params=                       [ co_fi_sy_fg_str,
                                                 absolute_units,
                                                "cosmo_fidu_syst_fg",
                                                 None,
-                                                abs_map,
-                                                False]
+                                                abs_map]
     
     Presidual_params=                         ["("+co_fi_sy_fg_str+") - ("+co_fi_xx_fg_str+")",
                                                 absolute_units,
                                                "cosmo_fidu_syst_fg__minus__cosmo_fidu_fg",
                                                 abs_residual,
-                                                rel_map,
-                                                False]
+                                                rel_map]
     
     Pratio_params=                            ["(fidu beam + syst + fg) / cosmo", #["log10[ (fidu beam + syst + fg) / cosmo ]", 
                                                 relative_units,
                                                "fidu_syst_fg__divby__cosmo",
                                                 None,
-                                                rel_map,
-                                                False]
+                                                rel_map]
     
     xx_xx_xx_fg_params=                       ["fg", #["log10[ fg ]",                                
                                                 absolute_units,
                                                "fg",
                                                 None,
-                                                abs_map,
-                                                False]
+                                                abs_map]
     
     isoratio_params=                          ["(fidu beam + fg) / cosmo", #["log10[ (fidu beam + fg) / cosmo ]",
                                                 relative_units,
                                                "fidu_fg__divby__cosmo",
                                                 None,
-                                                rel_map,
-                                                False]
+                                                rel_map]
     
     co_xx_xx_xx_params=                       ["cosmo",
                                                 absolute_units,
                                                "cosmo",
                                                 None,
-                                                abs_map,
-                                                False]
+                                                abs_map]
     
     co_fi_xx_xx_params=                       ["cosmo + fidu beam",
                                                 absolute_units,
                                                "cosmo_fidu",
                                                 None,
-                                                abs_map,
-                                                False]
+                                                abs_map]
     
     co_fi_sy_xx_params=                       ["cosmo + fidu beam + syst",
                                                 absolute_units,
                                                "cosmo_fidu_syst",
                                                 None,
-                                                abs_map,
-                                                False]
+                                                abs_map]
     
     co_xx_xx_fg_params=                       ["cosmo + fg",
                                                 absolute_units,
                                                "cosmo_fg",
                                                 None,
-                                                abs_map,
-                                                False]
+                                                abs_map]
     
     xx_fi_xx_fg_params=                       ["fidu beam + fg", #["log10[ fidu beam + fg ]",
                                                 absolute_units,
                                                "fidu_fg",
                                                 None,
-                                                abs_map,
-                                                False]
+                                                abs_map]
     
     P_CO_XX_XX_XX_params=                     ["COSMO",
                                                 absolute_units,
                                                "COSMOCOSMO",
                                                 # abs_co_no_fg,
                                                 None,
-                                                abs_map,
-                                                False]
+                                                abs_map]
     
     co_xx_xx_fg_lin_params=                   ["cosmo–fg linearity frac dif",
                                                 relative_units,
                                                "cosmo_fg_linearity",
                                                 coxxxxfg_lin,
-                                                rel_map,
-                                                False]
+                                                rel_map]
     
     co_fi_xx_fg_lin_params=                   ["cosmo–fidu beam–fg linearity frac dif",
                                                 relative_units,
                                                "cosmo_fidu_fg_linearity",
                                                 cofixxfg_lin,
-                                                rel_map,
-                                                False]
+                                                rel_map]
     
     co_fi_sy_fg_lin_params=                   ["all linearity frac dif",
                                                 relative_units, 
                                                "all_linearity",
                                                 cofisyfg_lin,
-                                                rel_map,
-                                                False]
+                                                rel_map]
     
     co__divby__fg_params=                     ["cosmo / fg", #["log10[ cosmo / fg ]",
                                                 relative_units,
                                                "cosmo__divby__fg",
                                                 co_d_fg,
-                                                rel_map,
-                                                False]
+                                                rel_map]
     
     co_fi_sy_fg__divby__P_co_fi_xx_fg_params= ["( "+co_fi_sy_fg_str+") / ("+co_fi_xx_fg_str+" ) - 1",
                                                 relative_units,
                                                "cosmo_fidu_syst_fg__divby__cosmo_fidu_fg",
                                                 None,
-                                                rel_map,
-                                                False]
+                                                rel_map]
     
     co_fi_sy_xx__minus__co_fi_xx_xx_params=   ["( cosmo + fidu beam + syst ) - ( cosmo + fidu beam )",
                                                 relative_units,
                                                "cosmo_fidu_syst__minus__cosmo_fidu",
                                                 None,
-                                                rel_map,
-                                                False]
+                                                rel_map]
 
     ensemble_of_plot_params=[xx_fi_sy_fg_params,                    co_fi_xx_fg_params,     co_fi_sy_fg_params,                       
                              Presidual_params,                      Pratio_params,          xx_xx_xx_fg_params,     
@@ -2783,8 +2740,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     for i in range(N_plots): # iterate over plot cases
         power_quantity_this_plot_case=power_quantities_all_correct_type[:,i,:,:] # [:,i,:,:] = all complexity cases, ith power spectrum quantity, all kperps, all kpars
         plot_params_i=ensemble_of_plot_params[i]
-        vers_name, units, save_name, norm_ext, cmap, plotlog = plot_params_i
-        memo_ii_plotter(power_quantity_this_plot_case, complexity_ids, cmap, plotlog,
+        vers_name, units, save_name, norm_ext, cmap = plot_params_i
+        memo_ii_plotter(power_quantity_this_plot_case, complexity_ids, cmap,
                         kperp_internal, kpar_internal, 
                         vers_name, units, save_name, norm_ext, nu_ctr)
         print("plotted ",vers_name)
