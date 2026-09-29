@@ -78,7 +78,7 @@ DRAO_lat=49.320791*pi/180.*u.rad # Google Maps satellite view, eyeballing what l
 D=6.*u.m
 CHORD_channel_width_MHz=0.1953125*u.MHz
 def_observing_dec=DRAO_lat
-def_offset=1.75*pi/180. # for this placeholder state where I build up the CHORD layout using rotation matrices instead of actual measurements. probably add Hans' mask at some point to punch the corners and receiver hut holes out...
+def_offset=-1.75*pi/180. # for this placeholder state where I build up the CHORD layout using rotation matrices instead of actual measurements. probably add Hans' mask at some point to punch the corners and receiver hut holes out...
 def_evolution_threshold=1/15 # HERA 1/15 was made up—for round number appeal, probably
                              # 1/15 is turn this down for a computationally less intense substitute if keeping the channel width the same
 def_PA_N_grid_pix=256
@@ -518,7 +518,7 @@ class beam_effects(object):
                 print("finished synthesizing systematic-laden CST synth beam")
 
                 np.save("fidu_box_MM_"+ioname+".npy",fidu_box_MM)
-                assert 1==0, "just re-synthesizing a single MM for use in the end-to-end test"
+                # assert 1==0, "just re-synthesizing a single MM for use in the end-to-end test"
                 np.save("syst_box_MM_"+ioname+".npy",syst_box_MM)
                 np.save("weights_synth_"+ioname+".npy",weights_synth)
                 print("saved synthesized beam")
@@ -705,7 +705,6 @@ class beam_effects(object):
                 fg_box_ingredient=self.get_pwr_law_FG_ingredient(Tref,nuref,alpha,sigma_alpha)
                 fg_box+=fg_box_ingredient
             self.fg_box=fg_box # centre-origin
-            print("beam_effects.calc_power_contamination: fg_box.shape =",fg_box.shape)
 
             fg=cosmo_stats(self.CSTsynth_xy_ext,Lz=self.synth_comoving_extent,
                            LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
@@ -717,7 +716,6 @@ class beam_effects(object):
             print("                           fg power calc complete")
 
         print("Lz that will be used to initialize cosmo_stats: ",self.synth_comoving_extent)
-        print("fg_box.shape, self.Npix, self.synth_Nz =",fg_box.shape, self.Npix, self.synth_Nz)
         co_fi_xx_fg=cosmo_stats(self.CSTsynth_xy_ext,Lz=self.synth_comoving_extent,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nxy=self.Npix,Nz=self.synth_Nz,
@@ -1293,6 +1291,11 @@ class cosmo_stats(object):
             if MM2 is not None:
                 MMuse=MM2
 
+            if MM.ndim==4:
+                self.Nij=MM.shape[0]
+            else:
+                self.Nij=1
+
         effective_volume=np.sum((self.apodization_xyz_centre*MMuse)**2*self.d3r)
         self.estimator_denom=effective_volume
         
@@ -1333,6 +1336,24 @@ class cosmo_stats(object):
             FoG_modulation=D_FoG_HI**2
             FoG_modulation=1 # overridden for now
         self.P_fid_box=P_fid_box*FoG_modulation
+
+    def form_T_with_beam(self):
+        # # math from the week of Sept 21st (particularly post–subgroup meeting) <- afflicted by k-parallel stripes
+        # original version was for an MM with the sum performed in advance 
+        # updated version is an MM formed using the transfer-y / MWA-inspired approach
+        T_with_beam = self.T_pristine*self.MM
+
+        # # simplest mathematical byproduct of my meeting with Adrian 28.09.26 <- still afflicted by k-parallel stripes
+        # if self.Nij>1:
+        #     T_with_beam=np.zeros(self.box_shape)
+        #     for k in range(self.Nij):
+        #         T_with_beam+=self.T_pristine*self.MM[k,:,:,:] # MMk=np.zeros((self.Nij,self.Npix,self.Npix,self.N_chan))
+        # else:
+        #     T_with_beam=self.T_pristine*self.MM
+
+        # transfer-y / MWA-inspired mathematical byproduct of my meeting with Adrian 28.09.26 <- [jury is still out as of 18:42 same day]
+
+        self.T_with_beam=T_with_beam
             
     def generate_P(self,T_use=None): # from a box of temperature field values
         if T_use is None:            # establish common string flags
@@ -1346,7 +1367,7 @@ class cosmo_stats(object):
                 if self.T_pristine is None:
                     raise ValueError("T_with_beam is None, but it also cannot be formed because the T_pristine from which it needs to be formed is also None")
                 else:
-                    self.T_with_beam=self.T_pristine*self.MM
+                    self.form_T_with_beam()
             T_use=self.T_with_beam
         elif T_use.lower()=="pristine":
             T_use=self.T_pristine
@@ -1408,15 +1429,14 @@ class cosmo_stats(object):
         T=fftshift(irfftn(T_tilde*self.d3k.value,
                           s=self.box_shape,
                           axes=self.transform_axes,
-                          norm="forward"))/self.iftnorm
+                          norm="forward"))/self.iftnorm*self.temp_unit # centre-origin
 
-        T*=self.temp_unit # centre_origin
-        if self.fg_box is not None:
+        if self.fg_box is not None: # layer on foregrounds
             T+=self.fg_box
 
         self.T_pristine=T
-        if self.MM is not None:
-            self.T_with_beam=self.MM*T
+        if self.MM is not None: # apply instrument response
+            self.form_T_with_beam()
 
     def power_Monte_Carlo(self,interfix:str=""): # since box generation is not deterministic
         self.MC_not_complete=True
@@ -1440,7 +1460,6 @@ class cosmo_stats(object):
         self.bin_power(power_to_bin=P_unbinned_MC_complete)
         P_binned_MC_complete=self.P_binned
         self.P_binned_MC_complete=P_binned_MC_complete*self.power_unit
-        # self.P_numerator=P_unbinned_MC_complete*self.estimator_denom # robust to cosmic variance because it uses the MCed version; not robust to *np.inf errors
 
         self.N_per_realization=self.N_cumul/self.N_realizations
 
@@ -1710,7 +1729,11 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
                 uvw_inst[k,:]=antennas_xyz[i,:]-antennas_xyz[j,:]
                 indices_of_constituent_ant_pb_types[k]=[self.pb_types[i],self.pb_types[j]]
                 k+=1
-        
+
+        baseline_lengths=np.linalg.norm(uvw_inst,axis=1)
+        print("baseline_lengths.shape=",baseline_lengths) # making sure I took the norm along the correct axis
+        shortest_baseline=np.min(baseline_lengths)
+        print("shortest baseline",shortest_baseline)
         uvw_inst=np.vstack((uvw_inst,-uvw_inst))
         self.uvw_inst=uvw_inst
         indices_of_constituent_ant_pb_types=np.vstack((indices_of_constituent_ant_pb_types,indices_of_constituent_ant_pb_types)) # get the opposite-permutation baselines basically for free
@@ -1752,12 +1775,10 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
         Luv=deltauv*Npix
         if np.max(np.abs(uv_synth))>Luv/2:
             print("\nWARNING: the uv extent that follows from the chosen Npix and transverse half-angle is too\nconstrained to fit all baselines of the array simulated here = this info gets discarded\n")
-        print("simulate_array.__init__: theta_ext, deltauv, Luv =",theta_ext, deltauv, Luv)
         self.Luv=Luv
         self.CSTsynth_xy=theta_ext*self.comoving_ctr*fftshift(fftfreq(Npix))
 
         uvbins_use=Luv*fftshift(fftfreq(Npix))
-        print("simulate_array.__init__: check uv gridding resolution: deltauv - (uvbins_use[-1]-uvbins_use[-2]), same for -2/-3 =",deltauv - (uvbins_use[-1]-uvbins_use[-2]),deltauv - (uvbins_use[-2]-uvbins_use[-3]))
         uvbins_use=np.concatenate([uvbins_use,[uvbins_use[-1]+deltauv]])
         self.uvbins_use=uvbins_use
         self.d2u=deltauv**2
@@ -1800,6 +1821,7 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
                 PSF_ij=fftshift(irfftn(ifftshift(sampling_ij)*self.d2u, # irfftn silently discarding imag part of symmetry slices of the last transformed axis is not a problem here because the uv slices in question are entirely real-valued
                                        norm="forward",s=(self.Npix,self.Npix))) # I *DON'T* need a /(2pi)**2 because this uses the other Fourier convention
                 LoS_1st,LoS_2nd=np.argsort(np.abs(self.nu_obs-self.CST_freqs_obs_units))[:2]
+                # LoS_1st,LoS_2nd=0,1 # USE THIS VERSION FOR TESTS IN THE ACHROMATIC BEAM LIMIT
                 weight_1st=np.abs(self.nu_obs-self.CST_freqs_obs_units[LoS_1st])/self.CST_deltanu_obs_units
                 weight_2nd=np.abs(self.nu_obs-self.CST_freqs_obs_units[LoS_2nd])/self.CST_deltanu_obs_units
                 primary_beam_i=self.all_boxes[type_i,:,:,LoS_1st]*weight_1st + self.all_boxes[type_i,:,:,LoS_2nd]*weight_2nd
@@ -1810,8 +1832,6 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
                 primary_beam_slice[k,:,:]=primary_beam_ij
                 k+=1
 
-        # PSF_slice/=np.max(PSF_slice)
-        # primary_beam_slice/=np.max(primary_beam_slice) # this was redundant but, if it hadn't been, it would've messed up the primary beams by giving them all the same normalization
         return PSF_slice,primary_beam_slice
 
     def stack_to_box(self):
@@ -1824,32 +1844,59 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
         for i in tqdm(range(self.N_chan)): # rescale the uv-coverage to this channel's frequency
             self.uv_synth=self.uv_synth*self.lambda_obs/self.surv_wavelengths[i] # rescale according to observing frequency: multiply up by the prev lambda to cancel, then divide by the current/new lambda
             self.lambda_obs=self.surv_wavelengths[i] # update the observing frequency for next time
+            # COMMENT OUT THE ABOVE TWO LINES FOR TESTS IN THE ACHROMATIC BEAM LIMIT
             nu_obs=c/self.lambda_obs
             self.nu_obs=nu_obs.decompose()
 
             PSF_xyz[:,:,:,i],A_xyz[:,:,:,i]=self.calc_uv_slice() # compute this LoS slice's synthesized beam            
 
         MM=np.zeros((self.Npix,self.Npix,self.N_chan))
+        MMk=np.zeros((self.Nij,self.Npix,self.Npix,self.N_chan))
+        ones_map=np.ones((self.Npix,self.Npix,self.N_chan))
         for k in tqdm(range(self.Nij)):
+            # this is the week-of-Sept-21st-coded stuff
             Ak=A_xyz[k,:,:,:]
-            synthk=PSF_xyz[k,:,:,:]
+            PSFk=PSF_xyz[k,:,:,:]
+            synthk=Ak*PSFk
 
-            MM+=synthk*Ak # convolved in Fourier space = multiplied in config space
-        MM/=np.sum(MM) # volume-normalize so different MM have analogous effects?!
+            MM+=synthk # convolved in Fourier space = multiplied in config space
+            MMk[k,:,:,:]=synthk
+
+            # this is the new stuff (week of Sept 28th)
+            FT_Aij_T1 = fftshift( fftn( ifftshift(Ak* ones_map* self.Deltaxy**2, axes=(0,1)),
+                                        axes=(0,1), norm="backward" ),
+                                   axes=(0,1) )
+            Utilde_etc = PSFk * FT_Aij_T1
+            operator_ij = fftshift( irfftn( ifftshift(Utilde_etc* self.d2u, axes=(0,1)),
+                                            axes=(0,1), norm="forward", s=(self.Npix,self.Npix) ),
+                                    axes=(0,1) )
+            MM+= operator_ij
+            """
+                    if self.beam_operator is None: # leave the beam operator computation here to keep it self-contained but use the flag from the init to avoid super redundant calcs
+            ones_map=np.ones(self.box_shape)
+            if self.MM.ndim==3:
+                shape4d=(1,)+self.box_shape
+                MMinternal=np.reshape(self.MM,shape4d)
+            operator=np.zeros(self.box_shape)
+            for k in range(self.Nij):
+                FTed_map_times_primary=fftshift( fftn( ifftshift(self.,axes=(0,1)),
+                                                      axes=(0,1)), 
+                                                axes=(0,1))
+            """
+        # MM/=np.sum(MM) # volume-normalize so different MM have analogous effects?! (might need to turn this back on but so far it is a week-of-Sept-21st thing)
         self.MM=MM
 
         PSF_summed=np.sum(PSF_xyz,axis=0)
-        print("PSF_summed.shape==(self.Npix,self.Npix,self.N_chan) =",PSF_summed.shape==(self.Npix,self.Npix,self.N_chan))
         comprehensive_slice_figure(PSF_summed,
                                    norm=None,
                                    name="PSF_summed.png",
                                    title="PSF summed over ij",
                                    cmap=cmasher.horizon)
 
-        MMext=1.05*np.max(np.abs(MM))
-        manydBdown=1e-4
+        MMext=1.5*np.max(np.abs(MM))
+        dBdown=1e-10
         comprehensive_slice_figure(MM, 
-                                   norm=SymLogNorm(manydBdown*MMext,vmin=-MMext,vmax=MMext),
+                                   norm=SymLogNorm(dBdown*MMext,vmin=-MMext,vmax=MMext),
                                    cmap="RdBu",
                                    name="MM_Nij_eq_{}.png".format(self.Nij))
 
@@ -2138,7 +2185,8 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
                     k1_inset:float=0.06/u.Mpc, 
                     k2_inset:float=0.1/u.Mpc,
                     k3_inset:float=0.4/u.Mpc, # 2.5/u.Mpc): # k-scales of interest to sample each spectrum in the ensemble
-                    plot_log:bool=False):
+                    plot_log:bool=False,
+                    plot_square_insets=False):
     N_spectra=len(ensemble_of_spectra)
     assert(N_spectra==len(ensemble_ids)), "mismatched number of spectra and spectrum names"
     Na=int(np.ceil(np.sqrt(N_spectra)))
@@ -2160,6 +2208,10 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
     gs = gridspec.GridSpec(N_LHS_rows, N_LHS_cols+2, figure=fig)
     axs = [[fig.add_subplot(gs[row, col]) for col in range(N_LHS_cols)] for row in range(N_LHS_rows)] # grid for the left
     ax_right = fig.add_subplot(gs[:, N_LHS_cols:]) # summary holder on the right
+
+    inset_label=""
+    if plot_square_insets:
+        inset_label="INSETS_"
 
     print("\n")
     for k in range(N_spectra):
@@ -2223,6 +2275,8 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
         axs[i][j].plot(k_perp,wedge_kpar(nu_ctr,k_perp),c="tab:red",label="extent of FG wedge\nno horizon limit")
         axs[i][j].set_xlim(xlims_to_use)
         axs[i][j].set_ylim(ylims_to_use)
+        if plot_square_insets:
+            axs[i][j].set_ylim(xlims_to_use) # hacky but works (practically, I'll always have a broader k-parallel range)
         axs[i][j].set_xlabel("k$_\perp$")
         axs[i][j].set_ylabel("k$_{||}$")
         axs[i][j].tick_params(axis='x', labelrotation=30)
@@ -2256,7 +2310,7 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
     ax_right.legend(fontsize="small")
 
     plt.suptitle("ingredients of this power spectrum quantity: "+case_title)
-    plt.savefig(save_name+".png",dpi=400)
+    plt.savefig(inset_label+save_name+".png",dpi=400)
     plt.close()
 
 def save_args_to_file(frame:str, filepath:str="settings.json"):
@@ -2299,7 +2353,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
               
               from_incomplete_MC=False,
               contaminant_or_window=None, k_idx_for_window=0,
-              isolated=False,seed=None):
+              isolated=False,seed=None,
+              plot_square_insets=False):
     save_args_to_file(inspect.currentframe())
 
     ############################## other survey management factors ########################################################################################################################
@@ -2425,8 +2480,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                     N_timesteps=N_timesteps, N_hrs=N_hrs,
 
                                     # CONVENIENCE
-                                    heavy_beam_recalc=redo_box_calc                                                 
-                                    
+                                    heavy_beam_recalc=redo_box_calc                                    
                                     )
         
         recalc_co_fi_xx_fg=False
@@ -2540,9 +2594,11 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             kpar_internal=np.load("kpar_internal_"+ioname+".npy")/u.Mpc # units by construction if importing from same pipeline generation
             kperp_internal=np.load("kperp_internal_"+ioname+".npy")/u.Mpc
 
-        Presidual= P_co_fi_sy_fg-P_co_fi_xx_fg
-        Pratio=    P_xx_fi_sy_fg/P_co_xx_xx_xx
-        Pisoratio= P_xx_fi_xx_fg/P_co_xx_xx_xx
+        Presidual=   P_co_fi_sy_fg-P_co_fi_xx_fg
+        Pratio=      P_xx_fi_sy_fg/P_co_xx_xx_xx
+        Pisoratio=   P_xx_fi_xx_fg/P_co_xx_xx_xx
+        # Pwedgeratio= P_co_fi_xx_fg/P_co_xx_xx_fg
+        Pwedgeratio= P_co_fi_xx_fg/P_co_fi_xx_xx
         assert(Pratio.unit.physical_type=="dimensionless" and Pisoratio.unit.physical_type=="dimensionless")
         co_xx_xx_fg_lin=( P_co_xx_xx_fg - P_co_xx_xx_xx - P_xx_xx_xx_fg ).value /P_co_xx_xx_fg.value
         co_fi_xx_fg_lin=( P_co_fi_xx_fg - P_co_fi_xx_xx - P_xx_fi_xx_fg ).value /P_co_fi_xx_fg.value
@@ -2556,7 +2612,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                                    P_xx_xx_xx_fg.value,  Pisoratio,           P_co_xx_xx_xx.value, P_co_fi_xx_xx.value, P_co_fi_sy_xx.value, 
                                                    P_co_xx_xx_fg.value,                                              P_xx_fi_xx_fg.value, P_CO_XX_XX_XX.value,
                                                    co_xx_xx_fg_lin,      co_fi_xx_fg_lin,     co_fi_sy_fg_lin,     co__divby__fg  ,
-                                                   P_co_fi_sy_fg/P_co_fi_xx_fg-1, P_co_fi_sy_xx-P_co_fi_xx_xx]) # N_pspec_types x Nkperp x Nkpar
+                                                   P_co_fi_sy_fg/P_co_fi_xx_fg-1, P_co_fi_sy_xx-P_co_fi_xx_xx, Pwedgeratio.value]) # N_pspec_types x Nkperp x Nkpar
         power_quantities_all.append(power_quantities_this_complexity) # N_complexity_cases x N_pspec_types x Nkperp x Nkpar
         
         Delta2_quantities_this_complexity=[P_qty*k_mag_grid**3/(2*pi**2) for P_qty in power_quantities_this_complexity]
@@ -2724,12 +2780,18 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                                                 None,
                                                 rel_map]
 
-    ensemble_of_plot_params=[xx_fi_sy_fg_params,                    co_fi_xx_fg_params,     co_fi_sy_fg_params,                       
-                             Presidual_params,                      Pratio_params,          xx_xx_xx_fg_params,     
-                             isoratio_params,                       co_xx_xx_xx_params,     co_fi_xx_xx_params,   co_fi_sy_xx_params, 
-                             co_xx_xx_fg_params,                    xx_fi_xx_fg_params,     P_CO_XX_XX_XX_params, co_xx_xx_fg_lin_params, 
-                             co_fi_xx_fg_lin_params,                co_fi_sy_fg_lin_params, co__divby__fg_params, co_fi_sy_fg__divby__P_co_fi_xx_fg_params, 
-                             co_fi_sy_xx__minus__co_fi_xx_xx_params]
+    Pwedgeratio_params= ["P WEDGE RATIO",
+                         relative_units,
+                         "P_WEDGE_RATIO",
+                         None,
+                         rel_map]
+
+    ensemble_of_plot_params=[xx_fi_sy_fg_params,                     co_fi_xx_fg_params,     co_fi_sy_fg_params,                       
+                             Presidual_params,                       Pratio_params,          xx_xx_xx_fg_params,     
+                             isoratio_params,                        co_xx_xx_xx_params,     co_fi_xx_xx_params,   co_fi_sy_xx_params, 
+                             co_xx_xx_fg_params,                     xx_fi_xx_fg_params,     P_CO_XX_XX_XX_params, co_xx_xx_fg_lin_params, 
+                             co_fi_xx_fg_lin_params,                 co_fi_sy_fg_lin_params, co__divby__fg_params, co_fi_sy_fg__divby__P_co_fi_xx_fg_params, 
+                             co_fi_sy_xx__minus__co_fi_xx_xx_params, Pwedgeratio_params]
     ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   ###    ###   
 
     print("\n\n")
@@ -2743,5 +2805,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         vers_name, units, save_name, norm_ext, cmap = plot_params_i
         memo_ii_plotter(power_quantity_this_plot_case, complexity_ids, cmap,
                         kperp_internal, kpar_internal, 
-                        vers_name, units, save_name, norm_ext, nu_ctr)
+                        vers_name, units, save_name, norm_ext, nu_ctr,
+                        plot_square_insets=plot_square_insets)
         print("plotted ",vers_name)
