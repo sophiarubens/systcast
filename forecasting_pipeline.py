@@ -540,11 +540,18 @@ class beam_effects(object):
                         if not np.allclose(syst_box_here,0):
                             weighted_sum_syst_primary+=weights_synth[q]*syst_box_here
                         q+=1
+            else:
+                q=2
             
             self.fiduMM=fidu_box_MM
             self.systMM=syst_box_MM
 
             self.synth_Delta_z=self.synth_comoving_extent/self.synth_Nz
+
+            comprehensive_slice_figure(fidu_box_MM, 
+                                    norm="log",
+                                    cmap=cmasher.horizon,
+                                    name="MM_Nij_eq_{}.png".format(q-1))
 
         # groundwork-informed forecasting considerations
         self.P_fid_for_cont_pwr=P_fid_for_cont_pwr
@@ -1854,13 +1861,13 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
         MMk=np.zeros((self.Nij,self.Npix,self.Npix,self.N_chan))
         ones_map=np.ones((self.Npix,self.Npix,self.N_chan))
         for k in tqdm(range(self.Nij)):
-            # this is the week-of-Sept-21st-coded stuff
             Ak=A_xyz[k,:,:,:]
             PSFk=PSF_xyz[k,:,:,:]
-            synthk=Ak*PSFk
 
-            MM+=synthk # convolved in Fourier space = multiplied in config space
-            MMk[k,:,:,:]=synthk
+            # # this is the week-of-Sept-21st-coded stuff
+            # synthk=Ak*PSFk
+            # MM+=synthk # convolved in Fourier space = multiplied in config space
+            # MMk[k,:,:,:]=synthk
 
             # this is the new stuff (week of Sept 28th)
             FT_Aij_T1 = fftshift( fftn( ifftshift(Ak* ones_map* self.Deltaxy**2, axes=(0,1)),
@@ -1871,18 +1878,7 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
                                             axes=(0,1), norm="forward", s=(self.Npix,self.Npix) ),
                                     axes=(0,1) )
             MM+= operator_ij
-            """
-                    if self.beam_operator is None: # leave the beam operator computation here to keep it self-contained but use the flag from the init to avoid super redundant calcs
-            ones_map=np.ones(self.box_shape)
-            if self.MM.ndim==3:
-                shape4d=(1,)+self.box_shape
-                MMinternal=np.reshape(self.MM,shape4d)
-            operator=np.zeros(self.box_shape)
-            for k in range(self.Nij):
-                FTed_map_times_primary=fftshift( fftn( ifftshift(self.,axes=(0,1)),
-                                                      axes=(0,1)), 
-                                                axes=(0,1))
-            """
+
         # MM/=np.sum(MM) # volume-normalize so different MM have analogous effects?! (might need to turn this back on but so far it is a week-of-Sept-21st thing)
         self.MM=MM
 
@@ -1892,13 +1888,6 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
                                    name="PSF_summed.png",
                                    title="PSF summed over ij",
                                    cmap=cmasher.horizon)
-
-        MMext=1.5*np.max(np.abs(MM))
-        dBdown=1e-10
-        comprehensive_slice_figure(MM, 
-                                   norm=SymLogNorm(dBdown*MMext,vmin=-MMext,vmax=MMext),
-                                   cmap="RdBu",
-                                   name="MM_Nij_eq_{}.png".format(self.Nij))
 
         # generate a box of r-values (necessary for interpolation to survey domain in cosmo_stats as called by beam_effects)
         self.xy_vec=self.CSTsynth_xy
@@ -2598,7 +2587,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         Pratio=      P_xx_fi_sy_fg/P_co_xx_xx_xx
         Pisoratio=   P_xx_fi_xx_fg/P_co_xx_xx_xx
         # Pwedgeratio= P_co_fi_xx_fg/P_co_xx_xx_fg
-        Pwedgeratio= P_co_fi_xx_fg/P_co_fi_xx_xx
+        Pwedgeratio= P_co_fi_xx_fg/P_co_xx_xx_xx
         assert(Pratio.unit.physical_type=="dimensionless" and Pisoratio.unit.physical_type=="dimensionless")
         co_xx_xx_fg_lin=( P_co_xx_xx_fg - P_co_xx_xx_xx - P_xx_xx_xx_fg ).value /P_co_xx_xx_fg.value
         co_fi_xx_fg_lin=( P_co_fi_xx_fg - P_co_fi_xx_xx - P_xx_fi_xx_fg ).value /P_co_fi_xx_fg.value
