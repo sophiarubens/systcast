@@ -1389,7 +1389,7 @@ class cosmo_stats(object):
                               ) 
                         ) # centre-origin
         modsq_T_tilde=np.abs(T_tilde)**2 *self.temp_unit**2*self.length_unit**6
-        self.P_numerator=modsq_T_tilde
+        # self.P_numerator=modsq_T_tilde
 
         P_unbinned=modsq_T_tilde/self.estimator_denom
 
@@ -1438,8 +1438,11 @@ class cosmo_stats(object):
                           axes=self.transform_axes,
                           norm="forward"))/self.iftnorm*self.temp_unit # centre-origin
 
+        print("before layering foregrounds: np.std(T) =",np.std(T))
         if self.fg_box is not None: # layer on foregrounds
+            print("entered the branch to layer foregrounds")
             T+=self.fg_box
+        print("after layering foregrounds (if applicable): np.std(T) =",np.std(T))
 
         self.T_pristine=T
         if self.MM is not None: # apply instrument response
@@ -1858,7 +1861,7 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
             PSF_xyz[:,:,:,i],A_xyz[:,:,:,i]=self.calc_uv_slice() # compute this LoS slice's synthesized beam            
 
         MM=np.zeros((self.Npix,self.Npix,self.N_chan))
-        MMk=np.zeros((self.Nij,self.Npix,self.Npix,self.N_chan))
+        # MMk=np.zeros((self.Nij,self.Npix,self.Npix,self.N_chan))
         ones_map=np.ones((self.Npix,self.Npix,self.N_chan))
         for k in tqdm(range(self.Nij)):
             Ak=A_xyz[k,:,:,:]
@@ -2271,6 +2274,8 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
         axs[i][j].tick_params(axis='x', labelrotation=30)
         axs[i][j].set_title(ensemble_ids[k])
         axs[i][j].set_aspect("equal")
+        # axs[i][j].set_xscale("log")
+        # axs[i][j].set_yscale("log")
         if plot_log:
             neg_ticks = np.linspace(vminlog, 0., num=4, endpoint=False)
             pos_ticks = np.linspace(0., vmaxlog, num=4, endpoint=True)
