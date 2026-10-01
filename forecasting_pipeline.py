@@ -1343,24 +1343,6 @@ class cosmo_stats(object):
             FoG_modulation=D_FoG_HI**2
             FoG_modulation=1 # overridden for now
         self.P_fid_box=P_fid_box*FoG_modulation
-
-    def form_T_with_beam(self):
-        # # math from the week of Sept 21st (particularly post–subgroup meeting) <- afflicted by k-parallel stripes
-        # original version was for an MM with the sum performed in advance 
-        # updated version is an MM formed using the transfer-y / MWA-inspired approach
-        T_with_beam = self.T_pristine*self.MM
-
-        # # simplest mathematical byproduct of my meeting with Adrian 28.09.26 <- still afflicted by k-parallel stripes
-        # if self.Nij>1:
-        #     T_with_beam=np.zeros(self.box_shape)
-        #     for k in range(self.Nij):
-        #         T_with_beam+=self.T_pristine*self.MM[k,:,:,:] # MMk=np.zeros((self.Nij,self.Npix,self.Npix,self.N_chan))
-        # else:
-        #     T_with_beam=self.T_pristine*self.MM
-
-        # transfer-y / MWA-inspired mathematical byproduct of my meeting with Adrian 28.09.26 <- [jury is still out as of 18:42 same day]
-
-        self.T_with_beam=T_with_beam
             
     def generate_P(self,T_use=None): # from a box of temperature field values
         if T_use is None:            # establish common string flags
@@ -1374,7 +1356,7 @@ class cosmo_stats(object):
                 if self.T_pristine is None:
                     raise ValueError("T_with_beam is None, but it also cannot be formed because the T_pristine from which it needs to be formed is also None")
                 else:
-                    self.form_T_with_beam()
+                    self.T_with_beam=self.T_pristine*self.MM
             T_use=self.T_with_beam
         elif T_use.lower()=="pristine":
             T_use=self.T_pristine
@@ -1382,6 +1364,7 @@ class cosmo_stats(object):
             raise ValueError("invalid state of box beam knowledge. try again with pristine or beam!")
         T_use=T_use.to(u.mK)
 
+        print("T_use is T_pristine? T_use is T_with_beam?",np.all(T_use==self.T_pristine),np.all(T_use==self.T_with_beam)) # logic branching check
         T_effective=T_use*self.apodization_xyz_centre
         T_tilde=fftshift( fftn( 
                                 ifftshift(T_effective)*self.d3r,
@@ -1446,7 +1429,8 @@ class cosmo_stats(object):
 
         self.T_pristine=T
         if self.MM is not None: # apply instrument response
-            self.form_T_with_beam()
+            print("forming T_with_beam")
+            self.T_with_beam=self.T_pristine*self.MM
 
     def power_Monte_Carlo(self,interfix:str=""): # since box generation is not deterministic
         self.MC_not_complete=True
@@ -2192,6 +2176,7 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
     k_perp=k_perp.to(1/u.Mpc)
     k_par=k_par.to(1/u.Mpc)
     cyl_extent=[k_perp[0].value,k_perp[-1].value,k_par[0].value,k_par[-1].value]
+    np.save("cyl_extent.npy",cyl_extent)
     k_perp_grid,k_par_grid=np.meshgrid(k_perp,k_par, indexing="ij")*k_par.unit
     k_mag_grid=np.sqrt(k_perp_grid**2+k_par_grid**2)
     values_of_k=np.zeros((N_spectra,3))
@@ -2219,13 +2204,13 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
             spec_to_plot_de_dimensionalized=spec_to_plot
             ensemble_of_spectra_de_dimensionalized=ensemble_of_spectra
         if plot_log:
+            print("plot_log branch")
             # if (type(norm_ext)==list):
                 # vminlog,vmaxlog=norm_ext
             # else:
-            if True:
-                off=2
-                vminlog=np.log10(np.nanpercentile(spec_to_plot_de_dimensionalized,off))
-                vmaxlog=np.log10(np.nanpercentile(spec_to_plot_de_dimensionalized,100-off))
+            off=2
+            vminlog=np.log10(np.nanpercentile(spec_to_plot_de_dimensionalized,off))
+            vmaxlog=np.log10(np.nanpercentile(spec_to_plot_de_dimensionalized,100-off))
 
             if vminlog*vmaxlog>0: # if they have the same sign
                 vcentre=np.log10(np.nanmean(spec_to_plot_de_dimensionalized))
@@ -2234,7 +2219,14 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
             print("vminlog,vcentre,vmaxlog=",vminlog,vcentre,vmaxlog)
             norm=TwoSlopeNorm(vcentre,
                                 vmin=vminlog,vmax=vmaxlog)
+
+            if norm_ext is not None:
+                mid=np.percentile(ensemble_of_spectra_de_dimensionalized,30)
+                ex=np.std(ensemble_of_spectra_de_dimensionalized)
+                norm=LogNorm(vmin=mid-ex,vmax=mid+ex)
+                print("plot_log -> norm_ext is not None sub-branch")
         else:
+            print("not plot_log branch")
             actualmax=np.nanmax(ensemble_of_spectra_de_dimensionalized)
             actualmin=np.nanmin(ensemble_of_spectra_de_dimensionalized)
             large=np.nanmax(np.abs(ensemble_of_spectra_de_dimensionalized))
@@ -2256,10 +2248,12 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
                 if actualmin<0:
                     vmin_use=1e-6
                 norm=LogNorm(vmin=vmin_use,vmax=actualmax)
+                print("norm_ext not None -> pos min val sub-branch (LogNorm)")
             else:
                 if isinstance(ne, u.Quantity):
                     ne=ne.value
                 norm=SymLogNorm(1e-5*large,vmin=-1.5*large,vmax=1.5*large)
+                print("norm_ext not None -> neg min val subbranch (SymLogNorm)")
         
         im=axs[i][j].imshow(spec_to_plot.T, cmap=colourmap, origin="lower", extent=cyl_extent, norm=norm)
         xlims_to_use=axs[i][j].get_xlim()
@@ -2591,8 +2585,9 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
         Presidual=   P_co_fi_sy_fg-P_co_fi_xx_fg
         Pratio=      P_xx_fi_sy_fg/P_co_xx_xx_xx
         Pisoratio=   P_xx_fi_xx_fg/P_co_xx_xx_xx
+        np.save("P_wedge_ratio.npy",Pisoratio.value)
         # Pwedgeratio= P_co_fi_xx_fg/P_co_xx_xx_fg
-        Pwedgeratio= P_co_fi_xx_fg/P_co_xx_xx_xx
+        Pwedgeratio= P_xx_fi_xx_fg/P_xx_xx_xx_fg
         assert(Pratio.unit.physical_type=="dimensionless" and Pisoratio.unit.physical_type=="dimensionless")
         co_xx_xx_fg_lin=( P_co_xx_xx_fg - P_co_xx_xx_xx - P_xx_xx_xx_fg ).value /P_co_xx_xx_fg.value
         co_fi_xx_fg_lin=( P_co_fi_xx_fg - P_co_fi_xx_xx - P_xx_fi_xx_fg ).value /P_co_fi_xx_fg.value
@@ -2643,6 +2638,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                     np.nanmax(np.abs(co_fi_sy_fg_lin)) if not np.all(np.isnan(co_fi_sy_fg_lin)) else 1]
     co_d_fg=[np.nanmax(co__divby__fg.value)-np.nanmin(co__divby__fg.value),
              np.nanmax(co__divby__fg.value)] #   if (type(norm_ext)==list): ne,vmax=norm_ext
+    norm_ext_for_wedge_contrast=[np.percentile(Pisoratio,90), np.max(np.abs(Pisoratio))]
     if which_power=="Delta2":
         abs_residual=[np.percentile(Delta2_quantities_all[:,3,:,:],90),
                       np.nanmax(np.abs(Delta2_quantities_all[:,3,:,:]))]
@@ -2654,6 +2650,8 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                       np.nanmax(np.abs(Delta2_quantities_all[:,-4,:,:]))]
         co_d_fg=[1e-3*np.percentile(Delta2_quantities_all[:,-3,:,:].value,98),
                  np.nanmax(np.abs(Delta2_quantities_all[:,-3,:,:].value))]
+        norm_ext_for_wedge_contrast=[np.percentile(Delta2_quantities_all[:,6,:,:].value,90),
+                                     np.max(np.abs(Delta2_quantities_all[:,6,:,:].value))]
 
     co_fi_sy_fg_str="cosmo + fidu beam + syst + fg"
     co_fi_xx_fg_str="cosmo + fidu beam + fg"
@@ -2698,7 +2696,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     isoratio_params=                          ["(fidu beam + fg) / cosmo", #["log10[ (fidu beam + fg) / cosmo ]",
                                                 relative_units,
                                                "fidu_fg__divby__cosmo",
-                                                None,
+                                                norm_ext_for_wedge_contrast,
                                                 rel_map]
     
     co_xx_xx_xx_params=                       ["cosmo",

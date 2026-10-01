@@ -37,11 +37,12 @@ with open("ptg_err.json", "w") as f:
 power_comparison_plots(redo_window_calc=False, # redo the Monte Carlos
                        redo_box_calc=False, # re-synthesize the PSF; reimports CST only if files DNE
                        which_power="P", # plotting choice
-                       nu_ctr=600.*u.MHz, frac_tol_conv=1/np.sqrt(2), freq_bin_width=0.210*u.MHz, # k-parallel observation conditioning
+                       nu_ctr=600.*u.MHz, frac_tol_conv=0.5, freq_bin_width=0.210*u.MHz, # k-parallel observation conditioning #### had stepped down to frac tol conv = 0.1 during the week of Sept 21st
                        array_version="full", Npix=512, transverse_half_angle=pi/2,# k-perp observation conditioning
                        antenna_dist="hybrid", # spatial distribution of systematics; "frame" is the default
                        LoS_apo=True,transverse_apo=False, 
                        pointing_errors=pointingerrs[:N_CST_total], # specify the systematics
                        CST_lo=0.58*u.GHz,CST_hi=0.62*u.GHz,CST_deltanu=2e-4*u.GHz, # CST freqs for import from files
                        N_timesteps=1, # amount of rotation synthesis
+                       plot_square_insets=False,
                        beam_sim_directory=CST_dir, CST_f_head_fidu=fiduname, CST_f_head_syst=all_syst_dirs[:N_systs_use])
