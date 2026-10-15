@@ -3,18 +3,33 @@ from matplotlib.colors import LogNorm
 import cmasher
 fourpi=4*np.pi
 
+plt.rcParams.update({'font.size': 16})
+
 Nxy=512
 Nz=191
 Lxy=13265.317*u.Mpc
 Lz=319.469187*u.Mpc
 
 Deltaxy=Lxy/Nxy
+dec_idx=-1.1
+inc_idx=1.8
+
+def dec_law(k,dec_idx=dec_idx):
+    vals= k**dec_idx
+    return vals/np.mean(vals)
+def flat_law(k):
+    return np.ones_like(k)
+def incr_law(k,inc_idx=1.8):
+    vals=k**inc_idx
+    return vals/np.mean(vals)
 
 N_in=1024
+Nsigma=1
+aspect=0.25
 k_in=np.linspace(1e-4,2,N_in)/u.Mpc
-dec_pwr=k_in.value**-4.1
+dec_pwr=k_in.value**dec_idx
 dec_pwr_norm=np.mean(dec_pwr)
-inc_pwr=k_in.value**1.8 
+inc_pwr=k_in.value**inc_idx
 inc_pwr_norm=np.mean(inc_pwr)
 power_unit=u.mK**2*u.Mpc**3
 
@@ -22,22 +37,23 @@ normed_dec_pwr=dec_pwr/dec_pwr_norm*power_unit
 normed_inc_pwr=inc_pwr/inc_pwr_norm*power_unit
 
 P_flat=np.ones(N_in)*power_unit
-Norm1=CenteredNorm(vcenter=1,halfrange=0.1)
-Norm2=LogNorm(vmin=np.min(normed_dec_pwr.value),vmax=np.max(normed_dec_pwr.value))
+Norm_flat=CenteredNorm(vcenter=1,halfrange=5e-2) # 1e-2 ok
+Norm_dec=LogNorm()
+Norm_inc=CenteredNorm(vcenter=inc_pwr_norm,halfrange=inc_pwr_norm)
 ioname="full_cont__none__600MHz__N_CST_types_1__N_ptg_err_0_dist_hybr__layer_True__wedge_False__seed_None"
-Q=np.load("fidu_box_PSF_"+ioname+".npy")
+M=np.load("fidu_box_MM_"+ioname+".npy")
 
 P_in_options=[
-              [ P_flat,         "flat",               Norm1 ],
-              [ normed_dec_pwr, "decaying_power_law", Norm2 ],
-              [ normed_inc_pwr, "growing_power_law",  None  ]
+              [ normed_dec_pwr, "decaying_power_law", Norm_dec,  dec_law  ],
+              [ P_flat,         "flat",               Norm_flat, flat_law ],
+              [ normed_inc_pwr, "growing_power_law",  Norm_inc,  incr_law  ]
 
               ]
-ft=1/np.sqrt(2)
-recalc=True
+ft=0.25 # 1/np.sqrt(2)
+recalc=False
 
 for P_case in P_in_options:
-    P_in,P_name,e2enorm=P_case
+    P_in,P_name,e2enorm,law=P_case
     if recalc:
         print("Nxy,Nz=",Nxy,Nz)
         fromTb=cosmo_stats(Lxy,Lz=Lz,
@@ -47,23 +63,28 @@ for P_case in P_in_options:
         fromTb.power_Monte_Carlo()
         print("P Tb calc complete")
         P_Tb=fromTb.P_binned_MC_complete.value.T
-        P_numerator_Tb=fromTb.P_numerator.value
         np.save("P_"+P_name+"_Tb.npy",P_Tb)
-        np.save("P_numerator_"+P_name+"_Tb.npy",P_numerator_Tb)
 
-        fromTbQ=cosmo_stats(Lxy,Lz=Lz,
+        Delta_kperp=fromTb.Deltakxy
+        Delta_kpar=fromTb.Deltakz
+        kperp_bin_grid=fromTb.kperpbins_grid[:-1,:-1]+0.5*Delta_kperp
+        kpar_bin_grid=fromTb.kparbins_grid[:-1,:-1]+0.5*Delta_kpar
+        print("kperp_bin_grid.shape=",kperp_bin_grid.shape)
+        kcyl_bin_grid=np.sqrt(kperp_bin_grid**2+kpar_bin_grid**2)
+        P_true=law(kcyl_bin_grid.value).T
+        np.save("P_true_"+P_name+"_Tb.npy",P_Tb)
+
+        fromTbM=cosmo_stats(Lxy,Lz=Lz,
                             P_fid=P_in,k_fid=k_in,
                             Nxy=Nxy,Nz=Nz,
-                            Q=Q,
+                            MM=M,
                             frac_tol=ft, nu_ctr=600*u.MHz)
-        fromTbQ.power_Monte_Carlo()
-        print("P Tb Q calc complete")
-        P_TbQ=fromTbQ.P_binned_MC_complete.value.T
-        P_numerator_TbQ=fromTbQ.P_numerator.value
-        P_denominator_TbQ=fromTbQ.estimator_denom.value
-        np.save("P_"+P_name+"_TbQ.npy",P_TbQ)
-        np.save("P_numerator_"+P_name+"_TbQ.npy",P_numerator_TbQ)
-        np.save("P_denominator_"+P_name+"_TbQ.npy",P_denominator_TbQ)
+        fromTbM.power_Monte_Carlo()
+        print("P Tb M calc complete")
+        P_TbM=fromTbM.P_binned_MC_complete.value.T
+        P_denominator_TbM=fromTbM.estimator_denom.value
+        np.save("P_"+P_name+"_TbM.npy",P_TbM)
+        np.save("P_denominator_"+P_name+"_TbM.npy",P_denominator_TbM)
 
         fromTbX=cosmo_stats(Lxy,Lz=Lz,
                             P_fid=P_in,k_fid=k_in,
@@ -73,24 +94,20 @@ for P_case in P_in_options:
         fromTbX.power_Monte_Carlo()
         print("P Tb X calc complete")
         P_TbX=fromTbX.P_binned_MC_complete.value.T
-        P_numerator_TbX=fromTbX.P_numerator.value
         np.save("P_"+P_name+"_TbX.npy",P_TbX)
-        np.save("P_numerator_"+P_name+"_TbX.npy",P_numerator_TbX)
 
-        fromTbQX=cosmo_stats(Lxy,Lz=Lz,
+        fromTbMX=cosmo_stats(Lxy,Lz=Lz,
                                 P_fid=P_in,k_fid=k_in,
                                 Nxy=Nxy,Nz=Nz,
-                                Q=Q,
+                                MM=M,
                                 LoS_apo=True,
                                 frac_tol=ft, nu_ctr=600*u.MHz)
-        fromTbQX.power_Monte_Carlo()
-        print("P Tb Q X calc complete")
-        P_TbQX=fromTbQX.P_binned_MC_complete.value.T
-        P_numerator_TbQX=fromTbQX.P_numerator.value
-        P_denominator_TbQX=fromTbQX.estimator_denom.value
-        np.save("P_"+P_name+"_TbQX.npy",P_TbQX)
-        np.save("P_numerator_"+P_name+"_TbQX.npy",P_numerator_TbQX)
-        np.save("P_denominator_"+P_name+"_TbQX.npy",P_denominator_TbQX)
+        fromTbMX.power_Monte_Carlo()
+        print("P Tb M X calc complete")
+        P_TbMX=fromTbMX.P_binned_MC_complete.value.T
+        P_denominator_TbMX=fromTbMX.estimator_denom.value
+        np.save("P_"+P_name+"_TbMX.npy",P_TbMX)
+        np.save("P_denominator_"+P_name+"_TbMX.npy",P_denominator_TbMX)
 
         print("completed Monte Carlos")
 
@@ -99,70 +116,58 @@ for P_case in P_in_options:
         cyl_extent=[k_perp_out[0].value,k_perp_out[-1].value,k_par_out[0].value,k_par_out[-1].value]
         np.savetxt("cyl_extent.txt",cyl_extent)
     else:
+        P_true=np.load("P_true_"+P_name+"_Tb.npy")
         P_Tb=np.load("P_"+P_name+"_Tb.npy")
-        P_TbQ=np.load("P_"+P_name+"_TbQ.npy")
+        P_TbM=np.load("P_"+P_name+"_TbM.npy")
         P_TbX=np.load("P_"+P_name+"_TbX.npy")
-        P_TbQX=np.load("P_"+P_name+"_TbQX.npy")
+        P_TbMX=np.load("P_"+P_name+"_TbMX.npy")
 
-        P_numerator_Tb=np.load("P_numerator_"+P_name+"_Tb.npy")
-        P_numerator_TbQ=np.load("P_numerator_"+P_name+"_TbQ.npy")
-        P_numerator_TbX=np.load("P_numerator_"+P_name+"_TbX.npy")
-        P_numerator_TbQX=np.load("P_numerator_"+P_name+"_TbQX.npy")
-
-        P_denominator_TbQ=np.load("P_denominator_"+P_name+"_TbQ.npy")
-        P_denominator_TbQX=np.load("P_denominator_"+P_name+"_TbQX.npy")
+        P_denominator_TbM=np.load("P_denominator_"+P_name+"_TbM.npy")
+        P_denominator_TbMX=np.load("P_denominator_"+P_name+"_TbMX.npy")
 
         cyl_extent=np.genfromtxt("cyl_extent.txt")
 
-    _,axs=plt.subplots(1,4,layout="constrained",figsize=(11,9))
-    im=axs[0].imshow(P_Tb,extent=cyl_extent,cmap=cmasher.horizon,origin="lower",
-                    norm=e2enorm)
+    _,axs=plt.subplots(1,5,figsize=(12,6),
+                       sharey=True,layout="constrained")
+    im=axs[0].imshow(P_true,extent=cyl_extent,cmap=cmasher.horizon,origin="lower",
+                    norm=e2enorm,
+                    aspect=aspect)
     plt.colorbar(im,ax=axs[0])
-    axs[0].set_title("P from T$_b$\nmean,med=\n{:.4f}, {:.4f}".format(np.mean(P_Tb),np.median(P_Tb)))
+    axs[0].set_title("True power\n ")
 
-    localnorm=CenteredNorm(vcenter=np.median(P_TbQ),halfrange=np.median(P_TbQ))
-    im=axs[1].imshow(P_TbQ,extent=cyl_extent,cmap=cmasher.horizon,origin="lower",
-                    norm=localnorm)
+    res=P_Tb-P_true
+    im=axs[1].imshow(res/P_true,extent=cyl_extent,cmap="managua",origin="lower",
+                    norm=CenteredNorm(halfrange=Nsigma*np.std(res/P_true)),
+                    aspect=aspect)
     plt.colorbar(im,ax=axs[1])
-    axs[1].set_title("P from T$_b$, Q\nmean,med=\n{:.4f}, {:.4f}".format(np.mean(P_TbQ),np.median(P_TbQ)))
+    axs[1].set_title("From T$_b$")
 
-    im=axs[2].imshow(P_TbX,extent=cyl_extent,cmap=cmasher.horizon,origin="lower",
-                    norm=e2enorm)
+    res=P_TbM-P_true
+    im=axs[2].imshow(res/P_true,extent=cyl_extent,cmap="managua",origin="lower",
+                     norm=CenteredNorm(halfrange=Nsigma*np.std(res/P_true)),
+                     aspect=aspect)
     plt.colorbar(im,ax=axs[2])
-    axs[2].set_title("P from T$_b$, X\nmean,med=\n{:.4f}, {:.4f}".format(np.mean(P_TbX),np.median(P_TbX)))
+    axs[2].set_title("                      Fractional residuals\nFrom T$_b$, M")
 
-    localnorm=CenteredNorm(vcenter=np.median(P_TbQX),halfrange=np.median(P_TbQX))
-    im=axs[3].imshow(P_TbQX,extent=cyl_extent,cmap=cmasher.horizon,origin="lower",
-                    norm=localnorm)
+    res=P_TbX-P_true
+    im=axs[3].imshow(res/P_true,extent=cyl_extent,cmap="managua",origin="lower",
+                    norm=CenteredNorm(halfrange=Nsigma*np.std(res/P_true)),
+                    aspect=aspect)
     plt.colorbar(im,ax=axs[3])
-    axs[3].set_title("P from T$_b$, Q, X\nmean,med=\n{:.4f}, {:.4f}".format(np.mean(P_TbQX),np.median(P_TbQX)))
-    
-    plt.suptitle(P_name+" power end-to-end comparison")
-    plt.savefig("E2E_Q_X_"+P_name+"_end_to_end.png",dpi=400)
-    plt.close()
+    axs[3].set_title("From T$_b$, X")
 
-    percentile=75
-    medhigh_num_Tb=np.nanpercentile(np.abs(P_numerator_Tb),percentile)
-    medhigh_num_TbQ=np.nanpercentile(np.abs(P_numerator_TbQ),percentile)
-    medhigh_num_TbX=np.nanpercentile(np.abs(P_numerator_TbX),percentile)
-    medhigh_num_TbQX=np.nanpercentile(np.abs(P_numerator_TbQX),percentile)
-    comprehensive_slice_figure(P_numerator_Tb,
-                               cmap=cmasher.horizon,
-                               norm=CenteredNorm(vcenter=medhigh_num_Tb,halfrange=medhigh_num_Tb),
-                               title="P "+P_name+" numerator Tb",
-                               name="P_numerator_"+P_name+"_Tb.png")
-    comprehensive_slice_figure(P_numerator_TbQ,
-                               cmap=cmasher.horizon,
-                               norm=CenteredNorm(vcenter=medhigh_num_TbQ,halfrange=medhigh_num_TbQ),
-                               title="P "+P_name+" numerator Tb Q",
-                               name="P_numerator_"+P_name+"_TbQ.png")
-    comprehensive_slice_figure(P_numerator_TbX,
-                               cmap=cmasher.horizon,
-                               norm=CenteredNorm(vcenter=medhigh_num_TbX,halfrange=medhigh_num_TbX),
-                               title="P "+P_name+" numerator Tb X",
-                               name="P_numerator_"+P_name+"_TbX.png")
-    comprehensive_slice_figure(P_numerator_TbQX,
-                               cmap=cmasher.horizon,
-                               norm=CenteredNorm(vcenter=medhigh_num_TbQX,halfrange=medhigh_num_TbQX),
-                               title="P "+P_name+" numerator Tb Q X",
-                               name="P_numerator_"+P_name+"_TbQX.png")
+    res=P_TbMX-P_true
+    im=axs[4].imshow(res/P_true,extent=cyl_extent,cmap="managua",origin="lower",
+                     norm=CenteredNorm(halfrange=Nsigma*np.std(res/P_true)),
+                     aspect=aspect)
+    plt.colorbar(im,ax=axs[4])
+    axs[4].set_title("From T$_b$, M, X")
+    
+    # plt.suptitle(P_name+" power end-to-end comparison")
+
+    for i in range(5):
+        axs[i].set_xlabel("k$_{\perp}$ (1/Mpc)")
+        axs[i].tick_params("x", rotation=45)
+    axs[0].set_ylabel("k$_{||}$ (1/Mpc)")
+    plt.savefig("E2E_M_X_"+P_name+"_end_to_end.png",dpi=400)
+    plt.close()

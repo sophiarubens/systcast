@@ -78,7 +78,7 @@ DRAO_lat=49.320791*pi/180.*u.rad # Google Maps satellite view, eyeballing what l
 D=6.*u.m
 CHORD_channel_width_MHz=0.1953125*u.MHz
 def_observing_dec=DRAO_lat
-def_offset=-1.75*pi/180. # for this placeholder state where I build up the CHORD layout using rotation matrices instead of actual measurements. probably add Hans' mask at some point to punch the corners and receiver hut holes out...
+def_offset=-1.75*pi/180. # for this placeholder state where I build up the CHORD layout using rotation matrices instead of actual measurements... probably talk to Mohammad, Gordon, the Brians, Tayron, or Dallas or someone if I care to make this more accurate...
 def_evolution_threshold=1/15 # HERA 1/15 was made up—for round number appeal, probably
                              # 1/15 is turn this down for a computationally less intense substitute if keeping the channel width the same
 def_PA_N_grid_pix=256
@@ -729,7 +729,7 @@ class beam_effects(object):
                                 MM=self.fiduMM,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
-                                wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
+                                wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box) 
         self.kperpbins_internal=co_fi_xx_fg.kperpbins
         self.kparbins_internal=co_fi_xx_fg.kparbins
         co_fi_sy_fg=cosmo_stats(self.CSTsynth_xy_ext,Lz=self.synth_comoving_extent,
@@ -1124,7 +1124,7 @@ class cosmo_stats(object):
                 Pfiddims=len(Pfidshape)
                 if (Pfiddims==2):
                     if MM is None: # trying to do a minimalistic instantiation where I merely provide a fiducial power spectrum and interpolate it
-                        self.fid_Nkperp,self.fid_Nkpar=Pfidshape
+                        self.fid_Nkperp,self.fid_Nkpar=Pfidshape                   
                     else:
                         try: # see if the power spec is a CAMB-esque (1,npts) array
                             self.P_fid=np.reshape(P_fid,(Pfidshape[-1],),order="C") # make the CAMB MPS shape amenable to the calcs internal to this class
@@ -1133,6 +1133,11 @@ class cosmo_stats(object):
                 elif (Pfiddims==1):
                     self.fid_Nkperp=Pfidshape[0] # already checked that P_fid is 1d, so no info is lost by extracting the int in this one-element tuple, and fid_Nkperp being an integer makes things work the way they should down the line
                     self.fid_Nkpar=0
+                elif Pfiddims==3:
+                        self.P_unbinned=P_fid # this gets overwritten (intentionally so) in all but trivial binning-only cases 
+                        Nxy,_,Nz=P_fid.shape
+                        self.Nxy=Nxy # to replicate the flow of eval for other cases
+                        self.Nz=Nz
                 else:
                     raise ValueError("unsupported binning mode")
                 
@@ -1364,7 +1369,7 @@ class cosmo_stats(object):
             raise ValueError("invalid state of box beam knowledge. try again with pristine or beam!")
         T_use=T_use.to(u.mK)
 
-        print("T_use is T_pristine? T_use is T_with_beam?",np.all(T_use==self.T_pristine),np.all(T_use==self.T_with_beam)) # logic branching check
+        # print("T_use is T_pristine? T_use is T_with_beam?",np.all(T_use==self.T_pristine),np.all(T_use==self.T_with_beam)) # logic branching check
         T_effective=T_use*self.apodization_xyz_centre
         T_tilde=fftshift( fftn( 
                                 ifftshift(T_effective)*self.d3r,
@@ -1421,15 +1426,15 @@ class cosmo_stats(object):
                           axes=self.transform_axes,
                           norm="forward"))/self.iftnorm*self.temp_unit # centre-origin
 
-        print("before layering foregrounds: np.std(T) =",np.std(T))
+        # print("before layering foregrounds: np.std(T) =",np.std(T))
         if self.fg_box is not None: # layer on foregrounds
             print("entered the branch to layer foregrounds")
             T+=self.fg_box
-        print("after layering foregrounds (if applicable): np.std(T) =",np.std(T))
+        # print("after layering foregrounds (if applicable): np.std(T) =",np.std(T))
 
         self.T_pristine=T
         if self.MM is not None: # apply instrument response
-            print("forming T_with_beam")
+            # print("forming T_with_beam")
             self.T_with_beam=self.T_pristine*self.MM
 
     def power_Monte_Carlo(self,interfix:str=""): # since box generation is not deterministic
@@ -1593,8 +1598,8 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
                  weighting="uniform", Npix:int=def_PA_N_grid_pix,
 
                  sub_ensemble_of_CST_beams=None,                                   # array-like with shape (N_CST_types, N_pointing_errors+1, N_CST_xy, N_CST_xy, N_CST_freqs)
-                 CSTsynth_xy=None,CST_freqs=None,                                       # domain of each CST box in the ensemble. this domain is currently assumed to be the same for each box (not very rigorous/robust, but in practice, if you're running a simulation for a given survey frequency, it would be fairly pathological/ unintuitive/ anti–Occam's razor to get these boxes from CST slices at different frequencies. I guess the practical guidance/takeaway here is that my initial implementation will not support getting different boxes from different CST box resolutions)
-                 supplementary_name=None # literally just for the July 16th 2026 histogram validation
+                 CSTsynth_xy=np.array([0.,0.])*u.Mpc,CST_freqs=np.array([0.,0.])*u.MHz,                                       # domain of each CST box in the ensemble. this domain is currently assumed to be the same for each box (not very rigorous/robust, but in practice, if you're running a simulation for a given survey frequency, it would be fairly pathological/ unintuitive/ anti–Occam's razor to get these boxes from CST slices at different frequencies. I guess the practical guidance/takeaway here is that my initial implementation will not support getting different boxes from different CST box resolutions)
+                 supplementary_name="" # literally just for the July 16th 2026 histogram validation
                  ): 
         # array and observation geometry
         self.N_timesteps=N_timesteps
@@ -1710,6 +1715,7 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
         self.pb_types,self.weights=beam_type_distribution(N_NS,N_EW,N_total_beam_types, distribution=self.distribution)
         if self.N_total_beam_types>1:
             self.N_baseline_classes=self.N_total_beam_types*(self.N_total_beam_types-1)
+            print("np.all(all_boxes[0]==all_boxes[1]) ?",np.all(all_boxes[0]==all_boxes[1]))
         else:
             self.N_baseline_classes=1
 
@@ -1725,7 +1731,7 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
                 k+=1
 
         baseline_lengths=np.linalg.norm(uvw_inst,axis=1)
-        print("baseline_lengths.shape=",baseline_lengths) # making sure I took the norm along the correct axis
+        print("baseline_lengths.shape=",baseline_lengths.shape) # making sure I took the norm along the correct axis
         shortest_baseline=np.min(baseline_lengths)
         print("shortest baseline",shortest_baseline)
         uvw_inst=np.vstack((uvw_inst,-uvw_inst))
@@ -1835,6 +1841,15 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
 
         PSF_xyz=np.zeros((self.Nij,self.Npix,self.Npix,self.N_chan))
         A_xyz=np.zeros((self.Nij,self.Npix,self.Npix,self.N_chan))
+                
+        # Liu & Shaw Figure 12: scatter plot of \nu vs k-perp
+        plt.figure()
+        ax=plt.gca()
+        Nuv=self.uv_synth.shape[0]
+        one=np.ones(Nuv)
+        baseline_colours=cmasher.take_cmap_colors("cmr.ember", Nuv, cmap_range=(0.,1.), return_fmt="hex")
+        skip=20000
+
         for i in tqdm(range(self.N_chan)): # rescale the uv-coverage to this channel's frequency
             self.uv_synth=self.uv_synth*self.lambda_obs/self.surv_wavelengths[i] # rescale according to observing frequency: multiply up by the prev lambda to cancel, then divide by the current/new lambda
             self.lambda_obs=self.surv_wavelengths[i] # update the observing frequency for next time
@@ -1842,7 +1857,24 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
             nu_obs=c/self.lambda_obs
             self.nu_obs=nu_obs.decompose()
 
-            PSF_xyz[:,:,:,i],A_xyz[:,:,:,i]=self.calc_uv_slice() # compute this LoS slice's synthesized beam            
+            PSF_xyz[:,:,:,i],A_xyz[:,:,:,i]=self.calc_uv_slice() # compute this LoS slice's synthesized beam     
+
+            if i%10==0:
+                obs_freq=c/self.surv_wavelengths[i]
+                uv_to_scatter=self.uv_synth[:,:,0] # take just an instantaneous snapshot
+                uv_norms=np.linalg.norm(uv_to_scatter,axis=1) # get the uv mag (proportional to k-perp)
+                sorted_uv_norms=np.sort(uv_norms)
+                ax.scatter(sorted_uv_norms[::skip],
+                           obs_freq.decompose().value*one[::skip],
+                           c=baseline_colours[::skip],rasterized=True) # it's just gonna look like a diagonal blob (hopefully)
+
+        ### for the chromaticity-of-baselines figure ###
+        plt.xlabel("k$_\perp$ (1/Mpc)")
+        plt.ylabel("$\nu$ (MHz)")
+        # plt.colorbar()
+        plt.title("chromaticity of baselines")
+        plt.savefig("chromaticity_of_baselines.png")
+        plt.close()       
 
         MM=np.zeros((self.Npix,self.Npix,self.N_chan))
         # MMk=np.zeros((self.Nij,self.Npix,self.Npix,self.N_chan))
@@ -1851,12 +1883,6 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
             Ak=A_xyz[k,:,:,:]
             PSFk=PSF_xyz[k,:,:,:]
 
-            # # this is the week-of-Sept-21st-coded stuff
-            # synthk=Ak*PSFk
-            # MM+=synthk # convolved in Fourier space = multiplied in config space
-            # MMk[k,:,:,:]=synthk
-
-            # this is the new stuff (week of Sept 28th)
             FT_Aij_T1 = fftshift( fftn( ifftshift(Ak* ones_map* self.Deltaxy**2, axes=(0,1)),
                                         axes=(0,1), norm="backward" ),
                                    axes=(0,1) )
@@ -1875,6 +1901,39 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
                                    name="PSF_summed.png",
                                    title="PSF summed over ij",
                                    cmap=cmasher.horizon)
+        comprehensive_slice_figure(MM,
+                                   norm=None,
+                                   name="MM.png",
+                                   title="MM",
+                                   cmap=cmasher.horizon)
+        FFTMM01sq=np.abs(fftshift(fftn(ifftshift(MM,axes=(0,1)),
+                                  axes=(0,1),
+                                  norm="backward"),
+                        axes=(0,1)))**2
+        comprehensive_slice_figure(FFTMM01sq,
+                                   norm="log",
+                                   name="FFTMM01_unnormalized.png",
+                                   title="abs2 FFT(MM) over axes 0 and 1",
+                                   cmap=cmasher.horizon)
+        CSTsynth_xy_extent=np.max(self.CSTsynth_xy)-np.min(self.CSTsynth_xy)
+        flat_sky_Delta_z=self.flat_sky_centred[-1]-self.flat_sky_centred[0]
+        FFTMM_binner=cosmo_stats(CSTsynth_xy_extent,Lz=flat_sky_Delta_z,
+                                 P_fid=FFTMM01sq*u.mK**2*u.Mpc**3, # hacky oversubscription pero si funciona...!
+                                 nu_ctr=self.nu_ctr_MHz)
+        FFTMM_binner.bin_power()
+        binned_FFTMM=FFTMM_binner.P_binned
+        cylext=[FFTMM_binner.kperpbins[0].value,FFTMM_binner.kperpbins[-1].value,
+                FFTMM_binner.kparbins[0].value,FFTMM_binner.kparbins[-1].value]
+        plt.figure()
+        plt.imshow(binned_FFTMM.T,
+                   origin="lower",
+                   extent=cylext,
+                   cmap=cmasher.ember)
+        plt.xlabel("k$_\perp$ (1/Mpc)")
+        plt.ylabel("k$_{||}$ (1/Mpc)")
+        plt.title("binned synthesized beam operator")
+        plt.savefig("FFT_MM_binned.png",dpi=500)
+        plt.close()
 
         # generate a box of r-values (necessary for interpolation to survey domain in cosmo_stats as called by beam_effects)
         self.xy_vec=self.CSTsynth_xy
@@ -2258,7 +2317,7 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
         im=axs[i][j].imshow(spec_to_plot.T, cmap=colourmap, origin="lower", extent=cyl_extent, norm=norm)
         xlims_to_use=axs[i][j].get_xlim()
         ylims_to_use=axs[i][j].get_ylim()
-        axs[i][j].plot(k_perp,wedge_kpar(nu_ctr,k_perp),c="tab:red",label="extent of FG wedge\nno horizon limit")
+        axs[i][j].plot(k_perp,wedge_kpar(nu_ctr,k_perp),c="tab:red",label="extent of FG wedge")
         axs[i][j].set_xlim(xlims_to_use)
         axs[i][j].set_ylim(ylims_to_use)
         if plot_square_insets:
