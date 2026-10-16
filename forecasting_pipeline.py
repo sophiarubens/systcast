@@ -421,14 +421,15 @@ class beam_effects(object):
         print("synth k-par  extent:",kparmin_synth,kparmax_synth)
 
         if beam_sim_directory!="":
+            middle_name=str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)
             already_imported_fidu_CST=Path("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy").is_file()
-            already_imported_syst_CST=True
+            already_imported_syst_CST=False
             print("N_CST_types=",N_CST_types)
             if N_CST_types>1:
-                already_imported_syst_CST=Path("syst_boxes_"+ioname+".npy").is_file()
+                already_imported_syst_CST=Path("syst_CST_"+str(N_CST_types)+"_"+middle_name+"_MHz.npy").is_file()
+                print("path check: already_imported_syst_CST=",already_imported_syst_CST)
             if CST_f_head_syst=="": # prevent redundant CST translation
                 already_imported_syst_CST=True
-            middle_name=str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)
             if heavy_beam_recalc and not already_imported_fidu_CST:
                 fidu=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=Npix,
                                             beam_sim_directory=beam_sim_directory,f_head=CST_f_head_fidu,
@@ -448,9 +449,10 @@ class beam_effects(object):
                 ioname_base_case=ioname_base_case.replace("N_ptg_err_"+str(N_pointing_errors_max),"N_ptg_err_0")
             N_CST_z=len(CST_z_vec)
 
-            syst_boxes=np.zeros((N_CST_types,Npix,Npix,N_CST_z)) # this needs to be 4D to be forward-compatible with the new iteration strategy in simulate_array
-            syst_boxes[0,:,:,:]=fidu_box
-            if heavy_beam_recalc and not already_imported_syst_CST: # only import the fiducial beam once
+            syst_boxes=np.zeros((N_CST_types-1,Npix,Npix,N_CST_z)) # this needs to be 4D to be forward-compatible with the new iteration strategy in simulate_array
+            # philosophical pivot: temporarily deprecate pointing errors for the fidu class. I can include it in the syst list if I want to also apply pointing errors there. this will streamline resolving the issue where the 0th syst box encountered from the ensemble is actually just another copy of the syst box
+            print("a, b, a and b: heavy_beam_recalc and not already_imported_syst_CST:",heavy_beam_recalc,already_imported_syst_CST,(heavy_beam_recalc and not already_imported_syst_CST))
+            if heavy_beam_recalc and not already_imported_syst_CST:
                 for i,CST_f_head_syst_i in enumerate(CST_f_head_syst):
                     print("reimporting syst ensemble")
                     syst=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=Npix,
@@ -459,7 +461,7 @@ class beam_effects(object):
                                                 f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="syst_box_"+ioname)
                     syst.construct_CST_box()
                     print("generated syst beam box\n")
-                    syst_boxes[i+1,:,:,:]=syst.box
+                    syst_boxes[i,:,:,:]=syst.box
                 
                 np.save("syst_CST_"+str(N_CST_types)+"_"+middle_name+"_MHz.npy",syst_boxes)
             else:
@@ -470,8 +472,10 @@ class beam_effects(object):
             CST_domain=(CSTsynth_xy_vec,CSTsynth_xy_vec,CST_z_vec)
             self.CST_z_vec=CST_z_vec
             self.CSTsynth_xy_ext=CSTsynth_xy_ext
+            if N_CST_types>1:
+                print("np.sum(syst_boxes[0,:,:,:]-fidu_box)=",np.sum(syst_boxes[0,:,:,:]-fidu_box))
 
-            CST_syst_ensemble=np.zeros((N_CST_types,N_pointing_errors_max+1,Npix,Npix,N_CST_z)) # shape of CST_syst_ensemble is (N_CST_types,Npix,Npix,N_CST_z) but the sub-ensembles passed to simulate_array have shapes  ////////replace
+            CST_syst_ensemble=np.zeros((N_CST_types-1,N_pointing_errors_max+1,Npix,Npix,N_CST_z))
             CST_syst_ensemble[:,0,:,:,:]=syst_boxes # situate the pointing error–free versions
 
             if type(pointing_errors[0])==float:
@@ -488,6 +492,7 @@ class beam_effects(object):
             print("finished repointing beams for this complexity case")
             
             if heavy_beam_recalc: # redo the beam synthesis
+                print("about to synthesize fiducial CST beam")
                 fidu_synthesis=simulate_array(array_version=array_version,N_timesteps=self.N_timesteps,N_hrs=N_hrs,
                                                     nu_ctr=nu_ctr,
                                                     distribution="random",Npix=Npix, transverse_half_angle=transverse_half_angle,
@@ -499,11 +504,17 @@ class beam_effects(object):
                 print("finished synthesizing fiducial CST synth beam")
                 fidu_box_MM=fidu_synthesis.MM
                 if N_CST_types>1 or N_pointing_errors_max>0:
+                    print("fidu_box.shape, CST_syst_ensemble.shape =",fidu_box.shape, CST_syst_ensemble.shape)
+                    assert not np.all(fidu_box==CST_syst_ensemble[0,0,:,:,:]), "CST syst ensemble should not include fidu beam"
+                    print("*****beam_effects.__init__: CST_syst_ensemble.shape =",CST_syst_ensemble.shape)
+                    syst_aware_ensemble=[fidu_box,CST_syst_ensemble]
+                    print("beam_effects.__init__: len(syst_aware_ensemble), len(syst_aware_ensemble[1]) =",len(syst_aware_ensemble), len(syst_aware_ensemble[1]),"*****")
+                    print("about to synthesize systematics-laden CST synth beam")
                     syst_synthesis=simulate_array(array_version=array_version,N_timesteps=self.N_timesteps,N_hrs=N_hrs,
                                                         nu_ctr=nu_ctr,
                                                         distribution=antenna_distribution,Npix=Npix, transverse_half_angle=transverse_half_angle,
                                                         Delta_nu=delta_nu,
-                                                        sub_ensemble_of_CST_beams=[fidu_box,CST_syst_ensemble],
+                                                        sub_ensemble_of_CST_beams=syst_aware_ensemble,
                                                         CSTsynth_xy=CSTsynth_xy_vec,CST_freqs=CST_freqs,
                                                         supplementary_name=ioname)
                     syst_synthesis.stack_to_box()
@@ -529,12 +540,21 @@ class beam_effects(object):
                 print("loaded synthesized beam")
             print("finished importing/constructing synthesized CST beam")
             print("fidu_box_MM.shape=",fidu_box_MM.shape)
+
+            if N_CST_types>1:
+                print("np.sum(fidu_box_MM-syst_box_MM) = ", np.sum(fidu_box_MM-syst_box_MM))
+                # assert np.sum(fidu_box_MM-syst_box_MM)>1e-8, "fidu and syst boxes should be meaningfully different, following from different input CST"
+            comprehensive_slice_figure(fidu_box_MM-syst_box_MM, 
+                                    norm="symlog",
+                                    cmap="RdBu",
+                                    name="MM_fidu_minus_syst")
             
             weighted_sum_syst_primary=np.zeros_like(fidu_box)
             Ntypes=len(weights_synth) # this is super hacky and I need to streamline it
+            print("ABOUT TO CHECK BEAM_EFFECTS.__INIT__ SNARL")
             if Ntypes>1:
                 q=0
-                for i in range(N_CST_types):
+                for i in range(N_CST_types-1):
                     for j in range(N_pointing_errors_max+1):
                         syst_box_here=CST_syst_ensemble[i,j,:,:,:]
                         if not np.allclose(syst_box_here,0):
@@ -1428,7 +1448,7 @@ class cosmo_stats(object):
 
         # print("before layering foregrounds: np.std(T) =",np.std(T))
         if self.fg_box is not None: # layer on foregrounds
-            print("entered the branch to layer foregrounds")
+            # print("entered the branch to layer foregrounds")
             T+=self.fg_box
         # print("after layering foregrounds (if applicable): np.std(T) =",np.std(T))
 
@@ -1683,7 +1703,9 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
         self.weighting=weighting
         self.Npix=Npix
 
-        if type(sub_ensemble_of_CST_beams) is not list: # can't use .ndim because it doesn't behave well for the inhomog arrays of the else
+        print("sub_ensemble_of_CST_beams[1].shape =",sub_ensemble_of_CST_beams[1].shape)
+        print("sub_ensemble_of_CST_beams[1].ndim =",sub_ensemble_of_CST_beams[1].ndim)
+        if sub_ensemble_of_CST_beams[1].ndim<5: # can't use .ndim because it doesn't behave well for the inhomog arrays of the else
             print("simulate_array received only a !fiducial! beam box")
             fidu_box=sub_ensemble_of_CST_beams
             self.all_boxes=np.expand_dims(sub_ensemble_of_CST_beams,axis=0)
@@ -1696,16 +1718,22 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
             self.N_CST_types,self.N_max_pointing_errors,_,_,_=syst_boxes.shape
 
             # figure out the actual number of beam types and store the beam types as a list of boxes, not 2D array of boxes + standalone box
+            # THIS ITERATION BEING BROKEN IS WHAT'S CAUSING MY IDENTICAL FIDU/SYST SYNTHESIZED BEAM OPERATORS 15.10.2026
             N_pointing_errors_per_CST_case=np.zeros(self.N_CST_types,dtype=int)
-            nnn=0
+            nnn=1 # need to start at 1 because of the fidu box!!!!!!!!!
             all_boxes=[fidu_box]
             for i in range(self.N_CST_types):
+                print("simulate_array.__init__: i=",i)
                 for j in range(self.N_max_pointing_errors):
+                    print("simulate_array.__init__: j=",j)
                     box_to_add=syst_boxes[i,j,:,:,:]
                     if not np.all(np.isclose(box_to_add,0.)): # NEW
+                        print("augmenting size of CST ensemble!")
                         N_pointing_errors_per_CST_case[i]=j # only the (j-1)st case is meaningful, but that is in zero-based indexing, not one-based counting.
                         all_boxes.append(box_to_add)
                         nnn+=1
+                    else:
+                        print("skipping")
             self.N_pointing_errors_per_CST_case=N_pointing_errors_per_CST_case
             N_total_beam_types=nnn
             self.N_total_beam_types=N_total_beam_types
@@ -1713,6 +1741,7 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
             all_boxes=np.asarray(all_boxes)
             self.all_boxes=all_boxes
         self.pb_types,self.weights=beam_type_distribution(N_NS,N_EW,N_total_beam_types, distribution=self.distribution)
+        print("np.max(self.pb_types) =",np.max(self.pb_types))
         if self.N_total_beam_types>1:
             self.N_baseline_classes=self.N_total_beam_types*(self.N_total_beam_types-1)
             print("np.all(all_boxes[0]==all_boxes[1]) ?",np.all(all_boxes[0]==all_boxes[1]))
@@ -1731,9 +1760,6 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
                 k+=1
 
         baseline_lengths=np.linalg.norm(uvw_inst,axis=1)
-        print("baseline_lengths.shape=",baseline_lengths.shape) # making sure I took the norm along the correct axis
-        shortest_baseline=np.min(baseline_lengths)
-        print("shortest baseline",shortest_baseline)
         uvw_inst=np.vstack((uvw_inst,-uvw_inst))
         self.uvw_inst=uvw_inst
         indices_of_constituent_ant_pb_types=np.vstack((indices_of_constituent_ant_pb_types,indices_of_constituent_ant_pb_types)) # get the opposite-permutation baselines basically for free
