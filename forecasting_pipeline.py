@@ -392,13 +392,17 @@ class beam_effects(object):
 
         self.N_timesteps=           N_timesteps
         print("beam_effects.__init__: CST_f_head_syst=",CST_f_head_syst)
-        N_nontrivial_syst_CST_types=np.sum(CST_f_head_syst!="") # len(CST_f_head_syst) didn't work because it counted "" as an entry
-        N_CST_types=N_nontrivial_syst_CST_types+1 # +1 is for the fiducial type
+        # N_nontrivial_syst_CST_types=np.sum(CST_f_head_syst!="") # len(CST_f_head_syst) didn't work because it counted "" as an entry
+        # N_CST_types=N_nontrivial_syst_CST_types+1 # +1 is for the fiducial type
+        N_CST_types=len(CST_f_head_syst) # safe again now that there's a placeholder element for the fidu type
+        print("beam_effects.__init__: N_CST_types =",N_CST_types)
 
         if np.all(pointing_errors==[[0.,0.,0.]]):
             N_pointing_errors=[0]
         else:
-            N_pointing_errors=np.arange(0,len(pointing_errors)+1)
+            N_pointing_errors=np.arange(0,len(pointing_errors)) # Oct 17th: experimenting with removing the +1
+        print("N_pointing_errors=",N_pointing_errors)
+        # assert(1==0), "checking N pointing errors"
         N_pointing_errors_max=np.max(N_pointing_errors)
 
         CST_hi_safe=CST_hi.to(CST_deltanu.unit)
@@ -423,13 +427,6 @@ class beam_effects(object):
         if beam_sim_directory!="":
             middle_name=str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)
             already_imported_fidu_CST=Path("fidu_CST_"+str(CST_lo.value)+"_"+str(CST_hi.value)+"_"+str(CST_deltanu.value)+"_MHz.npy").is_file()
-            already_imported_syst_CST=False
-            print("N_CST_types=",N_CST_types)
-            if N_CST_types>1:
-                already_imported_syst_CST=Path("syst_CST_"+str(N_CST_types)+"_"+middle_name+"_MHz.npy").is_file()
-                print("path check: already_imported_syst_CST=",already_imported_syst_CST)
-            if CST_f_head_syst=="": # prevent redundant CST translation
-                already_imported_syst_CST=True
             if heavy_beam_recalc and not already_imported_fidu_CST:
                 fidu=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=Npix,
                                             beam_sim_directory=beam_sim_directory,f_head=CST_f_head_fidu,
@@ -451,17 +448,26 @@ class beam_effects(object):
 
             syst_boxes=np.zeros((N_CST_types-1,Npix,Npix,N_CST_z)) # this needs to be 4D to be forward-compatible with the new iteration strategy in simulate_array
             # philosophical pivot: temporarily deprecate pointing errors for the fidu class. I can include it in the syst list if I want to also apply pointing errors there. this will streamline resolving the issue where the 0th syst box encountered from the ensemble is actually just another copy of the syst box
+            already_imported_syst_CST=False
+            if N_CST_types>1:
+                already_imported_syst_CST=Path("syst_CST_"+str(N_CST_types)+"_"+middle_name+"_MHz.npy").is_file()
+                print("path check: N_CST_types, already_imported_syst_CST=",N_CST_types,already_imported_syst_CST)
+            if CST_f_head_syst=="": # prevent redundant CST translation
+                already_imported_syst_CST=True
             print("a, b, a and b: heavy_beam_recalc and not already_imported_syst_CST:",heavy_beam_recalc,already_imported_syst_CST,(heavy_beam_recalc and not already_imported_syst_CST))
             if heavy_beam_recalc and not already_imported_syst_CST:
+                k=0
                 for i,CST_f_head_syst_i in enumerate(CST_f_head_syst):
-                    print("reimporting syst ensemble")
-                    syst=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=Npix,
-                                                beam_sim_directory=beam_sim_directory,f_head=CST_f_head_syst_i,
-                                                transverse_half_angle=transverse_half_angle,
-                                                f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="syst_box_"+ioname)
-                    syst.construct_CST_box()
-                    print("generated syst beam box\n")
-                    syst_boxes[i,:,:,:]=syst.box
+                    if CST_f_head_syst_i is not None:
+                        print("reimporting syst ensemble")
+                        syst=reconfigure_CST_beam(CST_lo,CST_hi,CST_deltanu,Nxy=Npix,
+                                                    beam_sim_directory=beam_sim_directory,f_head=CST_f_head_syst_i,
+                                                    transverse_half_angle=transverse_half_angle,
+                                                    f_mid1=f_mid1,f_mid2=f_mid2,f_tail=f_tail,box_outname="syst_box_"+ioname)
+                        syst.construct_CST_box()
+                        print("generated syst beam box\n")
+                        syst_boxes[k,:,:,:]=syst.box
+                        k+=1
                 
                 np.save("syst_CST_"+str(N_CST_types)+"_"+middle_name+"_MHz.npy",syst_boxes)
             else:
@@ -475,8 +481,11 @@ class beam_effects(object):
             if N_CST_types>1:
                 print("np.sum(syst_boxes[0,:,:,:]-fidu_box)=",np.sum(syst_boxes[0,:,:,:]-fidu_box))
 
+            print("CONFIGURING SHAPE OF CST SYST ENSEMBLE: FIRST TWO DIMS ARE N_CST_types-1,N_pointing_errors_max+1")
+            print("N_CST_types-1,N_pointing_errors_max+1 =",N_CST_types-1,N_pointing_errors_max+1)
             CST_syst_ensemble=np.zeros((N_CST_types-1,N_pointing_errors_max+1,Npix,Npix,N_CST_z))
             CST_syst_ensemble[:,0,:,:,:]=syst_boxes # situate the pointing error–free versions
+            print("CST_syst_ensemble.shape=",CST_syst_ensemble.shape)
 
             if type(pointing_errors[0])==float:
                 pointing_errors_to_loop_over=[pointing_errors]
@@ -485,10 +494,11 @@ class beam_effects(object):
             else:
                 pointing_errors_to_loop_over=[[0.,0.,0.]]
             for i,syst_box in enumerate(syst_boxes):
+                print("pointing_errors_to_loop_over=",pointing_errors_to_loop_over)
                 if N_pointing_errors_max>0:
                     for j,pointing_error in enumerate(pointing_errors_to_loop_over):
                         repointed=repoint_beam(CST_domain,syst_box,pointing_error)
-                        CST_syst_ensemble[i,j+1,:,:,:]=repointed
+                        CST_syst_ensemble[i,j,:,:,:]=repointed # Oct 17th: removed the +1 from j+1
             print("finished repointing beams for this complexity case")
             
             if heavy_beam_recalc: # redo the beam synthesis
@@ -755,14 +765,14 @@ class beam_effects(object):
         co_fi_sy_fg=cosmo_stats(self.CSTsynth_xy_ext,Lz=self.synth_comoving_extent,
                                 P_fid=P_cosmo,k_fid=self.ksph,
                                 Nxy=self.Npix,Nz=self.synth_Nz,
-                                MM=self.systMM,# MM2=self.fiduMM,
+                                MM=self.systMM, MM2=self.fiduMM,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr,fg_box=fg_box)
         xx_fi_sy_fg=cosmo_stats(self.CSTsynth_xy_ext,Lz=self.synth_comoving_extent,
                                 Nxy=self.Npix,Nz=self.synth_Nz,
                                 T_pristine=fg_box,
-                                MM=self.systMM,# MM2=self.fiduMM,
+                                MM=self.systMM, MM2=self.fiduMM,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
@@ -783,7 +793,7 @@ class beam_effects(object):
         co_fi_sy_xx=cosmo_stats(self.CSTsynth_xy_ext,Lz=self.synth_comoving_extent,
                                 P_fid=P_cosmo,k_fid=self.ksph, 
                                 Nxy=self.Npix,Nz=self.synth_Nz,
-                                MM=self.systMM, #MM2=self.fiduMM,
+                                MM=self.systMM, MM2=self.fiduMM,
                                 frac_tol=self.frac_tol_conv,seed=self.seed,    
                                 LoS_apo=self.LoS_apo,transverse_apo=self.transverse_apo,
                                 wedge_cut=self.wedge_cut,nu_ctr=self.nu_ctr)
@@ -1715,7 +1725,8 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
             print("simulate_array received both !fiducial and systematic-laden! beam boxes")
             fidu_box,syst_boxes=sub_ensemble_of_CST_beams # should be unpackable into two arrays:
             assert fidu_box.ndim==3 and syst_boxes.ndim==5 # one box and one "2D array of 3D boxes"
-            self.N_CST_types,self.N_max_pointing_errors,_,_,_=syst_boxes.shape
+            self.N_CST_types,N_max_pointing_errors,_,_,_=syst_boxes.shape
+            self.N_max_pointing_errors=N_max_pointing_errors-1 # based on how I formed it
 
             # figure out the actual number of beam types and store the beam types as a list of boxes, not 2D array of boxes + standalone box
             # THIS ITERATION BEING BROKEN IS WHAT'S CAUSING MY IDENTICAL FIDU/SYST SYNTHESIZED BEAM OPERATORS 15.10.2026
@@ -1724,7 +1735,9 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
             all_boxes=[fidu_box]
             for i in range(self.N_CST_types):
                 print("simulate_array.__init__: i=",i)
-                for j in range(self.N_max_pointing_errors):
+                nnn+=1 # Oct 17th I think this will make my max N pb types tally make more sense
+                all_boxes.append(syst_boxes[i,0,:,:,:])
+                for j in range(1,self.N_max_pointing_errors):
                     print("simulate_array.__init__: j=",j)
                     box_to_add=syst_boxes[i,j,:,:,:]
                     if not np.all(np.isclose(box_to_add,0.)): # NEW
@@ -1739,6 +1752,7 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
             self.N_total_beam_types=N_total_beam_types
 
             all_boxes=np.asarray(all_boxes)
+            print("simulate_array.__init__: all_boxes.shape=",all_boxes.shape)
             self.all_boxes=all_boxes
         self.pb_types,self.weights=beam_type_distribution(N_NS,N_EW,N_total_beam_types, distribution=self.distribution)
         print("np.max(self.pb_types) =",np.max(self.pb_types))
@@ -2471,7 +2485,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
 
     if type(CST_f_head_syst)==str: # make even the single-CST-type case iterable
         CST_f_head_syst=[CST_f_head_syst]
-    assert (type(CST_f_head_syst)==np.ndarray or type(CST_f_head_syst)==list) and type(CST_f_head_syst[0])==str
+    # assert (type(CST_f_head_syst)==np.ndarray or type(CST_f_head_syst)==list) and type(CST_f_head_syst[0])==str # this was useful when I didn't have a None placeholder
     N_CST_types=len(CST_f_head_syst)+1
     if (len(pointing_errors)==3 and type(pointing_errors[0])==int):
         pointing_errors=[pointing_errors] # associate one pointing error with one CST case
@@ -2508,7 +2522,10 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
             else:
                 pointing_errors_i=[[0.,0.,0.,]]
 
-            CST_f_head_syst_i=CST_f_head_syst[:NCST_i]
+            if i<len(complexity_cases):
+                CST_f_head_syst_i=CST_f_head_syst[:NCST_i+1]
+            else:
+                CST_f_head_syst_i=CST_f_head_syst
         
         ioname=array_version+"_"+c_or_w+"_"+"_"\
            ""+per_chan_syst_string+"_"+per_chan_syst_name+"_"\
