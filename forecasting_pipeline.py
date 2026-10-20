@@ -394,7 +394,17 @@ class beam_effects(object):
         print("beam_effects.__init__: CST_f_head_syst=",CST_f_head_syst)
         # N_nontrivial_syst_CST_types=np.sum(CST_f_head_syst!="") # len(CST_f_head_syst) didn't work because it counted "" as an entry
         # N_CST_types=N_nontrivial_syst_CST_types+1 # +1 is for the fiducial type
-        N_CST_types=len(CST_f_head_syst) # safe again now that there's a placeholder element for the fidu type
+        print("CST_f_head_syst:",CST_f_head_syst)
+        print("CST_f_head_syst is None",CST_f_head_syst is None)
+        print("CST_f_head_syst is None",CST_f_head_syst==None)
+        print("CST_f_head_syst==[None]",CST_f_head_syst==[None])
+        print("CST_f_head_syst==[]",CST_f_head_syst==[])
+        print("CST_f_head_syst==''",CST_f_head_syst=='')
+        if CST_f_head_syst=="":
+            print("N_CST_types None protection activated")
+            N_CST_types=1
+        else:
+            N_CST_types=len(CST_f_head_syst)# safe again now that there's a placeholder element for the fidu type
         print("beam_effects.__init__: N_CST_types =",N_CST_types)
 
         if np.all(pointing_errors==[[0.,0.,0.]]):
@@ -446,7 +456,7 @@ class beam_effects(object):
                 ioname_base_case=ioname_base_case.replace("N_ptg_err_"+str(N_pointing_errors_max),"N_ptg_err_0")
             N_CST_z=len(CST_z_vec)
 
-            syst_boxes=np.zeros((N_CST_types-1,Npix,Npix,N_CST_z)) # this needs to be 4D to be forward-compatible with the new iteration strategy in simulate_array
+            syst_boxes=np.zeros((N_CST_types,Npix,Npix,N_CST_z)) # this needs to be 4D to be forward-compatible with the new iteration strategy in simulate_array
             # philosophical pivot: temporarily deprecate pointing errors for the fidu class. I can include it in the syst list if I want to also apply pointing errors there. this will streamline resolving the issue where the 0th syst box encountered from the ensemble is actually just another copy of the syst box
             already_imported_syst_CST=False
             if N_CST_types>1:
@@ -481,9 +491,9 @@ class beam_effects(object):
             if N_CST_types>1:
                 print("np.sum(syst_boxes[0,:,:,:]-fidu_box)=",np.sum(syst_boxes[0,:,:,:]-fidu_box))
 
-            print("CONFIGURING SHAPE OF CST SYST ENSEMBLE: FIRST TWO DIMS ARE N_CST_types-1,N_pointing_errors_max+1")
-            print("N_CST_types-1,N_pointing_errors_max+1 =",N_CST_types-1,N_pointing_errors_max+1)
-            CST_syst_ensemble=np.zeros((N_CST_types-1,N_pointing_errors_max+1,Npix,Npix,N_CST_z))
+            print("CONFIGURING SHAPE OF CST SYST ENSEMBLE: FIRST TWO DIMS ARE N_CST_types,N_pointing_errors_max+1")
+            print("N_CST_types,N_pointing_errors_max+1 =",N_CST_types,N_pointing_errors_max+1)
+            CST_syst_ensemble=np.zeros((N_CST_types,N_pointing_errors_max+1,Npix,Npix,N_CST_z))
             CST_syst_ensemble[:,0,:,:,:]=syst_boxes # situate the pointing error–free versions
             print("CST_syst_ensemble.shape=",CST_syst_ensemble.shape)
 
@@ -564,7 +574,7 @@ class beam_effects(object):
             print("ABOUT TO CHECK BEAM_EFFECTS.__INIT__ SNARL")
             if Ntypes>1:
                 q=0
-                for i in range(N_CST_types-1):
+                for i in range(N_CST_types):
                     for j in range(N_pointing_errors_max+1):
                         syst_box_here=CST_syst_ensemble[i,j,:,:,:]
                         if not np.allclose(syst_box_here,0):
@@ -1761,6 +1771,7 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
             print("np.all(all_boxes[0]==all_boxes[1]) ?",np.all(all_boxes[0]==all_boxes[1]))
         else:
             self.N_baseline_classes=1
+        print("N total beam types, N baseline classes = ",self.N_total_beam_types,self.N_baseline_classes)
 
         # ungridded instantaneous uv-coverage (baselines in xyz)
         # second use of the loop: iterate over baselines to make arrays of beam type indices     
@@ -2483,6 +2494,7 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
     elif antenna_dist!="random":
         raise ValueError("unknown antenna_dist")
 
+    print("power_comparison_plots: CST_f_head_syst =",CST_f_head_syst)
     if type(CST_f_head_syst)==str: # make even the single-CST-type case iterable
         CST_f_head_syst=[CST_f_head_syst]
     # assert (type(CST_f_head_syst)==np.ndarray or type(CST_f_head_syst)==list) and type(CST_f_head_syst[0])==str # this was useful when I didn't have a None placeholder
@@ -2523,9 +2535,16 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                 pointing_errors_i=[[0.,0.,0.,]]
 
             if i<len(complexity_cases):
-                CST_f_head_syst_i=CST_f_head_syst[:NCST_i+1]
+                CST_f_head_syst_i=CST_f_head_syst[:NCST_i]
             else:
                 CST_f_head_syst_i=CST_f_head_syst
+            print("CST_f_head_syst_i:",CST_f_head_syst_i)
+            print("CST_f_head_syst_i is None",CST_f_head_syst_i is None)
+            print("CST_f_head_syst_i is None",CST_f_head_syst_i==None)
+            print("CST_f_head_syst_i==[None]",CST_f_head_syst_i==[None])
+            print("CST_f_head_syst_i==[]",CST_f_head_syst_i==[])
+            print("CST_f_head_syst_i==''",CST_f_head_syst_i=='')
+            # assert 1==0, "trying to figure out how in tarnation this base case is getting stored"
         
         ioname=array_version+"_"+c_or_w+"_"+"_"\
            ""+per_chan_syst_string+"_"+per_chan_syst_name+"_"\
