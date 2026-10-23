@@ -2,6 +2,7 @@ import numpy as np
 
 from matplotlib import pyplot as plt
 from matplotlib import gridspec
+import matplotlib.colors as mcolors
 from matplotlib.colors import LogNorm,TwoSlopeNorm,SymLogNorm ,CenteredNorm 
 
 from scipy.fft import fftshift,ifftshift,fftfreq, fftn, irfftn, set_workers
@@ -392,14 +393,6 @@ class beam_effects(object):
 
         self.N_timesteps=           N_timesteps
         print("beam_effects.__init__: CST_f_head_syst=",CST_f_head_syst)
-        # N_nontrivial_syst_CST_types=np.sum(CST_f_head_syst!="") # len(CST_f_head_syst) didn't work because it counted "" as an entry
-        # N_CST_types=N_nontrivial_syst_CST_types+1 # +1 is for the fiducial type
-        print("CST_f_head_syst:",CST_f_head_syst)
-        print("CST_f_head_syst is None",CST_f_head_syst is None)
-        print("CST_f_head_syst is None",CST_f_head_syst==None)
-        print("CST_f_head_syst==[None]",CST_f_head_syst==[None])
-        print("CST_f_head_syst==[]",CST_f_head_syst==[])
-        print("CST_f_head_syst==''",CST_f_head_syst=='')
         if CST_f_head_syst=="":
             print("N_CST_types None protection activated")
             N_CST_types=1
@@ -457,6 +450,7 @@ class beam_effects(object):
             N_CST_z=len(CST_z_vec)
 
             syst_boxes=np.zeros((N_CST_types,Npix,Npix,N_CST_z)) # this needs to be 4D to be forward-compatible with the new iteration strategy in simulate_array
+            syst_boxes[0,:,:,:]=fidu_box
             # philosophical pivot: temporarily deprecate pointing errors for the fidu class. I can include it in the syst list if I want to also apply pointing errors there. this will streamline resolving the issue where the 0th syst box encountered from the ensemble is actually just another copy of the syst box
             already_imported_syst_CST=False
             if N_CST_types>1:
@@ -466,7 +460,7 @@ class beam_effects(object):
                 already_imported_syst_CST=True
             print("a, b, a and b: heavy_beam_recalc and not already_imported_syst_CST:",heavy_beam_recalc,already_imported_syst_CST,(heavy_beam_recalc and not already_imported_syst_CST))
             if heavy_beam_recalc and not already_imported_syst_CST:
-                k=0
+                k=1
                 for i,CST_f_head_syst_i in enumerate(CST_f_head_syst):
                     if CST_f_head_syst_i is not None:
                         print("reimporting syst ensemble")
@@ -497,6 +491,7 @@ class beam_effects(object):
             CST_syst_ensemble[:,0,:,:,:]=syst_boxes # situate the pointing error–free versions
             print("CST_syst_ensemble.shape=",CST_syst_ensemble.shape)
 
+            q=1 # literally only remaining use is in the file name of one comprehensive slice figure
             if type(pointing_errors[0])==float:
                 pointing_errors_to_loop_over=[pointing_errors]
             elif pointing_errors is not None:
@@ -505,10 +500,14 @@ class beam_effects(object):
                 pointing_errors_to_loop_over=[[0.,0.,0.]]
             for i,syst_box in enumerate(syst_boxes):
                 print("pointing_errors_to_loop_over=",pointing_errors_to_loop_over)
+                print("beam_effects.__init__: syst box i={} is identically vanishing?".format(i),np.all(syst_box==0))
                 if N_pointing_errors_max>0:
-                    for j,pointing_error in enumerate(pointing_errors_to_loop_over):
+                    for j in range(1,len(pointing_errors_to_loop_over)):
+                        pointing_error=pointing_errors_to_loop_over[j]
+                    # for j,pointing_error in enumerate(pointing_errors_to_loop_over):
                         repointed=repoint_beam(CST_domain,syst_box,pointing_error)
                         CST_syst_ensemble[i,j,:,:,:]=repointed # Oct 17th: removed the +1 from j+1
+                        q+=1
             print("finished repointing beams for this complexity case")
             
             if heavy_beam_recalc: # redo the beam synthesis
@@ -525,7 +524,7 @@ class beam_effects(object):
                 fidu_box_MM=fidu_synthesis.MM
                 if N_CST_types>1 or N_pointing_errors_max>0:
                     print("fidu_box.shape, CST_syst_ensemble.shape =",fidu_box.shape, CST_syst_ensemble.shape)
-                    assert not np.all(fidu_box==CST_syst_ensemble[0,0,:,:,:]), "CST syst ensemble should not include fidu beam"
+                    # assert not np.all(fidu_box==CST_syst_ensemble[0,0,:,:,:]), "CST syst ensemble should not include fidu beam" # this is no longer part of my philosophy
                     print("*****beam_effects.__init__: CST_syst_ensemble.shape =",CST_syst_ensemble.shape)
                     syst_aware_ensemble=[fidu_box,CST_syst_ensemble]
                     print("beam_effects.__init__: len(syst_aware_ensemble), len(syst_aware_ensemble[1]) =",len(syst_aware_ensemble), len(syst_aware_ensemble[1]),"*****")
@@ -540,11 +539,9 @@ class beam_effects(object):
                     syst_synthesis.stack_to_box()
                     syst_box_MM=syst_synthesis.MM
                     weights_synth=syst_synthesis.weights
-                    Ntypes=syst_synthesis.N_total_beam_types
                 else:
                     syst_box_MM=np.copy(fidu_box_MM)
                     weights_synth=fidu_synthesis.weights
-                    Ntypes=1
 
                 print("finished synthesizing systematic-laden CST synth beam")
 
@@ -568,21 +565,7 @@ class beam_effects(object):
                                     norm="symlog",
                                     cmap="RdBu",
                                     name="MM_fidu_minus_syst")
-            
-            weighted_sum_syst_primary=np.zeros_like(fidu_box)
-            Ntypes=len(weights_synth) # this is super hacky and I need to streamline it
-            print("ABOUT TO CHECK BEAM_EFFECTS.__INIT__ SNARL")
-            if Ntypes>1:
-                q=0
-                for i in range(N_CST_types):
-                    for j in range(N_pointing_errors_max+1):
-                        syst_box_here=CST_syst_ensemble[i,j,:,:,:]
-                        if not np.allclose(syst_box_here,0):
-                            weighted_sum_syst_primary+=weights_synth[q]*syst_box_here
-                        q+=1
-            else:
-                q=2
-            
+                        
             self.fiduMM=fidu_box_MM
             self.systMM=syst_box_MM
 
@@ -1877,12 +1860,24 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
                 weight_2nd=np.abs(self.nu_obs-self.CST_freqs_obs_units[LoS_2nd])/self.CST_deltanu_obs_units
                 primary_beam_i=self.all_boxes[type_i,:,:,LoS_1st]*weight_1st + self.all_boxes[type_i,:,:,LoS_2nd]*weight_2nd
                 primary_beam_j=self.all_boxes[type_j,:,:,LoS_1st]*weight_1st + self.all_boxes[type_j,:,:,LoS_2nd]*weight_2nd
+                N_problematic1=np.sum(primary_beam_i*primary_beam_j<0)
+                N_problematic2=np.sum(np.isnan(primary_beam_i*primary_beam_j))
+                problematic3=np.max(primary_beam_i*primary_beam_j)
+                if N_problematic1>0 or N_problematic2>0 or problematic3<=0:
+                    print("N negative,nan beam product entries; max is =",N_problematic1, N_problematic2, problematic3)
+                assert (N_problematic1==0), "all entries of the product of beams must be nonnegative"
+                assert (N_problematic2==0), "all entries of the product of beams must be non-nan"
+                assert (problematic3>0), "max of the product of beams must be positive"
                 primary_beam_ij=np.sqrt(primary_beam_i*primary_beam_j) # geo mean of the beams of this baseline's two constituent antennas. still on initial CST grid
                 primary_beam_ij/=np.max(primary_beam_ij) # beam should already be peak-normalized, pero mejor asegurarse que no haya nada raro... for example, a 2-3-pixel offset in the peak location
                 PSF_slice[k,:,:]=PSF_ij
                 primary_beam_slice[k,:,:]=primary_beam_ij
                 k+=1
 
+        N_slice_nans=np.sum(np.isnan(primary_beam_slice))
+        N_slice_infs=np.sum(np.isinf(primary_beam_slice))
+        if N_slice_nans>0 or N_slice_infs:
+            print("simulate_array.calc_uv_slice: N nans,infs in primary_beam_slice =",N_slice_nans,N_slice_infs)
         return PSF_slice,primary_beam_slice
 
     def stack_to_box(self):
@@ -1899,6 +1894,9 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
         Nuv=self.uv_synth.shape[0]
         one=np.ones(Nuv)
         baseline_colours=cmasher.take_cmap_colors("cmr.ember", Nuv, cmap_range=(0.,1.), return_fmt="hex")
+        custom_cmap = mcolors.ListedColormap(baseline_colours)
+        norm = mcolors.Normalize(vmin=0, vmax=100)
+        mappable = plt.cm.ScalarMappable(norm=norm, cmap=custom_cmap)
         skip=20000
 
         for i in tqdm(range(self.N_chan)): # rescale the uv-coverage to this channel's frequency
@@ -1908,7 +1906,9 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
             nu_obs=c/self.lambda_obs
             self.nu_obs=nu_obs.decompose()
 
-            PSF_xyz[:,:,:,i],A_xyz[:,:,:,i]=self.calc_uv_slice() # compute this LoS slice's synthesized beam     
+            PSF_xyz[:,:,:,i],A_xyz_i=self.calc_uv_slice() # compute this LoS slice's synthesized beam 
+            A_xyz[:,:,:,i]=A_xyz_i
+            assert np.sum(np.isnan(A_xyz_i))==0, "there need to be zero nans in A_xyz_i"    
 
             if i%10==0:
                 obs_freq=c/self.surv_wavelengths[i]
@@ -1921,11 +1921,15 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
 
         ### for the chromaticity-of-baselines figure ###
         plt.xlabel("k$_\perp$ (1/Mpc)")
-        plt.ylabel("$\nu$ (MHz)")
-        # plt.colorbar()
+        plt.ylabel("ν (MHz)")
+        ax=plt.gca()
+        cbar=plt.colorbar(mappable=mappable,ax=ax,label="proxy for baseline length")
         plt.title("chromaticity of baselines")
         plt.savefig("chromaticity_of_baselines.png")
-        plt.close()       
+        plt.close()
+
+        print("simulate_array.stack_to_box: N nans in A_xyz =",np.sum(np.isnan(A_xyz)))  
+        assert np.sum(np.isnan(A_xyz))==0, "there need to be zero nans in A_xyz" # bizarre because this test keeps passing but the loop traversal keeps failing only for [3,0]
 
         MM=np.zeros((self.Npix,self.Npix,self.N_chan))
         # MMk=np.zeros((self.Nij,self.Npix,self.Npix,self.N_chan))
@@ -1934,6 +1938,7 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
             Ak=A_xyz[k,:,:,:]
             PSFk=PSF_xyz[k,:,:,:]
 
+            print("N nans in Ak =",np.sum(np.isnan(Ak)))
             FT_Aij_T1 = fftshift( fftn( ifftshift(Ak* ones_map* self.Deltaxy**2, axes=(0,1)),
                                         axes=(0,1), norm="backward" ),
                                    axes=(0,1) )
@@ -1941,17 +1946,35 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
             operator_ij = fftshift( irfftn( ifftshift(Utilde_etc* self.d2u, axes=(0,1)),
                                             axes=(0,1), norm="forward", s=(self.Npix,self.Npix) ),
                                     axes=(0,1) )
+            if np.any(np.isnan(Utilde_etc)):
+                print("N nans in Utilde_etc =",np.sum(np.isnan(Utilde_etc)))
+                masked_Utilde_etc=np.copy(Utilde_etc)
+                masked_Utilde_etc[np.nonzero(np.isnan(Utilde_etc))]=-1
+                comprehensive_slice_figure(np.abs(masked_Utilde_etc)**2,
+                                           name="masked_Utilde_etc.png",
+                                           title="Abs masked Utilde-etc.",
+                                           cmap="twilight")
+            if np.any(np.isnan(operator_ij)):
+                print("N nans in operator_ij =",np.sum(np.isnan(operator_ij)))
+                masked_operator_ij=np.copy(operator_ij)
+                masked_operator_ij[np.nonzero(np.isnan(operator_ij))]=-1
+                comprehensive_slice_figure(masked_operator_ij,
+                                           name="masked_operator_ij.png",
+                                           title="Masked operator ij",
+                                           cmap="twilight")
             MM+= operator_ij
 
         # MM/=np.sum(MM) # volume-normalize so different MM have analogous effects?! (might need to turn this back on but so far it is a week-of-Sept-21st thing)
         self.MM=MM
 
         PSF_summed=np.sum(PSF_xyz,axis=0)
+        print("nans, infs in PSF_summed? ",np.any(np.isnan(PSF_summed)),np.any(np.isinf(PSF_summed)))
         comprehensive_slice_figure(PSF_summed,
                                    norm=None,
                                    name="PSF_summed.png",
                                    title="PSF summed over ij",
                                    cmap=cmasher.horizon)
+        print("nans, infs in MM?",np.any(np.isnan(MM)),np.any(np.isinf(MM)))
         comprehensive_slice_figure(MM,
                                    norm=None,
                                    name="MM.png",
@@ -1961,6 +1984,7 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
                                   axes=(0,1),
                                   norm="backward"),
                         axes=(0,1)))**2
+        print("nans, infs in FFTM01sq?",np.any(np.isnan(FFTMM01sq)),np.any(np.isinf(FFTMM01sq)))
         comprehensive_slice_figure(FFTMM01sq,
                                    norm="log",
                                    name="FFTMM01_unnormalized.png",
@@ -2538,13 +2562,6 @@ def power_comparison_plots(redo_window_calc:bool=False, redo_box_calc:bool=False
                 CST_f_head_syst_i=CST_f_head_syst[:NCST_i]
             else:
                 CST_f_head_syst_i=CST_f_head_syst
-            print("CST_f_head_syst_i:",CST_f_head_syst_i)
-            print("CST_f_head_syst_i is None",CST_f_head_syst_i is None)
-            print("CST_f_head_syst_i is None",CST_f_head_syst_i==None)
-            print("CST_f_head_syst_i==[None]",CST_f_head_syst_i==[None])
-            print("CST_f_head_syst_i==[]",CST_f_head_syst_i==[])
-            print("CST_f_head_syst_i==''",CST_f_head_syst_i=='')
-            # assert 1==0, "trying to figure out how in tarnation this base case is getting stored"
         
         ioname=array_version+"_"+c_or_w+"_"+"_"\
            ""+per_chan_syst_string+"_"+per_chan_syst_name+"_"\
