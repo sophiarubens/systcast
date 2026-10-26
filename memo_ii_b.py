@@ -6,18 +6,19 @@ CST_dir="/Users/sophiarubens/Downloads/research/code/pipeline/CST_beams/CHORD_fe
 
 # >>>>> details of fidu and syst CST cases <<<<< 
 fiduname="fiducial/"
-systnames= [ "+0.0+0.0+0.5", "+0.0+0.0+1.0", "+0.0+0.0+1.5",     # local. commented-out part would be accessible if I were to download more CST from Fir!
-             "+0.0+0.5+0.0", "+0.0+1.0+0.0" ] # "+0.0+1.5+0.0",
-            #  "+0.0+0.0-0.5", "+0.0+0.0-1.0", "+0.0+0.0-1.5", 
-            #  "+0.0-0.5+0.0", "+0.0-1.0+0.0", "+0.0-1.5+0.0"  ]
+systnames= [ "+0.0+0.0+1.5", "+0.0+0.0+1.0", "+0.0+0.0+0.5" ]# , # the rest are still on Fir
+            #  "+0.0+0.0-1.0", "+0.0+0.0-0.5"]
 # systnames= [ "+0.0+0.0+0.5", "+0.0+0.0+1.0", "+0.0+0.0+1.5",     # Fir
 #              "+0.0+0.5+0.0", "+0.0+1.0+0.0", "+0.0+1.5+0.0",
 #              "+0.0+0.0-0.5", "+0.0+0.0-1.0", "+0.0+0.0-1.5", 
 #              "+0.0-0.5+0.0", "+0.0-1.0+0.0", "+0.0-1.5+0.0"  ]
-all_syst_dirs=[sn+"_deg/" for sn in systnames]
+all_syst_dirs_extension=[sn+"_deg/" for sn in systnames]
+all_syst_dirs=[None,]
+all_syst_dirs.extend(all_syst_dirs_extension)
+print("all_syst_dirs_extension, all_syst_dirs =",all_syst_dirs_extension,all_syst_dirs)
 
 N_systs_use=len(systnames) # exhaustive case
-N_systs_use=1 # pared-down case for debugging.
+N_systs_use=3 # pared-down case for debugging.
 N_CST_total=N_systs_use+1
 
 # configure pointing errors
@@ -37,7 +38,7 @@ with open("ptg_err.json", "w") as f:
 power_comparison_plots(redo_window_calc=True, # redo the Monte Carlos
                        redo_box_calc=True, # re-synthesize the PSF; reimports CST only if files DNE
                        which_power="P", # plotting choice
-                       nu_ctr=600.*u.MHz, frac_tol_conv=0.5, freq_bin_width=0.210*u.MHz, # k-parallel observation conditioning #### had stepped down to frac tol conv = 0.1 during the week of Sept 21st
+                       nu_ctr=600.*u.MHz, frac_tol_conv=1, freq_bin_width=0.210*u.MHz, # k-parallel observation conditioning #### had stepped down to frac tol conv = 0.1 during the week of Sept 21st
                        array_version="full", Npix=512, transverse_half_angle=pi/2,# k-perp observation conditioning
                        antenna_dist="hybrid", # spatial distribution of systematics; "frame" is the default
                        LoS_apo=True,transverse_apo=False, 
