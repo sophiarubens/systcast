@@ -419,6 +419,7 @@ class beam_effects(object):
     
         CSTsynth_xy_ext=2*transverse_half_angle*self.comoving_mid # stricter than the horizon limit. 2x is to account for +/- approved-small-angle from boresight
         CSTsynth_xy_vec= CSTsynth_xy_ext*fftshift(fftfreq(Npix))
+        np.savetxt("Lxyz.txt",[CSTsynth_xy_ext.value, self.synth_comoving_extent.value])
         self.Npix=Npix
         kperpmin_synthCST=twopi/CSTsynth_xy_ext
         kperpmax_synthCST=Npix/CSTsynth_xy_ext*pi
@@ -1829,6 +1830,7 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
         adjust_weights=np.ones((self.Npix,self.Npix))
         adjust_weights[sampling_function!=0]=sampling_function[sampling_function!=0]
         k=0
+        mid=self.all_boxes.shape[-1]//2
         for i in range(self.N_total_beam_types):
             type_i=self.pb_types[i]
             for j in range(i+1):
@@ -1856,6 +1858,7 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
                                        norm="forward",s=(self.Npix,self.Npix))) # I *DON'T* need a /(2pi)**2 because this uses the other Fourier convention
                 LoS_1st,LoS_2nd=np.argsort(np.abs(self.nu_obs-self.CST_freqs_obs_units))[:2]
                 # LoS_1st,LoS_2nd=0,1 # USE THIS VERSION FOR TESTS IN THE ACHROMATIC BEAM LIMIT
+                LoS_1st,LoS_2nd=mid,mid+1 # USE THIS VERSION FOR CST-BYPASSING FREQUENCY DEPENDENCE
                 weight_1st=np.abs(self.nu_obs-self.CST_freqs_obs_units[LoS_1st])/self.CST_deltanu_obs_units
                 weight_2nd=np.abs(self.nu_obs-self.CST_freqs_obs_units[LoS_2nd])/self.CST_deltanu_obs_units
                 primary_beam_i=self.all_boxes[type_i,:,:,LoS_1st]*weight_1st + self.all_boxes[type_i,:,:,LoS_2nd]*weight_2nd
@@ -1927,8 +1930,6 @@ class simulate_array(beam_effects): # developed with rectangular arrays in mind
         plt.title("chromaticity of baselines")
         plt.savefig("chromaticity_of_baselines.png")
         plt.close()
-
-        print("simulate_array.stack_to_box: N nans in A_xyz =",np.sum(np.isnan(A_xyz)))  
         assert np.sum(np.isnan(A_xyz))==0, "there need to be zero nans in A_xyz" # bizarre because this test keeps passing but the loop traversal keeps failing only for [3,0]
 
         MM=np.zeros((self.Npix,self.Npix,self.N_chan))
@@ -2310,7 +2311,7 @@ def memo_ii_plotter(ensemble_of_spectra:np.ndarray,                       # inde
     k_perp=k_perp.to(1/u.Mpc)
     k_par=k_par.to(1/u.Mpc)
     cyl_extent=[k_perp[0].value,k_perp[-1].value,k_par[0].value,k_par[-1].value]
-    np.save("cyl_extent.npy",cyl_extent)
+    np.save("cyl_extent.txt",cyl_extent)
     k_perp_grid,k_par_grid=np.meshgrid(k_perp,k_par, indexing="ij")*k_par.unit
     k_mag_grid=np.sqrt(k_perp_grid**2+k_par_grid**2)
     values_of_k=np.zeros((N_spectra,3))
